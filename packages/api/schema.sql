@@ -1,9 +1,10 @@
 CREATE TABLE IF NOT EXISTS projects (
-  id         TEXT PRIMARY KEY,
-  name       TEXT NOT NULL,
-  slug       TEXT NOT NULL UNIQUE,
-  owner_id   TEXT NOT NULL,
-  created_at TEXT NOT NULL
+  id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL,
+  slug        TEXT NOT NULL UNIQUE,
+  description TEXT,
+  owner_id    TEXT NOT NULL,
+  created_at  TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS docs (

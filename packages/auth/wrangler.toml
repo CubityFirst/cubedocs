@@ -1,6 +1,6 @@
 name = "cubedocs-auth"
 main = "src/index.ts"
-compatibility_date = "2024-09-23"
+compatibility_date = "2026-02-24"
 compatibility_flags = ["nodejs_compat"]
 
 [[d1_databases]]

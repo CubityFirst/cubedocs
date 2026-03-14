@@ -1,5 +1,6 @@
 import { BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface AuthFormProps {
   title: string;
@@ -33,9 +34,9 @@ export function AuthForm({
           </div>
 
           {error && (
-            <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {error}
-            </p>
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
           )}
 
           <form onSubmit={onSubmit} className="space-y-4">
