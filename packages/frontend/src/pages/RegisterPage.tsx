@@ -1,7 +1,17 @@
 import { useState } from "react";
+import zxcvbn from "zxcvbn";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AuthForm } from "@/components/AuthForm";
+
+const STRENGTH_LABELS = ["Very weak", "Weak", "Fair", "Strong", "Very strong"];
+const STRENGTH_COLORS = [
+  "bg-red-500",
+  "bg-orange-500",
+  "bg-yellow-500",
+  "bg-blue-500",
+  "bg-green-500",
+];
 
 export function RegisterPage() {
   const [name, setName] = useState("");
@@ -10,9 +20,16 @@ export function RegisterPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const strength = password ? zxcvbn(password) : null;
+  const score = strength?.score ?? -1;
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (score < 3) {
+      setError("Please choose a stronger password.");
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch("/api/register", {
@@ -82,6 +99,19 @@ export function RegisterPage() {
           onChange={e => setPassword(e.target.value)}
           required
         />
+        {password && (
+          <div className="space-y-1">
+            <div className="flex gap-1">
+              {[0, 1, 2, 3, 4].map(i => (
+                <div
+                  key={i}
+                  className={`h-1 flex-1 rounded-full transition-colors ${i <= score ? STRENGTH_COLORS[score] : "bg-muted"}`}
+                />
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">{STRENGTH_LABELS[score]}</p>
+          </div>
+        )}
       </div>
     </AuthForm>
   );

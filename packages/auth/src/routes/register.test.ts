@@ -11,11 +11,13 @@ function makeRequest(body: object): Request {
 }
 
 function makeStmt(firstValue: unknown = null) {
-  return {
-    bind: vi.fn().mockReturnThis(),
+  const stmt = {
+    bind: vi.fn(),
     first: vi.fn().mockResolvedValue(firstValue),
     run: vi.fn().mockResolvedValue({ success: true }),
   };
+  stmt.bind.mockReturnValue(stmt);
+  return stmt;
 }
 
 function makeEnv(existingUser = false): Env {

@@ -6,12 +6,14 @@ import type { Env } from "../index";
 const user: Session = { userId: "author-1", email: "a@example.com", expiresAt: Date.now() + 60_000 };
 
 function makeStmt(firstValue: unknown = null, allValue: unknown[] = []) {
-  return {
-    bind: vi.fn().mockReturnThis(),
+  const stmt = {
+    bind: vi.fn(),
     first: vi.fn().mockResolvedValue(firstValue),
     all: vi.fn().mockResolvedValue({ results: allValue }),
     run: vi.fn().mockResolvedValue({ success: true }),
   };
+  stmt.bind.mockReturnValue(stmt);
+  return stmt;
 }
 
 function makeDB(...stmts: ReturnType<typeof makeStmt>[]) {

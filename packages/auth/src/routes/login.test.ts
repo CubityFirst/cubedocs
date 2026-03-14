@@ -28,9 +28,10 @@ async function makeEnv(user?: {
     };
   }
   const stmt = {
-    bind: vi.fn().mockReturnThis(),
+    bind: vi.fn(),
     first: vi.fn().mockResolvedValue(row),
   };
+  stmt.bind.mockReturnValue(stmt);
   return {
     DB: { prepare: vi.fn().mockReturnValue(stmt) } as unknown as D1Database,
     JWT_SECRET: "test-secret",

@@ -2,11 +2,13 @@ import { describe, it, expect, vi } from "vitest";
 import worker from "./index";
 
 function makeStmt() {
-  return {
-    bind: vi.fn().mockReturnThis(),
+  const stmt = {
+    bind: vi.fn(),
     first: vi.fn().mockResolvedValue(null),
     run: vi.fn().mockResolvedValue({ success: true }),
   };
+  stmt.bind.mockReturnValue(stmt);
+  return stmt;
 }
 
 function makeEnv() {
@@ -67,9 +69,10 @@ describe("auth worker fetch handler", () => {
   it("returns 500 if a handler throws", async () => {
     const env = {
       DB: {
-        prepare: vi.fn().mockReturnValue({
-          bind: vi.fn().mockReturnThis(),
-          first: vi.fn().mockRejectedValue(new Error("DB error")),
+        prepare: vi.fn().mockImplementation(() => {
+          const s = { bind: vi.fn(), first: vi.fn().mockRejectedValue(new Error("DB error")), run: vi.fn() };
+          s.bind.mockReturnValue(s);
+          return s;
         }),
       } as unknown as D1Database,
       JWT_SECRET: "test-secret",

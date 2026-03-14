@@ -106,8 +106,9 @@ export async function handleMembers(
     });
 
     if (!lookupRes.ok) {
-      const err = await lookupRes.json<{ status: number }>();
-      if (err.status === 404) return errorResponse({ error: "No user found with that email address.", status: 404 });
+      if (lookupRes.status === 404) {
+        return Response.json({ ok: false, error: "No user found with that email address.", status: 404 }, { status: 404 });
+      }
       return errorResponse(Errors.INTERNAL);
     }
 
@@ -120,7 +121,9 @@ export async function handleMembers(
     const project = await env.DB.prepare("SELECT owner_id FROM projects WHERE id = ?")
       .bind(projectId).first<{ owner_id: string }>();
     if (!project) return errorResponse(Errors.NOT_FOUND);
-    if (project.owner_id === inviteeId) return errorResponse({ error: "Cannot add the project owner as a member.", status: 409 });
+    if (project.owner_id === inviteeId) {
+      return Response.json({ ok: false, error: "Cannot add the project owner as a member.", status: 409 }, { status: 409 });
+    }
 
     // Check if already a member
     const existing = await env.DB.prepare("SELECT id FROM project_members WHERE project_id = ? AND user_id = ?")

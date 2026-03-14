@@ -1,3 +1,4 @@
+import zxcvbn from "zxcvbn";
 import { okResponse, errorResponse, Errors } from "../lib";
 import { hashPassword } from "../password";
 import { signJwt } from "../jwt";
@@ -7,6 +8,10 @@ export async function handleRegister(request: Request, env: Env): Promise<Respon
   const body = await request.json<{ email: string; password: string; name: string }>();
 
   if (!body.email || !body.password || !body.name) {
+    return errorResponse(Errors.BAD_REQUEST);
+  }
+
+  if (zxcvbn(body.password).score < 3) {
     return errorResponse(Errors.BAD_REQUEST);
   }
 

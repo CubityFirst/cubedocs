@@ -3,12 +3,14 @@ import worker from "./index";
 import type { Session } from "./lib";
 
 function makeStmt() {
-  return {
-    bind: vi.fn().mockReturnThis(),
+  const stmt = {
+    bind: vi.fn(),
     first: vi.fn().mockResolvedValue(null),
     all: vi.fn().mockResolvedValue({ results: [] }),
     run: vi.fn().mockResolvedValue({ success: true }),
   };
+  stmt.bind.mockReturnValue(stmt);
+  return stmt;
 }
 
 function makeEnv(authSession?: Session | null) {
@@ -115,9 +117,10 @@ describe("api worker fetch handler", () => {
   it("returns 500 if a handler throws", async () => {
     const env = {
       DB: {
-        prepare: vi.fn().mockReturnValue({
-          bind: vi.fn().mockReturnThis(),
-          all: vi.fn().mockRejectedValue(new Error("DB error")),
+        prepare: vi.fn().mockImplementation(() => {
+          const s = { bind: vi.fn(), all: vi.fn().mockRejectedValue(new Error("DB error")), first: vi.fn(), run: vi.fn() };
+          s.bind.mockReturnValue(s);
+          return s;
         }),
       } as unknown as D1Database,
       ASSETS: {} as unknown as R2Bucket,
