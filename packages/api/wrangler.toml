@@ -6,7 +6,7 @@ compatibility_flags = ["nodejs_compat"]
 [[d1_databases]]
 binding = "DB"
 database_name = "cubedocs-main"
-database_id = "YOUR_D1_DATABASE_ID"
+database_id = "267490be-7141-4d00-ab23-152742f2f6ef"
 
 [[r2_buckets]]
 binding = "ASSETS"

@@ -6,7 +6,7 @@ compatibility_flags = ["nodejs_compat"]
 [[d1_databases]]
 binding = "DB"
 database_name = "cubedocs-auth"
-database_id = "YOUR_D1_DATABASE_ID"
+database_id = "db327d85-b8c2-4fed-adaa-25e748778c86"
 
 [vars]
 JWT_ISSUER = "https://auth.cubedocs.com"
