@@ -2,12 +2,26 @@ import { useState, useEffect } from "react";
 import { useParams, useLocation, useNavigate, useOutletContext } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { remarkCallouts } from "@/lib/remark-callouts";
+import { Callout, type CalloutType } from "@/components/Callout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Pencil, X, Save } from "lucide-react";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
+
+const remarkPlugins = [remarkGfm, remarkCallouts];
+
+const markdownComponents = {
+  blockquote({ children, node, ...props }: React.ComponentPropsWithoutRef<"blockquote"> & { node?: { properties?: Record<string, unknown> } }) {
+    const calloutType = node?.properties?.["data-callout"] as CalloutType | undefined;
+    if (calloutType) {
+      return <Callout type={calloutType}>{children}</Callout>;
+    }
+    return <blockquote {...props}>{children}</blockquote>;
+  },
+};
 
 interface Doc {
   id: string;
@@ -162,7 +176,7 @@ export function DocPage() {
               {titleDraft && <h1 className="mb-4 text-2xl font-bold">{titleDraft}</h1>}
               {draft.trim() ? (
                 <article className="prose prose-neutral dark:prose-invert max-w-none">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{draft}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>{draft}</ReactMarkdown>
                 </article>
               ) : (
                 <p className="text-sm text-muted-foreground/50">Nothing to preview yet.</p>
@@ -179,7 +193,7 @@ export function DocPage() {
       <article className="prose prose-neutral dark:prose-invert max-w-none">
         <h1>{doc.title}</h1>
         {doc.content.trim() ? (
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{doc.content}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>{doc.content}</ReactMarkdown>
         ) : (
           <p className="not-prose text-sm italic text-muted-foreground/60">
             This page has no content yet. Click "Edit this page" to add some.
