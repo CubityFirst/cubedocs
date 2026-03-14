@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { handleDocs } from "./docs";
 import type { Session } from "../lib";
 import type { Env } from "../index";
@@ -6,21 +6,18 @@ import type { Env } from "../index";
 const user: Session = { userId: "author-1", email: "a@example.com", expiresAt: Date.now() + 60_000 };
 
 function makeStmt(firstValue: unknown = null, allValue: unknown[] = []) {
-  const stmt = {
-    bind: vi.fn(),
-    first: vi.fn().mockResolvedValue(firstValue),
-    all: vi.fn().mockResolvedValue({ results: allValue }),
-    run: vi.fn().mockResolvedValue({ success: true }),
+  const stmt: Record<string, unknown> = {
+    bind: (..._args: unknown[]) => stmt,
+    first: () => Promise.resolve(firstValue),
+    all: () => Promise.resolve({ results: allValue }),
+    run: () => Promise.resolve({ success: true }),
   };
-  stmt.bind.mockReturnValue(stmt);
   return stmt;
 }
 
 function makeDB(...stmts: ReturnType<typeof makeStmt>[]) {
-  const prepare = vi.fn();
-  for (const stmt of stmts) prepare.mockReturnValueOnce(stmt);
-  prepare.mockReturnValue(makeStmt());
-  return { prepare };
+  let i = 0;
+  return { prepare: (_sql: string) => stmts[i++] ?? makeStmt() };
 }
 
 function makeEnv(db: ReturnType<typeof makeDB>): Env {
