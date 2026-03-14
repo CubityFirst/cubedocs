@@ -46,12 +46,15 @@ export async function handleDocs(
 
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
+    const content = body.content ?? "";
+
+    await env.ASSETS.put(`${body.projectId}/${id}`, content);
     await env.DB.prepare(
-      "INSERT INTO docs (id, slug, title, content, project_id, author_id, published_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)",
-    ).bind(id, body.slug, body.title, body.content ?? "", body.projectId, user.userId, now, now).run();
+      "INSERT INTO docs (id, slug, title, project_id, author_id, published_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NULL, ?, ?)",
+    ).bind(id, body.slug, body.title, body.projectId, user.userId, now, now).run();
 
     return okResponse(
-      { id, slug: body.slug, title: body.title, content: body.content ?? "", projectId: body.projectId, authorId: user.userId, publishedAt: null, createdAt: now, updatedAt: now },
+      { id, slug: body.slug, title: body.title, content, projectId: body.projectId, authorId: user.userId, publishedAt: null, createdAt: now, updatedAt: now },
       201,
     );
   }
@@ -64,7 +67,9 @@ export async function handleDocs(
     if (role === null) return errorResponse(Errors.FORBIDDEN);
     const row = await env.DB.prepare("SELECT * FROM docs WHERE id = ?").bind(docId).first<Doc>();
     if (!row) return errorResponse(Errors.NOT_FOUND);
-    return okResponse(row);
+    const r2Object = await env.ASSETS.get(`${meta.project_id}/${docId}`);
+    const content = r2Object ? await r2Object.text() : "";
+    return okResponse({ ...row, content });
   }
 
   // PUT /docs/:id — editor or above
@@ -78,13 +83,20 @@ export async function handleDocs(
 
     const body = await request.json<Partial<{ title: string; content: string; publishedAt: string | null }>>();
     const now = new Date().toISOString();
+
+    if (body.content !== undefined) {
+      await env.ASSETS.put(`${doc.project_id}/${docId}`, body.content);
+    }
+
     await env.DB.prepare(
-      "UPDATE docs SET title = COALESCE(?, title), content = COALESCE(?, content), published_at = ?, updated_at = ? WHERE id = ?",
-    ).bind(body.title ?? null, body.content ?? null, body.publishedAt ?? null, now, docId).run();
+      "UPDATE docs SET title = COALESCE(?, title), published_at = ?, updated_at = ? WHERE id = ?",
+    ).bind(body.title ?? null, body.publishedAt ?? null, now, docId).run();
 
     const updated = await env.DB.prepare("SELECT * FROM docs WHERE id = ?").bind(docId).first<Doc>();
     if (!updated) return errorResponse(Errors.NOT_FOUND);
-    return okResponse(updated);
+    const r2Object = await env.ASSETS.get(`${doc.project_id}/${docId}`);
+    const content = r2Object ? await r2Object.text() : "";
+    return okResponse({ ...updated, content });
   }
 
   // DELETE /docs/:id — editor or above
@@ -96,6 +108,7 @@ export async function handleDocs(
     if (role === null) return errorResponse(Errors.FORBIDDEN);
     if (ROLE_RANK[role] < ROLE_RANK["editor"]) return errorResponse(Errors.FORBIDDEN);
 
+    await env.ASSETS.delete(`${doc.project_id}/${docId}`);
     await env.DB.prepare("DELETE FROM docs WHERE id = ?").bind(docId).run();
     return okResponse({ deleted: true });
   }
