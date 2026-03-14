@@ -1,6 +1,7 @@
 import { BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { DotGrid } from "@/components/DotGrid";
 
 interface AuthFormProps {
   title: string;
@@ -51,13 +52,7 @@ export function AuthForm({
       </div>
 
       <div className="relative hidden flex-1 lg:block" aria-hidden="true">
-        <div
-          className="absolute inset-0"
-          style={{
-            backgroundImage: "radial-gradient(circle, var(--border) 1px, transparent 1px)",
-            backgroundSize: "24px 24px",
-          }}
-        />
+        <DotGrid />
       </div>
     </div>
   );

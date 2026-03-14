@@ -2,6 +2,8 @@ import { errorResponse, okResponse, Errors } from "./lib";
 import { handleRegister } from "./routes/register";
 import { handleLogin } from "./routes/login";
 import { handleVerify } from "./routes/verify";
+import { handleLookup } from "./routes/lookup";
+import { handleLookupById } from "./routes/lookup-by-id";
 
 export interface Env {
   DB: D1Database;
@@ -27,6 +29,10 @@ export default {
         response = await handleLogin(request, env);
       } else if (url.pathname === "/verify" && request.method === "GET") {
         response = await handleVerify(request, env);
+      } else if (url.pathname === "/lookup" && request.method === "POST") {
+        response = await handleLookup(request, env);
+      } else if (url.pathname === "/lookup-by-id" && request.method === "POST") {
+        response = await handleLookupById(request, env);
       } else {
         response = errorResponse(Errors.NOT_FOUND);
       }

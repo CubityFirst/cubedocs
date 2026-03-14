@@ -24,6 +24,26 @@ export interface Project {
   createdAt: string;
 }
 
+export type Role = "viewer" | "editor" | "admin" | "owner";
+
+export interface Member {
+  id: string;
+  projectId: string;
+  userId: string;
+  email: string;
+  name: string;
+  role: Role;
+  invitedBy: string;
+  createdAt: string;
+}
+
+export const ROLE_RANK: Record<Role, number> = {
+  viewer: 0,
+  editor: 1,
+  admin: 2,
+  owner: 3,
+};
+
 export const Errors = {
   UNAUTHORIZED: { error: "Unauthorized", status: 401 },
   FORBIDDEN:    { error: "Forbidden", status: 403 },

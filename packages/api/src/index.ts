@@ -2,6 +2,7 @@ import { errorResponse, Errors } from "./lib";
 import { authenticate } from "./auth";
 import { handleProjects } from "./routes/projects";
 import { handleDocs } from "./routes/docs";
+import { handleMembers } from "./routes/members";
 
 export interface Env {
   DB: D1Database;
@@ -26,8 +27,12 @@ export default {
         return env.AUTH.fetch(new Request(`https://auth${url.pathname}`, request));
       }
 
-      // /projects and /projects/:id/docs
-      if (url.pathname.startsWith("/projects")) {
+      // /projects/:id/members
+      if (/^\/projects\/[^/]+\/members/.test(url.pathname)) {
+        const user = await authenticate(request, env);
+        if (!user) return addCorsHeaders(errorResponse(Errors.UNAUTHORIZED));
+        response = await handleMembers(request, env, user, url);
+      } else if (url.pathname.startsWith("/projects")) {
         const user = await authenticate(request, env);
         if (!user) return addCorsHeaders(errorResponse(Errors.UNAUTHORIZED));
         response = await handleProjects(request, env, user, url);

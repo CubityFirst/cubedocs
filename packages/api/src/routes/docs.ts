@@ -1,5 +1,15 @@
-import { okResponse, errorResponse, Errors, type Session, type Doc } from "../lib";
+import { okResponse, errorResponse, Errors, ROLE_RANK, type Session, type Doc, type Role } from "../lib";
 import type { Env } from "../index";
+
+async function getCallerRole(db: D1Database, projectId: string, userId: string): Promise<Role | null> {
+  const project = await db.prepare("SELECT owner_id FROM projects WHERE id = ?")
+    .bind(projectId).first<{ owner_id: string }>();
+  if (!project) return null;
+  if (project.owner_id === userId) return "owner";
+  const row = await db.prepare("SELECT role FROM project_members WHERE project_id = ? AND user_id = ?")
+    .bind(projectId, userId).first<{ role: Role }>();
+  return row?.role ?? null;
+}
 
 export async function handleDocs(
   request: Request,
@@ -11,20 +21,28 @@ export async function handleDocs(
   const docId = parts[0] || null;
   const params = url.searchParams;
 
-  // GET /docs?projectId=xxx
+  // GET /docs?projectId=xxx — any member
   if (!docId && request.method === "GET") {
     const projectId = params.get("projectId");
     if (!projectId) return errorResponse(Errors.BAD_REQUEST);
+
+    const role = await getCallerRole(env.DB, projectId, user.userId);
+    if (role === null) return errorResponse(Errors.FORBIDDEN);
+
     const rows = await env.DB.prepare(
       "SELECT * FROM docs WHERE project_id = ? ORDER BY created_at DESC",
     ).bind(projectId).all<Doc>();
     return okResponse(rows.results);
   }
 
-  // POST /docs
+  // POST /docs — editor or above
   if (!docId && request.method === "POST") {
     const body = await request.json<{ title: string; slug: string; content: string; projectId: string }>();
     if (!body.title || !body.slug || !body.projectId) return errorResponse(Errors.BAD_REQUEST);
+
+    const role = await getCallerRole(env.DB, body.projectId, user.userId);
+    if (role === null) return errorResponse(Errors.FORBIDDEN);
+    if (ROLE_RANK[role] < ROLE_RANK["editor"]) return errorResponse(Errors.FORBIDDEN);
 
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
@@ -38,29 +56,47 @@ export async function handleDocs(
     );
   }
 
-  // GET /docs/:id
+  // GET /docs/:id — any member of the doc's project
   if (docId && request.method === "GET") {
+    const meta = await env.DB.prepare("SELECT project_id FROM docs WHERE id = ?").bind(docId).first<{ project_id: string }>();
+    if (!meta) return errorResponse(Errors.NOT_FOUND);
+    const role = await getCallerRole(env.DB, meta.project_id, user.userId);
+    if (role === null) return errorResponse(Errors.FORBIDDEN);
     const row = await env.DB.prepare("SELECT * FROM docs WHERE id = ?").bind(docId).first<Doc>();
     if (!row) return errorResponse(Errors.NOT_FOUND);
     return okResponse(row);
   }
 
-  // PUT /docs/:id
+  // PUT /docs/:id — editor or above
   if (docId && request.method === "PUT") {
+    const doc = await env.DB.prepare("SELECT project_id FROM docs WHERE id = ?").bind(docId).first<{ project_id: string }>();
+    if (!doc) return errorResponse(Errors.NOT_FOUND);
+
+    const role = await getCallerRole(env.DB, doc.project_id, user.userId);
+    if (role === null) return errorResponse(Errors.FORBIDDEN);
+    if (ROLE_RANK[role] < ROLE_RANK["editor"]) return errorResponse(Errors.FORBIDDEN);
+
     const body = await request.json<Partial<{ title: string; content: string; publishedAt: string | null }>>();
     const now = new Date().toISOString();
     await env.DB.prepare(
-      "UPDATE docs SET title = COALESCE(?, title), content = COALESCE(?, content), published_at = ?, updated_at = ? WHERE id = ? AND author_id = ?",
-    ).bind(body.title ?? null, body.content ?? null, body.publishedAt ?? null, now, docId, user.userId).run();
+      "UPDATE docs SET title = COALESCE(?, title), content = COALESCE(?, content), published_at = ?, updated_at = ? WHERE id = ?",
+    ).bind(body.title ?? null, body.content ?? null, body.publishedAt ?? null, now, docId).run();
+
     const updated = await env.DB.prepare("SELECT * FROM docs WHERE id = ?").bind(docId).first<Doc>();
     if (!updated) return errorResponse(Errors.NOT_FOUND);
     return okResponse(updated);
   }
 
-  // DELETE /docs/:id
+  // DELETE /docs/:id — editor or above
   if (docId && request.method === "DELETE") {
-    await env.DB.prepare("DELETE FROM docs WHERE id = ? AND author_id = ?")
-      .bind(docId, user.userId).run();
+    const doc = await env.DB.prepare("SELECT project_id FROM docs WHERE id = ?").bind(docId).first<{ project_id: string }>();
+    if (!doc) return errorResponse(Errors.NOT_FOUND);
+
+    const role = await getCallerRole(env.DB, doc.project_id, user.userId);
+    if (role === null) return errorResponse(Errors.FORBIDDEN);
+    if (ROLE_RANK[role] < ROLE_RANK["editor"]) return errorResponse(Errors.FORBIDDEN);
+
+    await env.DB.prepare("DELETE FROM docs WHERE id = ?").bind(docId).run();
     return okResponse({ deleted: true });
   }
 

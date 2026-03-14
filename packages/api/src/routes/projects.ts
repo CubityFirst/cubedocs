@@ -1,5 +1,15 @@
-import { okResponse, errorResponse, Errors, type Session, type Project } from "../lib";
+import { okResponse, errorResponse, Errors, ROLE_RANK, type Session, type Project, type Role } from "../lib";
 import type { Env } from "../index";
+
+async function getCallerRole(db: D1Database, projectId: string, userId: string): Promise<Role | null> {
+  const project = await db.prepare("SELECT owner_id FROM projects WHERE id = ?")
+    .bind(projectId).first<{ owner_id: string }>();
+  if (!project) return null;
+  if (project.owner_id === userId) return "owner";
+  const row = await db.prepare("SELECT role FROM project_members WHERE project_id = ? AND user_id = ?")
+    .bind(projectId, userId).first<{ role: Role }>();
+  return row?.role ?? null;
+}
 
 export async function handleProjects(
   request: Request,
@@ -10,12 +20,23 @@ export async function handleProjects(
   const parts = url.pathname.replace(/^\/projects\/?/, "").split("/");
   const projectId = parts[0] || null;
 
-  // GET /projects
+  // GET /projects — list owned projects + projects where user is a member
   if (!projectId && request.method === "GET") {
-    const rows = await env.DB.prepare(
+    const owned = await env.DB.prepare(
       "SELECT p.*, (SELECT COUNT(*) FROM docs WHERE project_id = p.id) as doc_count FROM projects p WHERE p.owner_id = ? ORDER BY p.created_at DESC",
     ).bind(user.userId).all<Project & { doc_count: number }>();
-    return okResponse(rows.results);
+
+    const membered = await env.DB.prepare(
+      "SELECT p.*, (SELECT COUNT(*) FROM docs WHERE project_id = p.id) as doc_count FROM projects p INNER JOIN project_members pm ON pm.project_id = p.id WHERE pm.user_id = ? ORDER BY p.created_at DESC",
+    ).bind(user.userId).all<Project & { doc_count: number }>();
+
+    const seen = new Set<string>();
+    const results: (Project & { doc_count: number })[] = [];
+    for (const p of [...owned.results, ...membered.results]) {
+      if (!seen.has(p.id)) { seen.add(p.id); results.push(p); }
+    }
+
+    return okResponse(results);
   }
 
   // POST /projects
@@ -32,19 +53,20 @@ export async function handleProjects(
     return okResponse({ id, name: body.name, slug: body.slug, ownerId: user.userId, createdAt: now }, 201);
   }
 
-  // GET /projects/:id
+  // GET /projects/:id — any member can view
   if (projectId && request.method === "GET") {
-    const row = await env.DB.prepare("SELECT * FROM projects WHERE id = ? AND owner_id = ?")
-      .bind(projectId, user.userId).first<Project>();
+    const role = await getCallerRole(env.DB, projectId, user.userId);
+    if (role === null) return errorResponse(Errors.NOT_FOUND);
+    const row = await env.DB.prepare("SELECT * FROM projects WHERE id = ?").bind(projectId).first<Project>();
     if (!row) return errorResponse(Errors.NOT_FOUND);
     return okResponse(row);
   }
 
-  // PATCH /projects/:id
+  // PATCH /projects/:id — admin or owner
   if (projectId && request.method === "PATCH") {
-    const row = await env.DB.prepare("SELECT id FROM projects WHERE id = ? AND owner_id = ?")
-      .bind(projectId, user.userId).first();
-    if (!row) return errorResponse(Errors.NOT_FOUND);
+    const role = await getCallerRole(env.DB, projectId, user.userId);
+    if (role === null) return errorResponse(Errors.NOT_FOUND);
+    if (ROLE_RANK[role] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
 
     const body = await request.json<{ name?: string; description?: string | null }>();
     if (body.name !== undefined && !body.name.trim()) return errorResponse(Errors.BAD_REQUEST);
@@ -62,7 +84,7 @@ export async function handleProjects(
     return okResponse(updated);
   }
 
-  // DELETE /projects/:id
+  // DELETE /projects/:id — owner only
   if (projectId && request.method === "DELETE") {
     const row = await env.DB.prepare("SELECT id FROM projects WHERE id = ? AND owner_id = ?")
       .bind(projectId, user.userId).first();

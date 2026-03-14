@@ -1,26 +1,77 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, isValidElement } from "react";
 import { useParams, useLocation, useNavigate, useOutletContext } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { remarkCallouts } from "@/lib/remark-callouts";
 import { Callout, type CalloutType } from "@/components/Callout";
+import { MarkdownCode } from "@/components/CodeBlock";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Pencil, X, Save } from "lucide-react";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
+
+function toId(text: string): string {
+  return text.toLowerCase().replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-");
+}
+
+function childrenToText(children: React.ReactNode): string {
+  if (typeof children === "string") return children;
+  if (typeof children === "number") return String(children);
+  if (Array.isArray(children)) return children.map(childrenToText).join("");
+  if (isValidElement(children)) return childrenToText((children.props as { children?: React.ReactNode }).children);
+  return "";
+}
+
+function makeHeading(Tag: "h1" | "h2" | "h3" | "h4" | "h5" | "h6") {
+  return function HeadingWithId({ children, node: _node, ...props }: React.ComponentPropsWithoutRef<"h1"> & { node?: unknown }) {
+    const id = toId(childrenToText(children));
+    return <Tag id={id} {...props}>{children}</Tag>;
+  };
+}
+
+interface Heading { level: number; text: string; id: string }
+
+function extractHeadings(content: string): Heading[] {
+  const headings: Heading[] = [];
+  for (const line of content.split("\n")) {
+    const match = line.match(/^(#{1,6})\s+(.+)$/);
+    if (match) {
+      const text = match[2].trim();
+      headings.push({ level: match[1].length, text, id: toId(text) });
+    }
+  }
+  return headings;
+}
 
 const remarkPlugins = [remarkGfm, remarkCallouts];
 
 const markdownComponents = {
   blockquote({ children, node, ...props }: React.ComponentPropsWithoutRef<"blockquote"> & { node?: { properties?: Record<string, unknown> } }) {
-    const calloutType = node?.properties?.["data-callout"] as CalloutType | undefined;
+    const p = node?.properties;
+    const calloutType = p?.["data-callout"] as CalloutType | undefined;
     if (calloutType) {
-      return <Callout type={calloutType}>{children}</Callout>;
+      return (
+        <Callout
+          type={calloutType}
+          title={p?.["data-callout-title"] as string | undefined}
+          fold={p?.["data-callout-fold"] as string | undefined}
+        >
+          {children}
+        </Callout>
+      );
     }
     return <blockquote {...props}>{children}</blockquote>;
   },
+  h1: makeHeading("h1"),
+  h2: makeHeading("h2"),
+  h3: makeHeading("h3"),
+  h4: makeHeading("h4"),
+  h5: makeHeading("h5"),
+  h6: makeHeading("h6"),
+  code: MarkdownCode,
 };
 
 interface Doc {
@@ -188,26 +239,58 @@ export function DocPage() {
     );
   }
 
-  return (
-    <div className="mx-auto max-w-3xl px-6 py-10">
-      <article className="prose prose-neutral dark:prose-invert max-w-none">
-        <h1>{doc.title}</h1>
-        {doc.content.trim() ? (
-          <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>{doc.content}</ReactMarkdown>
-        ) : (
-          <p className="not-prose text-sm italic text-muted-foreground/60">
-            This page has no content yet. Click "Edit this page" to add some.
-          </p>
-        )}
-      </article>
+  const headings = extractHeadings(doc.content);
 
-      <Separator className="mt-16" />
-      <div className="pt-6">
-        <Button variant="outline" size="sm" onClick={startEditing} className="gap-2">
-          <Pencil className="h-3.5 w-3.5" />
-          Edit this page
-        </Button>
+  return (
+    <div className="flex min-h-full">
+      {/* Article */}
+      <div className="flex-1 min-w-0 px-6 py-10">
+        <div className="mx-auto max-w-3xl">
+          <article className="prose prose-neutral dark:prose-invert max-w-none">
+            <h1>{doc.title}</h1>
+            {doc.content.trim() ? (
+              <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>{doc.content}</ReactMarkdown>
+            ) : (
+              <p className="not-prose text-sm italic text-muted-foreground/60">
+                This page has no content yet. Click "Edit this page" to add some.
+              </p>
+            )}
+          </article>
+
+          <Separator className="mt-16" />
+          <div className="pt-6">
+            <Button variant="outline" size="sm" onClick={startEditing} className="gap-2">
+              <Pencil className="h-3.5 w-3.5" />
+              Edit this page
+            </Button>
+          </div>
+        </div>
       </div>
+
+      {/* Outline */}
+      {headings.length > 0 && (
+        <aside className="hidden xl:block w-56 shrink-0 py-10 pr-6">
+          <div className="sticky top-6">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Outline
+            </p>
+            <ScrollArea className="max-h-[calc(100vh-8rem)]">
+              <nav className="flex flex-col gap-0.5">
+                {headings.map((h, i) => (
+                  <button
+                    key={i}
+                    onClick={() => document.getElementById(h.id)?.scrollIntoView({ behavior: "smooth" })}
+                    style={{ paddingLeft: `${(h.level - 1) * 0.75}rem` }}
+                    className="truncate rounded px-2 py-1 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  >
+                    {h.text}
+                  </button>
+                ))}
+              </nav>
+            </ScrollArea>
+          </div>
+        </aside>
+      )}
     </div>
   );
 }
