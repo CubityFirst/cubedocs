@@ -10,6 +10,7 @@ interface Project {
   id: string;
   name: string;
   slug: string;
+  description: string | null;
   doc_count: number;
 }
 
@@ -68,7 +69,11 @@ export function DashboardPage() {
                 </Badge>
               </CardHeader>
 
-              <CardContent className="flex-1" />
+              <CardContent className="flex-1">
+                {project.description && (
+                  <p className="text-sm text-muted-foreground line-clamp-2">{project.description}</p>
+                )}
+              </CardContent>
 
               <CardFooter className="gap-2">
                 <Button
