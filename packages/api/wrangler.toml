@@ -1,0 +1,24 @@
+name = "cubedocs-api"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "cubedocs-main"
+database_id = "YOUR_D1_DATABASE_ID"
+
+[[r2_buckets]]
+binding = "ASSETS"
+bucket_name = "cubedocs-assets"
+
+# Service binding to auth worker (zero-latency internal calls)
+[[services]]
+binding = "AUTH"
+service = "cubedocs-auth"
+
+[vars]
+ENVIRONMENT = "production"
+
+# Secrets (set via `wrangler secret put`):
+#   JWT_SECRET  (same value as auth worker — used for local JWT verification)
