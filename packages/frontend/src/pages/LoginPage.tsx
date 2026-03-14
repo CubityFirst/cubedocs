@@ -1,13 +1,22 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AuthForm } from "@/components/AuthForm";
+import { getToken, setToken } from "@/lib/auth";
 
 export function LoginPage() {
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (getToken()) {
+      navigate("/dashboard", { replace: true });
+    }
+  }, [navigate]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -21,8 +30,8 @@ export function LoginPage() {
       });
       const json = await res.json() as { ok: boolean; data?: { token: string }; error?: string };
       if (json.ok && json.data) {
-        localStorage.setItem("token", json.data.token);
-        window.location.href = "/dashboard";
+        setToken(json.data.token);
+        navigate("/dashboard", { replace: true });
       } else {
         setError("Invalid email or password.");
       }

@@ -4,6 +4,7 @@ import { BookOpen, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { getToken } from "@/lib/auth";
 
 interface Project {
   id: string;
@@ -17,7 +18,7 @@ export function DashboardPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
+    const token = getToken();
     if (!token) return;
     fetch("/api/projects", { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json())

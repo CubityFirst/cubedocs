@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Toaster } from "@/components/ui/toaster";
 import { Badge } from "@/components/ui/badge";
+import { clearToken, getToken } from "@/lib/auth";
 import {
   BookOpen,
   FolderOpen,
@@ -58,7 +59,7 @@ export function DocsLayout() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!localStorage.getItem("token")) {
+    if (!getToken()) {
       navigate("/login", { replace: true });
     }
   }, [navigate]);
@@ -67,34 +68,50 @@ export function DocsLayout() {
   const currentProject = projectId ? projects.find(p => p.id === projectId) ?? null : null;
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
+    const token = getToken();
     if (!token) return;
     fetch("/api/projects", { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json())
-      .then((json: { ok: boolean; data?: Project[] }) => {
+      .then(async r => ({
+        status: r.status,
+        json: await r.json() as { ok: boolean; data?: Project[] },
+      }))
+      .then(({ status, json }) => {
+        if (status === 401) {
+          clearToken();
+          navigate("/login", { replace: true });
+          return;
+        }
         if (json.ok && json.data) setProjects(json.data);
       })
       .catch(() => {});
-  }, []);
+  }, [navigate]);
 
   useEffect(() => {
     if (!projectId) { setDocs([]); return; }
-    const token = localStorage.getItem("token");
+    const token = getToken();
     if (!token) return;
     fetch(`/api/docs?projectId=${projectId}`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json())
-      .then((json: { ok: boolean; data?: Doc[] }) => {
+      .then(async r => ({
+        status: r.status,
+        json: await r.json() as { ok: boolean; data?: Doc[] },
+      }))
+      .then(({ status, json }) => {
+        if (status === 401) {
+          clearToken();
+          navigate("/login", { replace: true });
+          return;
+        }
         if (json.ok && json.data) setDocs(json.data);
       })
       .catch(() => {});
-  }, [projectId]);
+  }, [navigate, projectId]);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setError(null);
     try {
-      const token = localStorage.getItem("token");
+      const token = getToken();
       const res = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -125,7 +142,7 @@ export function DocsLayout() {
     if (!projectId || creatingDoc) return;
     setCreatingDoc(true);
     try {
-      const token = localStorage.getItem("token");
+      const token = getToken();
       const slug = `untitled-${Math.random().toString(36).slice(2, 8)}`;
       const res = await fetch("/api/docs", {
         method: "POST",

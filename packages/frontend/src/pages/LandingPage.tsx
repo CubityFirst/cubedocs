@@ -2,12 +2,13 @@ import { useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { getToken } from "@/lib/auth";
 
 export function LandingPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (localStorage.getItem("token")) {
+    if (getToken()) {
       navigate("/dashboard", { replace: true });
     }
   }, [navigate]);

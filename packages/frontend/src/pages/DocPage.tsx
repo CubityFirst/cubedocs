@@ -12,6 +12,7 @@ import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Pencil, X, Save } from "lucide-react";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
+import { getToken } from "@/lib/auth";
 
 function toId(text: string): string {
   return text.toLowerCase().replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-");
@@ -100,7 +101,7 @@ export function DocPage() {
     if (!docId) return;
     setLoading(true);
     setEditing(false);
-    const token = localStorage.getItem("token");
+    const token = getToken();
     fetch(`/api/docs/${docId}`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json())
       .then((json: { ok: boolean; data?: Doc }) => {
@@ -136,7 +137,7 @@ export function DocPage() {
     setSaving(true);
     setSaveError(null);
     try {
-      const token = localStorage.getItem("token");
+      const token = getToken();
       const res = await fetch(`/api/docs/${docId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },

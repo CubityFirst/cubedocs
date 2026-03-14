@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import zxcvbn from "zxcvbn";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AuthForm } from "@/components/AuthForm";
+import { getToken, setToken } from "@/lib/auth";
 
 const STRENGTH_LABELS = ["Very weak", "Weak", "Fair", "Strong", "Very strong"];
 const STRENGTH_COLORS = [
@@ -14,6 +16,7 @@ const STRENGTH_COLORS = [
 ];
 
 export function RegisterPage() {
+  const navigate = useNavigate();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -22,6 +25,12 @@ export function RegisterPage() {
 
   const strength = password ? zxcvbn(password) : null;
   const score = strength?.score ?? -1;
+
+  useEffect(() => {
+    if (getToken()) {
+      navigate("/dashboard", { replace: true });
+    }
+  }, [navigate]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -39,8 +48,8 @@ export function RegisterPage() {
       });
       const json = await res.json() as { ok: boolean; data?: { token: string }; error?: string };
       if (json.ok && json.data) {
-        localStorage.setItem("token", json.data.token);
-        window.location.href = "/dashboard";
+        setToken(json.data.token);
+        navigate("/dashboard", { replace: true });
       } else {
         setError(res.status === 409 ? "An account with that email already exists." : "Registration failed. Please try again.");
       }

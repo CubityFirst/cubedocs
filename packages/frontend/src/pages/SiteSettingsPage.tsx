@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { getToken } from "@/lib/auth";
 
 type Role = "viewer" | "editor" | "admin" | "owner";
 
@@ -95,7 +96,7 @@ export function SiteSettingsPage() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  const token = localStorage.getItem("token");
+  const token = getToken();
   const currentUser = token ? parseToken(token) : null;
 
   useEffect(() => {
