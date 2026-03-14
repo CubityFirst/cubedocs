@@ -17,8 +17,10 @@ function makeStmt(firstValue: unknown = null, allValue: unknown[] = []) {
 }
 
 function makeDB(...stmts: ReturnType<typeof makeStmt>[]) {
-  let i = 0;
-  return { prepare: vi.fn(() => stmts[i++] ?? makeStmt()) };
+  const prepare = vi.fn();
+  for (const stmt of stmts) prepare.mockReturnValueOnce(stmt);
+  prepare.mockReturnValue(makeStmt());
+  return { prepare };
 }
 
 function makeEnv(db: ReturnType<typeof makeDB>): Env {
