@@ -18,7 +18,7 @@ export function LoginPage() {
     const json = await res.json();
     if (json.ok) {
       localStorage.setItem("token", json.data.token);
-      window.location.href = "/";
+      window.location.href = "/dashboard";
     }
   }
 

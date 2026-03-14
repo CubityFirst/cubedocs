@@ -21,6 +21,11 @@ export default {
     let response: Response;
 
     try {
+      // Proxy auth routes to the auth worker
+      if (url.pathname === "/register" || url.pathname === "/login") {
+        return env.AUTH.fetch(new Request(`https://auth${url.pathname}`, request));
+      }
+
       // /projects and /projects/:id/docs
       if (url.pathname.startsWith("/projects")) {
         const user = await authenticate(request, env);

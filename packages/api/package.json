@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "wrangler d1 migrations apply cubedocs-main --local && wrangler dev --port 8787",
     "build": "tsc",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit"
