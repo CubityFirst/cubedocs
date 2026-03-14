@@ -2,15 +2,18 @@ import { describe, it, expect, vi } from "vitest";
 import worker from "./index";
 import type { Session } from "./lib";
 
-function makeStmt() {
-  const stmt = {
-    bind: vi.fn(),
-    first: vi.fn().mockResolvedValue(null),
-    all: vi.fn().mockResolvedValue({ results: [] }),
-    run: vi.fn().mockResolvedValue({ success: true }),
+function makeStmt(firstValue: unknown = null, allValue: unknown[] = []) {
+  const stmt: Record<string, unknown> = {
+    bind: (..._args: unknown[]) => stmt,
+    first: () => Promise.resolve(firstValue),
+    all: () => Promise.resolve({ results: allValue }),
+    run: () => Promise.resolve({ success: true }),
   };
-  stmt.bind.mockReturnValue(stmt);
   return stmt;
+}
+
+function makeDB() {
+  return { prepare: (_sql: string) => makeStmt() };
 }
 
 function makeEnv(authSession?: Session | null) {
@@ -21,7 +24,7 @@ function makeEnv(authSession?: Session | null) {
     ),
   );
   return {
-    DB: { prepare: vi.fn().mockReturnValue(makeStmt()) } as unknown as D1Database,
+    DB: makeDB() as unknown as D1Database,
     ASSETS: {} as unknown as R2Bucket,
     AUTH: { fetch: authFetch } as unknown as Fetcher,
     JWT_SECRET: "test-secret",
@@ -81,7 +84,7 @@ describe("api worker fetch handler", () => {
   it("proxies POST /register to the auth worker", async () => {
     const authFetch = vi.fn().mockResolvedValue(new Response("ok", { status: 200 }));
     const env = {
-      DB: {} as unknown as D1Database,
+      DB: makeDB() as unknown as D1Database,
       ASSETS: {} as unknown as R2Bucket,
       AUTH: { fetch: authFetch } as unknown as Fetcher,
       JWT_SECRET: "test-secret",
@@ -100,7 +103,7 @@ describe("api worker fetch handler", () => {
   it("proxies POST /login to the auth worker", async () => {
     const authFetch = vi.fn().mockResolvedValue(new Response("ok", { status: 200 }));
     const env = {
-      DB: {} as unknown as D1Database,
+      DB: makeDB() as unknown as D1Database,
       ASSETS: {} as unknown as R2Bucket,
       AUTH: { fetch: authFetch } as unknown as Fetcher,
       JWT_SECRET: "test-secret",
@@ -115,14 +118,13 @@ describe("api worker fetch handler", () => {
   });
 
   it("returns 500 if a handler throws", async () => {
+    const throwingDB = {
+      prepare: (_sql: string) => ({
+        bind: (..._args: unknown[]) => ({ all: () => Promise.reject(new Error("DB error")) }),
+      }),
+    };
     const env = {
-      DB: {
-        prepare: vi.fn().mockImplementation(() => {
-          const s = { bind: vi.fn(), all: vi.fn().mockRejectedValue(new Error("DB error")), first: vi.fn(), run: vi.fn() };
-          s.bind.mockReturnValue(s);
-          return s;
-        }),
-      } as unknown as D1Database,
+      DB: throwingDB as unknown as D1Database,
       ASSETS: {} as unknown as R2Bucket,
       AUTH: {
         fetch: vi.fn().mockResolvedValue(
