@@ -11,5 +11,8 @@ database_id = "YOUR_D1_DATABASE_ID"
 [vars]
 JWT_ISSUER = "https://auth.cubedocs.com"
 
+[[custom_domains]]
+pattern = "auth.docs.cubityfir.st"
+
 # Secrets (set via `wrangler secret put`):
 #   JWT_SECRET

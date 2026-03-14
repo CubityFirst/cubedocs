@@ -1,4 +1,4 @@
-import { okResponse, errorResponse, Errors, type Session, type Doc } from "@cubedocs/shared";
+import { okResponse, errorResponse, Errors, type Session, type Doc } from "../lib";
 import type { Env } from "../index";
 
 export async function handleDocs(

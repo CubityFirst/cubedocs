@@ -20,5 +20,8 @@ service = "cubedocs-auth"
 [vars]
 ENVIRONMENT = "production"
 
+[[custom_domains]]
+pattern = "api.docs.cubityfir.st"
+
 # Secrets (set via `wrangler secret put`):
 #   JWT_SECRET  (same value as auth worker — used for local JWT verification)

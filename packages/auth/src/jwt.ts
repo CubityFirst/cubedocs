@@ -1,4 +1,4 @@
-import type { Session } from "@cubedocs/shared";
+import type { Session } from "./lib";
 
 const ALG = { name: "HMAC", hash: "SHA-256" };
 

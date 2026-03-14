@@ -1,4 +1,4 @@
-import { errorResponse, Errors } from "@cubedocs/shared";
+import { errorResponse, Errors } from "./lib";
 import { authenticate } from "./auth";
 import { handleProjects } from "./routes/projects";
 import { handleDocs } from "./routes/docs";

@@ -8,3 +8,6 @@ directory = "./dist"
 [[services]]
 binding = "API"
 service = "cubedocs-api"
+
+[[custom_domains]]
+pattern = "docs.cubityfir.st"

@@ -1,4 +1,4 @@
-import type { Session } from "@cubedocs/shared";
+import type { Session } from "./lib";
 import type { Env } from "./index";
 
 // Delegates token verification to the auth worker via Service Binding.

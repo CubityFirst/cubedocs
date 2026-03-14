@@ -8,9 +8,7 @@
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {
-    "@cubedocs/shared": "workspace:*"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@cloudflare/workers-types": "^4.0.0",
     "typescript": "^5.5.0",

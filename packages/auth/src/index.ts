@@ -1,4 +1,4 @@
-import { errorResponse, okResponse, Errors } from "@cubedocs/shared";
+import { errorResponse, okResponse, Errors } from "./lib";
 import { handleRegister } from "./routes/register";
 import { handleLogin } from "./routes/login";
 import { handleVerify } from "./routes/verify";

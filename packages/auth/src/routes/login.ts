@@ -1,4 +1,4 @@
-import { okResponse, errorResponse, Errors } from "@cubedocs/shared";
+import { okResponse, errorResponse, Errors } from "../lib";
 import { verifyPassword } from "../password";
 import { signJwt } from "../jwt";
 import type { Env } from "../index";
