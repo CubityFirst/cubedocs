@@ -1,8 +1,17 @@
-import { Link } from "react-router-dom";
+import { useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export function LandingPage() {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (localStorage.getItem("token")) {
+      navigate("/dashboard", { replace: true });
+    }
+  }, [navigate]);
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">
       <div className="flex flex-col items-center gap-6 text-center">

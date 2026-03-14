@@ -56,6 +56,12 @@ export function DocsLayout() {
   const [creatingDoc, setCreatingDoc] = useState(false);
 
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!localStorage.getItem("token")) {
+      navigate("/login", { replace: true });
+    }
+  }, [navigate]);
   const projectMatch = useMatch("/projects/:projectId/*");
   const projectId = projectMatch?.params.projectId ?? null;
   const currentProject = projectId ? projects.find(p => p.id === projectId) ?? null : null;
