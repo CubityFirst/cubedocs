@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
-import { Folder, FileText, Plus, FolderPlus, ChevronRight } from "lucide-react";
+import { useNavigate, useLocation, useOutletContext } from "react-router-dom";
+import type { DocsLayoutContext } from "@/layouts/DocsLayout";
+import { Folder, FileText, Plus, FolderPlus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -33,6 +34,18 @@ interface BreadcrumbEntry {
   name: string;
 }
 
+function formatRelativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
 const ROLE_LABELS: Record<Role, string> = {
   viewer: "Viewer",
   editor: "Editor",
@@ -62,13 +75,19 @@ interface Props {
 
 export function FileManager({ projectId, projectName, onDocCreated }: Props) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { setBreadcrumbs } = useOutletContext<DocsLayoutContext>();
 
   const [folders, setFolders] = useState<FolderItem[]>([]);
   const [docs, setDocs] = useState<DocItem[]>([]);
-  const [path, setPath] = useState<BreadcrumbEntry[]>([{ id: null, name: projectName }]);
+  const initialPath: BreadcrumbEntry[] = location.state?.restorePath ?? [{ id: null, name: projectName }];
+  const [path, setPath] = useState<BreadcrumbEntry[]>(initialPath);
   const currentFolderId = path[path.length - 1].id;
 
   const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
+
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<DocItem[] | null>(null);
 
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
@@ -83,6 +102,41 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
     loadContents();
   }, [currentFolderId, projectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchResults(null);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      const token = getToken();
+      if (!token) return;
+      const res = await fetch(`/api/docs?projectId=${projectId}&q=${encodeURIComponent(searchQuery.trim())}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json() as { ok: boolean; data?: DocItem[] };
+      if (json.ok && json.data) setSearchResults(json.data);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [searchQuery, projectId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync folder path to layout breadcrumbs
+  useEffect(() => {
+    setBreadcrumbs(path.map((crumb, i) => {
+      const crumbKey = crumb.id ?? "root";
+      const isLast = i === path.length - 1;
+      return {
+        id: crumb.id,
+        name: crumb.name,
+        onClick: isLast ? undefined : () => navigateToCrumb(i),
+        onDragOver: (e: React.DragEvent) => onCrumbDragOver(e, crumb.id),
+        onDragLeave: onCrumbDragLeave,
+        onDrop: (e: React.DragEvent) => onCrumbDrop(e, crumb.id),
+        isDropTarget: dropTarget === crumbKey,
+      };
+    }));
+    return () => setBreadcrumbs([]);
+  }, [path, dropTarget]); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function loadContents() {
     const token = getToken();
     if (!token) return;
@@ -91,7 +145,7 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
     const folderIdParam = currentFolderId ? `&folderId=${currentFolderId}` : "&folderId=";
 
     const [foldersRes, docsRes] = await Promise.all([
-      fetch(`/api/folders?projectId=${projectId}${folderParam}`, {
+      fetch(`/api/folders?projectId=${projectId}&type=docs${folderParam}`, {
         headers: { Authorization: `Bearer ${token}` },
       }),
       fetch(`/api/docs?projectId=${projectId}${folderIdParam}`, {
@@ -123,7 +177,7 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
       const res = await fetch("/api/folders", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ name: newFolderName.trim(), projectId, parentId: currentFolderId }),
+        body: JSON.stringify({ name: newFolderName.trim(), projectId, parentId: currentFolderId, type: "docs" }),
       });
       const json = await res.json() as { ok: boolean; data?: FolderItem };
       if (json.ok && json.data) {
@@ -149,7 +203,7 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
       const json = await res.json() as { ok: boolean; data?: DocItem & { id: string } };
       if (json.ok && json.data) {
         onDocCreated(json.data);
-        navigate(`/projects/${projectId}/docs/${json.data.id}`, { state: { isNew: true } });
+        navigate(`/projects/${projectId}/docs/${json.data.id}`, { state: { isNew: true, folderPath: path } });
       }
     } finally {
       setCreatingDoc(false);
@@ -209,36 +263,18 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
 
   return (
     <div className="flex flex-col">
-      {/* Breadcrumbs */}
-      <div className="sticky top-0 z-10 bg-background flex items-center gap-1 px-6 py-3 border-b border-border text-sm">
-        {path.map((crumb, i) => {
-          const isLast = i === path.length - 1;
-          const crumbKey = crumb.id ?? "root";
-          const isDropTarget = dropTarget === crumbKey;
-
-          return (
-            <span key={i} className="flex items-center gap-1">
-              {i > 0 && <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />}
-              <span
-                className={`px-1.5 py-0.5 rounded transition-colors ${
-                  isLast
-                    ? "text-foreground font-medium"
-                    : "text-muted-foreground cursor-pointer hover:text-foreground hover:bg-accent"
-                } ${isDropTarget ? "bg-primary/15 text-primary ring-1 ring-primary/40" : ""}`}
-                onClick={() => !isLast && navigateToCrumb(i)}
-                onDragOver={e => onCrumbDragOver(e, crumb.id)}
-                onDragLeave={onCrumbDragLeave}
-                onDrop={e => onCrumbDrop(e, crumb.id)}
-              >
-                {crumb.name}
-              </span>
-            </span>
-          );
-        })}
-      </div>
 
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-6 py-3">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <Input
+            placeholder="Search files…"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
         <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setShowNewFolder(true)}>
           <FolderPlus className="h-3.5 w-3.5" />
           New folder
@@ -251,7 +287,51 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
 
       {/* Table */}
       <div className="px-6 pb-6">
-        {folders.length === 0 && docs.length === 0 ? (
+        {searchResults !== null ? (
+          searchResults.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <Search className="mb-3 h-10 w-10 text-muted-foreground/30" />
+              <p className="text-sm font-medium text-muted-foreground">No files found</p>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-10"></TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Created by</TableHead>
+                  <TableHead>Last updated</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {searchResults.map(doc => (
+                  <TableRow
+                    key={doc.id}
+                    className="cursor-pointer select-none"
+                    onClick={() => navigate(`/projects/${projectId}/docs/${doc.id}`, { state: { folderPath: path } })}
+                  >
+                    <TableCell></TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-4 w-4 shrink-0 text-muted-foreground/60" />
+                        <span className="text-sm">{doc.title || "Untitled"}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      <div className="flex items-center gap-2">
+                        {doc.author_name ?? ""}
+                        {doc.author_role && <RoleBadge role={doc.author_role} />}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {formatRelativeTime(doc.updated_at)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )
+        ) : folders.length === 0 && docs.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <Folder className="mb-3 h-10 w-10 text-muted-foreground/30" />
             <p className="text-sm font-medium text-muted-foreground">This folder is empty</p>
@@ -263,6 +343,7 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
                 <TableHead className="w-10"></TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>Created by</TableHead>
+                <TableHead>Last updated</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -299,6 +380,7 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
                       </div>
                     </TableCell>
                     <TableCell></TableCell>
+                    <TableCell></TableCell>
                   </TableRow>
                 );
               })}
@@ -323,7 +405,7 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
                       }}
                     />
                   </TableCell>
-                  <TableCell onClick={() => navigate(`/projects/${projectId}/docs/${doc.id}`)}>
+                  <TableCell onClick={() => navigate(`/projects/${projectId}/docs/${doc.id}`, { state: { folderPath: path } })}>
                     <div className="flex items-center gap-2">
                       <FileText className="h-4 w-4 shrink-0 text-muted-foreground/60" />
                       <span className="text-sm">{doc.title || "Untitled"}</span>
@@ -331,12 +413,18 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
                   </TableCell>
                   <TableCell
                     className="text-sm text-muted-foreground"
-                    onClick={() => navigate(`/projects/${projectId}/docs/${doc.id}`)}
+                    onClick={() => navigate(`/projects/${projectId}/docs/${doc.id}`, { state: { folderPath: path } })}
                   >
                     <div className="flex items-center gap-2">
                       {doc.author_name ?? ""}
                       {doc.author_role && <RoleBadge role={doc.author_role} />}
                     </div>
+                  </TableCell>
+                  <TableCell
+                    className="text-sm text-muted-foreground"
+                    onClick={() => navigate(`/projects/${projectId}/docs/${doc.id}`, { state: { folderPath: path } })}
+                  >
+                    {formatRelativeTime(doc.updated_at)}
                   </TableCell>
                 </TableRow>
               ))}

@@ -4,18 +4,12 @@ import type { Session } from "../lib";
 
 const VALID_ROLES: Role[] = ["viewer", "editor", "admin", "owner"];
 
-interface ProjectRow { owner_id: string; owner_email?: string; owner_name?: string }
 interface MemberRow {
   id: string; project_id: string; user_id: string; email: string; name: string;
   role: Role; invited_by: string; created_at: string;
 }
 
-// Returns the caller's effective role in the project, or null if not a member.
 async function getCallerRole(db: D1Database, projectId: string, userId: string): Promise<Role | null> {
-  const project = await db.prepare("SELECT owner_id FROM projects WHERE id = ?")
-    .bind(projectId).first<{ owner_id: string }>();
-  if (!project) return null;
-  if (project.owner_id === userId) return "owner";
   const row = await db.prepare("SELECT role FROM project_members WHERE project_id = ? AND user_id = ?")
     .bind(projectId, userId).first<{ role: Role }>();
   return row?.role ?? null;
@@ -40,31 +34,11 @@ export async function handleMembers(
   if (!targetUserId && request.method === "GET") {
     if (ROLE_RANK[callerRole] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
 
-    const project = await env.DB.prepare("SELECT owner_id FROM projects WHERE id = ?")
-      .bind(projectId).first<ProjectRow>();
-    if (!project) return errorResponse(Errors.NOT_FOUND);
-
-    // Look up the owner's details from the auth worker
-    const ownerLookupRes = await env.AUTH.fetch("https://auth/lookup-by-id", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: project.owner_id }),
-    });
-    let ownerEmail = "";
-    let ownerName = "";
-    if (ownerLookupRes.ok) {
-      const ownerData = await ownerLookupRes.json<{ ok: boolean; data?: { email: string; name: string } }>();
-      if (ownerData.ok && ownerData.data) {
-        ownerEmail = ownerData.data.email;
-        ownerName = ownerData.data.name;
-      }
-    }
-
     const rows = await env.DB.prepare(
       "SELECT * FROM project_members WHERE project_id = ? ORDER BY created_at ASC",
     ).bind(projectId).all<MemberRow>();
 
-    const members = rows.results.map(r => ({
+    return okResponse(rows.results.map(r => ({
       id: r.id,
       projectId: r.project_id,
       userId: r.user_id,
@@ -73,21 +47,7 @@ export async function handleMembers(
       role: r.role,
       invitedBy: r.invited_by,
       createdAt: r.created_at,
-    }));
-
-    // Prepend owner as a synthetic entry
-    const ownerEntry: Member = {
-      id: `owner-${project.owner_id}`,
-      projectId,
-      userId: project.owner_id,
-      email: ownerEmail,
-      name: ownerName,
-      role: "owner",
-      invitedBy: project.owner_id,
-      createdAt: "",
-    };
-
-    return okResponse([ownerEntry, ...members]);
+    })));
   }
 
   // POST /projects/:id/members — admin/owner can invite
@@ -117,15 +77,7 @@ export async function handleMembers(
 
     const { userId: inviteeId, email: inviteeEmail, name: inviteeName } = lookupData.data;
 
-    // Prevent inviting the project owner
-    const project = await env.DB.prepare("SELECT owner_id FROM projects WHERE id = ?")
-      .bind(projectId).first<{ owner_id: string }>();
-    if (!project) return errorResponse(Errors.NOT_FOUND);
-    if (project.owner_id === inviteeId) {
-      return Response.json({ ok: false, error: "Cannot add the project owner as a member.", status: 409 }, { status: 409 });
-    }
-
-    // Check if already a member
+    // Check if already a member (covers the owner case too)
     const existing = await env.DB.prepare("SELECT id FROM project_members WHERE project_id = ? AND user_id = ?")
       .bind(projectId, inviteeId).first();
     if (existing) return errorResponse(Errors.CONFLICT);
@@ -146,15 +98,10 @@ export async function handleMembers(
     const body = await request.json<{ role: Role }>();
     if (!body.role || !VALID_ROLES.includes(body.role) || body.role === "owner") return errorResponse(Errors.BAD_REQUEST);
 
-    // Prevent changing the project owner's role
-    const project = await env.DB.prepare("SELECT owner_id FROM projects WHERE id = ?")
-      .bind(projectId).first<{ owner_id: string }>();
-    if (!project) return errorResponse(Errors.NOT_FOUND);
-    if (project.owner_id === targetUserId) return errorResponse(Errors.FORBIDDEN);
-
     const row = await env.DB.prepare("SELECT id, role FROM project_members WHERE project_id = ? AND user_id = ?")
       .bind(projectId, targetUserId).first<{ id: string; role: Role }>();
     if (!row) return errorResponse(Errors.NOT_FOUND);
+    if (row.role === "owner") return errorResponse(Errors.FORBIDDEN);
 
     // Admins cannot promote to admin or above
     if (callerRole === "admin" && ROLE_RANK[body.role] >= ROLE_RANK["admin"]) {
@@ -183,15 +130,10 @@ export async function handleMembers(
   if (targetUserId && request.method === "DELETE") {
     if (ROLE_RANK[callerRole] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
 
-    // Prevent removing the project owner
-    const project = await env.DB.prepare("SELECT owner_id FROM projects WHERE id = ?")
-      .bind(projectId).first<{ owner_id: string }>();
-    if (!project) return errorResponse(Errors.NOT_FOUND);
-    if (project.owner_id === targetUserId) return errorResponse(Errors.FORBIDDEN);
-
     const row = await env.DB.prepare("SELECT id, role FROM project_members WHERE project_id = ? AND user_id = ?")
       .bind(projectId, targetUserId).first<{ id: string; role: Role }>();
     if (!row) return errorResponse(Errors.NOT_FOUND);
+    if (row.role === "owner") return errorResponse(Errors.FORBIDDEN);
 
     // Admins cannot remove other admins
     if (callerRole === "admin" && ROLE_RANK[row.role] >= ROLE_RANK["admin"]) {

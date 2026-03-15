@@ -14,7 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Pencil, X, Save, Settings, Globe, Lock, Link } from "lucide-react";
-import type { DocsLayoutContext } from "@/layouts/DocsLayout";
+import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
 import { getToken } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 
@@ -93,7 +93,7 @@ export function DocPage() {
   const { projectId, docId } = useParams<{ projectId: string; docId: string }>();
   const location = useLocation();
   const navigate = useNavigate();
-  const { updateDocTitle } = useOutletContext<DocsLayoutContext>();
+  const { updateDocTitle, setBreadcrumbs } = useOutletContext<DocsLayoutContext>();
   const { toast } = useToast();
 
   const [doc, setDoc] = useState<Doc | null>(null);
@@ -117,16 +117,24 @@ export function DocPage() {
         if (json.ok && json.data) {
           setDoc(json.data);
           setMyRole(json.data.myRole ?? null);
+          const rawPath: { id: string | null; name: string }[] = location.state?.folderPath ?? [];
+          const folderPath: BreadcrumbItem[] = rawPath.map((crumb, i) => ({
+            id: crumb.id,
+            name: crumb.name,
+            onClick: () => navigate(`/projects/${projectId}`, { state: { restorePath: rawPath.slice(0, i + 1) } }),
+          }));
+          setBreadcrumbs([...folderPath, { id: docId, name: json.data.title }]);
           if (location.state?.isNew) {
             setTitleDraft(json.data.title);
             setDraft(json.data.content);
             setEditing(true);
-            navigate(location.pathname, { replace: true, state: {} });
+            navigate(location.pathname, { replace: true, state: { folderPath: location.state.folderPath } });
           }
         }
       })
       .catch(() => {})
       .finally(() => setLoading(false));
+    return () => setBreadcrumbs([]);
   }, [docId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function startEditing() {
@@ -157,6 +165,7 @@ export function DocPage() {
       if (json.ok && json.data) {
         setDoc(json.data);
         updateDocTitle(docId, json.data.title);
+        setBreadcrumbs(prev => prev.map((c, i) => i === prev.length - 1 ? { ...c, name: json.data!.title } : c));
         setEditing(false);
       } else {
         setSaveError("Failed to save. Please try again.");

@@ -1,0 +1,1 @@
+ALTER TABLE folders ADD COLUMN type TEXT NOT NULL DEFAULT 'docs';

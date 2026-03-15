@@ -2,10 +2,6 @@ import { okResponse, errorResponse, Errors, ROLE_RANK, type Session, type Doc, t
 import type { Env } from "../index";
 
 async function getCallerRole(db: D1Database, projectId: string, userId: string): Promise<Role | null> {
-  const project = await db.prepare("SELECT owner_id FROM projects WHERE id = ?")
-    .bind(projectId).first<{ owner_id: string }>();
-  if (!project) return null;
-  if (project.owner_id === userId) return "owner";
   const row = await db.prepare("SELECT role FROM project_members WHERE project_id = ? AND user_id = ?")
     .bind(projectId, userId).first<{ role: Role }>();
   return row?.role ?? null;
@@ -30,22 +26,31 @@ export async function handleDocs(
     if (role === null) return errorResponse(Errors.FORBIDDEN);
 
     const folderId = params.get("folderId");
+    const q = params.get("q");
     const docWithAuthor = `
       SELECT d.id, d.title, d.folder_id, d.author_id, d.created_at, d.updated_at,
-        COALESCE(pm.name, CASE WHEN p.owner_id = d.author_id THEN 'Owner' ELSE d.author_id END) AS author_name,
-        CASE WHEN p.owner_id = d.author_id THEN 'owner' ELSE pm.role END AS author_role
+        COALESCE(pm.name, d.author_id) AS author_name,
+        pm.role AS author_role
       FROM docs d
-      JOIN projects p ON p.id = d.project_id
       LEFT JOIN project_members pm ON pm.project_id = d.project_id AND pm.user_id = d.author_id
     `;
+
+    type DocWithAuthor = Doc & { author_name: string; author_role: string | null };
+
+    if (q) {
+      const rows = await env.DB.prepare(`${docWithAuthor} WHERE d.project_id = ? AND LOWER(d.title) LIKE LOWER(?) ORDER BY d.title ASC`)
+        .bind(projectId, `%${q}%`).all<DocWithAuthor>();
+      return okResponse(rows.results);
+    }
+
     const rows = folderId
       ? await env.DB.prepare(`${docWithAuthor} WHERE d.project_id = ? AND d.folder_id = ? ORDER BY d.title ASC`)
-          .bind(projectId, folderId).all<Doc & { author_name: string; author_role: string | null }>()
+          .bind(projectId, folderId).all<DocWithAuthor>()
       : params.has("folderId")
         ? await env.DB.prepare(`${docWithAuthor} WHERE d.project_id = ? AND d.folder_id IS NULL ORDER BY d.title ASC`)
-            .bind(projectId).all<Doc & { author_name: string; author_role: string | null }>()
+            .bind(projectId).all<DocWithAuthor>()
         : await env.DB.prepare(`${docWithAuthor} WHERE d.project_id = ? ORDER BY d.created_at DESC`)
-            .bind(projectId).all<Doc & { author_name: string; author_role: string | null }>();
+            .bind(projectId).all<DocWithAuthor>();
     return okResponse(rows.results);
   }
 

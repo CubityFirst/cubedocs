@@ -21,7 +21,7 @@ export async function handleFolders(
   const folderId = parts[0] || null;
   const params = url.searchParams;
 
-  // GET /folders?projectId=xxx&parentId=yyy
+  // GET /folders?projectId=xxx&parentId=yyy&type=docs|passwords
   if (!folderId && request.method === "GET") {
     const projectId = params.get("projectId");
     if (!projectId) return errorResponse(Errors.BAD_REQUEST);
@@ -30,18 +30,19 @@ export async function handleFolders(
     if (role === null) return errorResponse(Errors.FORBIDDEN);
 
     const parentId = params.get("parentId");
+    const type = params.get("type") ?? "docs";
     const rows = parentId
-      ? await env.DB.prepare("SELECT * FROM folders WHERE project_id = ? AND parent_id = ? ORDER BY name ASC")
-          .bind(projectId, parentId).all<Folder>()
-      : await env.DB.prepare("SELECT * FROM folders WHERE project_id = ? AND parent_id IS NULL ORDER BY name ASC")
-          .bind(projectId).all<Folder>();
+      ? await env.DB.prepare("SELECT * FROM folders WHERE project_id = ? AND parent_id = ? AND type = ? ORDER BY name ASC")
+          .bind(projectId, parentId, type).all<Folder>()
+      : await env.DB.prepare("SELECT * FROM folders WHERE project_id = ? AND parent_id IS NULL AND type = ? ORDER BY name ASC")
+          .bind(projectId, type).all<Folder>();
 
     return okResponse(rows.results);
   }
 
   // POST /folders — editor or above
   if (!folderId && request.method === "POST") {
-    const body = await request.json<{ name: string; projectId: string; parentId?: string | null }>();
+    const body = await request.json<{ name: string; projectId: string; parentId?: string | null; type?: string }>();
     if (!body.name || !body.projectId) return errorResponse(Errors.BAD_REQUEST);
 
     const role = await getCallerRole(env.DB, body.projectId, user.userId);
@@ -50,12 +51,13 @@ export async function handleFolders(
 
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
+    const type = body.type ?? "docs";
 
     await env.DB.prepare(
-      "INSERT INTO folders (id, name, project_id, parent_id, created_at) VALUES (?, ?, ?, ?, ?)",
-    ).bind(id, body.name, body.projectId, body.parentId ?? null, now).run();
+      "INSERT INTO folders (id, name, type, project_id, parent_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+    ).bind(id, body.name, type, body.projectId, body.parentId ?? null, now).run();
 
-    return okResponse({ id, name: body.name, project_id: body.projectId, parent_id: body.parentId ?? null, created_at: now }, 201);
+    return okResponse({ id, name: body.name, type, project_id: body.projectId, parent_id: body.parentId ?? null, created_at: now }, 201);
   }
 
   // PUT /folders/:id — editor or above (rename or move)

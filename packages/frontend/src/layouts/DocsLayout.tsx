@@ -16,6 +16,7 @@ import {
   LogOut,
   X,
   ChevronLeft,
+  ChevronRight,
   FileText,
   KeyRound,
   SlidersHorizontal,
@@ -33,18 +34,30 @@ interface Doc {
 
 const SECTIONS = [
   { id: "documents", label: "Documents", icon: FileText, disabled: false },
-  { id: "passwords", label: "Passwords", icon: KeyRound, disabled: true },
+  { id: "passwords", label: "Passwords", icon: KeyRound, disabled: false },
 ] as const;
+
+export interface BreadcrumbItem {
+  id: string | null;
+  name: string;
+  onClick?: () => void;
+  onDragOver?: (e: React.DragEvent) => void;
+  onDragLeave?: () => void;
+  onDrop?: (e: React.DragEvent) => void;
+  isDropTarget?: boolean;
+}
 
 export interface DocsLayoutContext {
   updateDocTitle: (docId: string, title: string) => void;
   projectName: string;
   addDoc: (doc: { id: string; title: string }) => void;
+  setBreadcrumbs: (crumbs: BreadcrumbItem[]) => void;
 }
 
 export function DocsLayout() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [docs, setDocs] = useState<Doc[]>([]);
+  const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([]);
 
   // site creation
   const [creating, setCreating] = useState(false);
@@ -166,6 +179,7 @@ export function DocsLayout() {
     updateDocTitle,
     projectName: currentProject?.name ?? "",
     addDoc,
+    setBreadcrumbs,
   };
 
   return (
@@ -216,10 +230,10 @@ export function DocsLayout() {
               {SECTIONS.map(section => (
                 <div key={section.id}>
                   {/* Section header */}
-                  {!section.disabled && section.id === "documents" ? (
+                  {!section.disabled ? (
                     <NavLink
-                      to={`/projects/${projectId}`}
-                      end
+                      to={section.id === "documents" ? `/projects/${projectId}` : `/projects/${projectId}/${section.id}`}
+                      end={section.id === "documents"}
                       className={({ isActive }) =>
                         `mb-1 flex w-full items-center gap-2 rounded-md px-2 py-1 transition-colors hover:bg-accent hover:text-foreground ${
                           isActive ? "text-foreground" : "text-muted-foreground"
@@ -232,14 +246,12 @@ export function DocsLayout() {
                       </span>
                     </NavLink>
                   ) : (
-                    <div className={`mb-1 flex items-center gap-2 px-2 ${section.disabled ? "opacity-40" : ""}`}>
+                    <div className="mb-1 flex items-center gap-2 px-2 opacity-40">
                       <section.icon className="h-3.5 w-3.5 shrink-0" />
                       <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                         {section.label}
                       </span>
-                      {section.disabled && (
-                        <Badge variant="outline" className="ml-auto text-[10px]">soon</Badge>
-                      )}
+                      <Badge variant="outline" className="ml-auto text-[10px]">soon</Badge>
                     </div>
                   )}
 
@@ -333,6 +345,34 @@ export function DocsLayout() {
 
       {/* Main content */}
       <main className="flex flex-1 flex-col overflow-hidden">
+        {/* Breadcrumb bar — always at the top */}
+        {breadcrumbs.length > 0 && (
+          <div className="shrink-0 flex items-center gap-1 px-6 py-3 border-b border-border bg-background text-sm">
+            {breadcrumbs.map((crumb, i) => {
+              const isLast = i === breadcrumbs.length - 1;
+              return (
+                <span key={i} className="flex items-center gap-1">
+                  {i > 0 && <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />}
+                  <span
+                    className={`px-1.5 py-0.5 rounded transition-colors ${
+                      isLast
+                        ? "text-foreground font-medium"
+                        : crumb.onClick
+                        ? "text-muted-foreground cursor-pointer hover:text-foreground hover:bg-accent"
+                        : "text-muted-foreground"
+                    } ${crumb.isDropTarget ? "bg-primary/15 text-primary ring-1 ring-primary/40" : ""}`}
+                    onClick={!isLast ? crumb.onClick : undefined}
+                    onDragOver={crumb.onDragOver}
+                    onDragLeave={crumb.onDragLeave}
+                    onDrop={crumb.onDrop}
+                  >
+                    {crumb.name}
+                  </span>
+                </span>
+              );
+            })}
+          </div>
+        )}
         <ScrollArea className="flex-1">
           <Outlet context={outletContext} />
         </ScrollArea>
