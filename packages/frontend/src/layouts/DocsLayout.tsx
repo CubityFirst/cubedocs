@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Outlet, useMatch, useNavigate, NavLink } from "react-router-dom";
+import { Outlet, useMatch, useNavigate, useLocation, NavLink } from "react-router-dom";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
@@ -54,12 +54,13 @@ export function DocsLayout() {
   const [creatingDoc, setCreatingDoc] = useState(false);
 
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     if (!getToken()) {
-      navigate("/login", { replace: true });
+      navigate("/login", { replace: true, state: { from: location.pathname } });
     }
-  }, [navigate]);
+  }, [navigate, location.pathname]);
   const projectMatch = useMatch("/projects/:projectId/*");
   const projectId = projectMatch?.params.projectId ?? null;
   const currentProject = projectId ? projects.find(p => p.id === projectId) ?? null : null;
