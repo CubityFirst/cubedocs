@@ -17,7 +17,7 @@ export default {
 
       // Serve static assets; fall through to index.html for SPA routing
       const assetResponse = await env.ASSETS.fetch(request);
-      if (assetResponse.status !== 404) return assetResponse;
+      if (assetResponse.ok) return assetResponse;
 
       return await env.ASSETS.fetch(new Request(new URL("/index.html", request.url).toString(), request));
     } catch {

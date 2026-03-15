@@ -12,7 +12,7 @@ import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Pencil, X, Save, Settings, Globe, Lock, Link } from "lucide-react";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
 import { getToken } from "@/lib/auth";
@@ -303,30 +303,41 @@ export function DocPage() {
               <Button variant="ghost" size="icon" onClick={startEditing} title="Edit document">
                 <Pencil className="h-4 w-4" />
               </Button>
-              <Popover>
-                <PopoverTrigger asChild>
+              <Dialog>
+                <DialogTrigger asChild>
                   <Button variant="ghost" size="icon" title="Document settings">
                     <Settings className="h-4 w-4" />
                   </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-64 p-4" align="end">
-                  <div className="flex flex-col gap-4">
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>Document Settings</DialogTitle>
+                  </DialogHeader>
+                  <div className="flex flex-col gap-6 py-2">
                     <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        {doc.published_at ? (
-                          <Globe className="h-4 w-4 text-green-600 dark:text-green-400" />
-                        ) : (
-                          <Lock className="h-4 w-4 text-muted-foreground" />
-                        )}
-                        <Label className="text-sm font-medium cursor-pointer">
-                          {doc.published_at ? "Published" : "Publish"}
-                        </Label>
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-2">
+                          {doc.published_at ? (
+                            <Globe className="h-4 w-4 text-green-600 dark:text-green-400" />
+                          ) : (
+                            <Lock className="h-4 w-4 text-muted-foreground" />
+                          )}
+                          <Label className="text-sm font-medium">
+                            {doc.published_at ? "Published" : "Publish"}
+                          </Label>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {doc.published_at
+                            ? "This document is publicly accessible via its share link."
+                            : "Make this document publicly accessible via a share link."}
+                        </p>
                       </div>
                       <Button
                         variant={doc.published_at ? "outline" : "default"}
                         size="sm"
                         disabled={togglingPublish}
                         onClick={handleTogglePublish}
+                        className="shrink-0"
                       >
                         {togglingPublish ? "Saving…" : doc.published_at ? "Unpublish" : "Publish"}
                       </Button>
@@ -335,13 +346,19 @@ export function DocPage() {
                       <>
                         <Separator />
                         <div className="flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-2">
-                            <Link className="h-4 w-4 text-muted-foreground" />
-                            <Label className="text-sm font-medium cursor-pointer">Share link</Label>
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-2">
+                              <Link className="h-4 w-4 text-muted-foreground" />
+                              <Label className="text-sm font-medium">Share link</Label>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              Copy the public URL to share this document with others.
+                            </p>
                           </div>
                           <Button
                             variant="outline"
                             size="sm"
+                            className="shrink-0"
                             onClick={() => {
                               navigator.clipboard.writeText(`${window.location.origin}/s/${projectId}/${docId}`);
                               toast({ title: "Link copied to clipboard." });
@@ -354,9 +371,14 @@ export function DocPage() {
                     )}
                     <Separator />
                     <div className="flex items-center justify-between gap-3">
-                      <Label htmlFor="show-heading" className="text-sm font-medium cursor-pointer">
-                        Show page heading
-                      </Label>
+                      <div className="flex flex-col gap-1">
+                        <Label htmlFor="show-heading" className="text-sm font-medium cursor-pointer">
+                          Show page heading
+                        </Label>
+                        <p className="text-xs text-muted-foreground">
+                          Display the document title as a heading at the top of the page.
+                        </p>
+                      </div>
                       <Switch
                         id="show-heading"
                         checked={doc.show_heading !== 0}
@@ -364,8 +386,8 @@ export function DocPage() {
                       />
                     </div>
                   </div>
-                </PopoverContent>
-              </Popover>
+                </DialogContent>
+              </Dialog>
             </div>
           )}
 

@@ -76,13 +76,13 @@ export function DocsLayout() {
       .then(({ status, json }) => {
         if (status === 401) {
           clearToken();
-          navigate("/login", { replace: true });
+          navigate("/login", { replace: true, state: { from: location.pathname } });
           return;
         }
         if (json.ok && json.data) setProjects(json.data);
       })
       .catch(() => {});
-  }, [navigate]);
+  }, [navigate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!projectId) { setDocs([]); return; }
@@ -96,13 +96,13 @@ export function DocsLayout() {
       .then(({ status, json }) => {
         if (status === 401) {
           clearToken();
-          navigate("/login", { replace: true });
+          navigate("/login", { replace: true, state: { from: location.pathname } });
           return;
         }
         if (json.ok && json.data) setDocs(json.data);
       })
       .catch(() => {});
-  }, [navigate, projectId]);
+  }, [navigate, projectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
