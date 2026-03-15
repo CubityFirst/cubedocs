@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { ResizableTable, ResizableTableRow } from "@/components/ui/resizable-table";
 import { getToken } from "@/lib/auth";
 
 interface FolderItem {
@@ -187,7 +187,6 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
   const [revealFormPassword, setRevealFormPassword] = useState(false);
 
   const [copiedField, setCopiedField] = useState<string | null>(null);
-  const [colSizes, setColSizes] = useState([28, 18, 20, 18, 16]);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   // Drag state
