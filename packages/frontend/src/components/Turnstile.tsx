@@ -34,6 +34,7 @@ export function Turnstile({ onVerify, onExpire }: TurnstileProps) {
 
   useEffect(() => {
     const sitekey = import.meta.env.VITE_TURNSTILE_SITE_KEY as string;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
 
     function render() {
       if (!containerRef.current) return;
@@ -42,25 +43,27 @@ export function Turnstile({ onVerify, onExpire }: TurnstileProps) {
         callback: (token) => onVerifyRef.current(token),
         "expired-callback": () => onExpireRef.current?.(),
         "error-callback": () => onExpireRef.current?.(),
-        theme: "auto",
+        theme: "dark",
       });
     }
 
     if (window.turnstile) {
       render();
     } else {
-      const interval = setInterval(() => {
+      intervalId = setInterval(() => {
         if (window.turnstile) {
-          clearInterval(interval);
+          clearInterval(intervalId!);
+          intervalId = null;
           render();
         }
       }, 100);
-      return () => clearInterval(interval);
     }
 
     return () => {
+      if (intervalId !== null) clearInterval(intervalId);
       if (widgetIdRef.current) {
         window.turnstile.remove(widgetIdRef.current);
+        widgetIdRef.current = null;
       }
     };
   }, []);
