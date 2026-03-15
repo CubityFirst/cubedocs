@@ -202,10 +202,36 @@ export function DocsLayout() {
       {/* Sidebar */}
       <div className="relative shrink-0">
       <aside className={cn("flex h-full flex-col border-r border-border transition-[width] duration-200 overflow-hidden", sidebarOpen ? "w-64" : "w-0")}>
-        {/* Logo */}
+        {/* Logo / Site header */}
         <div className="flex h-14 items-center gap-2 px-4">
-          <BookOpen className="h-5 w-5 text-primary" />
-          <span className="font-semibold tracking-tight">CubeDocs</span>
+          {projectId && currentProject ? (
+            <>
+              <button
+                onClick={() => navigate("/dashboard")}
+                className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                title="All sites"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <span className="flex-1 truncate font-semibold tracking-tight">{currentProject.name}</span>
+              <NavLink
+                to={`/projects/${projectId}/settings`}
+                className={({ isActive }) =>
+                  `shrink-0 rounded-md p-1 transition-colors hover:bg-accent hover:text-foreground ${
+                    isActive ? "bg-accent text-foreground" : "text-muted-foreground"
+                  }`
+                }
+                title="Site Settings"
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+              </NavLink>
+            </>
+          ) : (
+            <>
+              <BookOpen className="h-5 w-5 text-primary" />
+              <span className="font-semibold tracking-tight">CubeDocs</span>
+            </>
+          )}
         </div>
 
         <Separator />
@@ -213,34 +239,6 @@ export function DocsLayout() {
         {projectId ? (
           /* ── Project sidebar ── */
           <ScrollArea className="flex-1 px-2 py-3">
-            {/* Back + project name */}
-            <button
-              onClick={() => navigate("/dashboard")}
-              className="mb-3 flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            >
-              <ChevronLeft className="h-3.5 w-3.5" />
-              All sites
-            </button>
-
-            {currentProject && (
-              <div className="mb-3 flex items-center gap-1 px-2">
-                <p className="flex-1 truncate text-sm font-semibold">{currentProject.name}</p>
-                <NavLink
-                  to={`/projects/${projectId}/settings`}
-                  className={({ isActive }) =>
-                    `shrink-0 rounded-md p-1 transition-colors hover:bg-accent hover:text-foreground ${
-                      isActive ? "bg-accent text-foreground" : "text-muted-foreground"
-                    }`
-                  }
-                  title="Site Settings"
-                >
-                  <SlidersHorizontal className="h-3.5 w-3.5" />
-                </NavLink>
-              </div>
-            )}
-
-            <Separator className="mb-3" />
-
             {/* Sections */}
             <nav className="flex flex-col gap-4">
               {SECTIONS.map(section => (
