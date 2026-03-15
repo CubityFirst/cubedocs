@@ -1,17 +1,12 @@
 import { okResponse, errorResponse, Errors } from "../lib";
 import { verifyPassword } from "../password";
 import { signJwt } from "../jwt";
-import { verifyTurnstile } from "../turnstile";
 import type { Env } from "../index";
 
 export async function handleLogin(request: Request, env: Env): Promise<Response> {
   const body = await request.json<{ email: string; password: string; turnstileToken: string }>();
 
   if (!body.email || !body.password) return errorResponse(Errors.BAD_REQUEST);
-
-  if (!body.turnstileToken || !(await verifyTurnstile(body.turnstileToken, env.TURNSTILE_SECRET))) {
-    return errorResponse(Errors.BAD_REQUEST);
-  }
 
   const row = await env.DB.prepare(
     "SELECT id, email, name, password_hash, created_at FROM users WHERE email = ?",

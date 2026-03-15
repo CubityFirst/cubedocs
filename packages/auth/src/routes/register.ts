@@ -2,17 +2,12 @@ import zxcvbn from "zxcvbn";
 import { okResponse, errorResponse, Errors } from "../lib";
 import { hashPassword } from "../password";
 import { signJwt } from "../jwt";
-import { verifyTurnstile } from "../turnstile";
 import type { Env } from "../index";
 
 export async function handleRegister(request: Request, env: Env): Promise<Response> {
   const body = await request.json<{ email: string; password: string; name: string; turnstileToken: string }>();
 
   if (!body.email || !body.password || !body.name) {
-    return errorResponse(Errors.BAD_REQUEST);
-  }
-
-  if (!body.turnstileToken || !(await verifyTurnstile(body.turnstileToken, env.TURNSTILE_SECRET))) {
     return errorResponse(Errors.BAD_REQUEST);
   }
 
