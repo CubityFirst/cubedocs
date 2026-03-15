@@ -126,7 +126,7 @@ export function ResizableTable({ columns, checkboxColumn = true, storageKey, chi
         } else if (seg.constrained) {
           style[`--seg-${seg.segIdx}-width`] = `${seg.minPx}px`;
         } else {
-          const segTotal = seg.cols.reduce((s, c) => s + c.defaultSize, 0);
+          const segTotal = seg.cols.reduce((s, c) => s + c.col.defaultSize, 0);
           style[`--seg-${seg.segIdx}-width`] = `${(segTotal / totalResizable) * 100}%`;
         }
       }
@@ -135,7 +135,7 @@ export function ResizableTable({ columns, checkboxColumn = true, storageKey, chi
         // Single constrained column always fills 100% of its segment
         style[`--col-${seg.cols[0].idx}`] = "100%";
       } else {
-        const segColTotal = seg.cols.reduce((s, c) => s + c.defaultSize, 0);
+        const segColTotal = seg.cols.reduce((s, c) => s + c.col.defaultSize, 0);
         for (const { col, idx } of seg.cols) {
           style[`--col-${idx}`] = saved[`--col-${idx}`] ?? `${(col.defaultSize / segColTotal) * 100}%`;
         }
@@ -147,7 +147,7 @@ export function ResizableTable({ columns, checkboxColumn = true, storageKey, chi
 
   const segDefaultLayout = useCallback((seg: ResizableSegment): Layout => {
     const layout: Layout = {};
-    const segColTotal = seg.cols.reduce((s, c) => s + c.defaultSize, 0);
+    const segColTotal = seg.cols.reduce((s, c) => s + c.col.defaultSize, 0);
     for (const { col, idx } of seg.cols) {
       const savedVal = saved[`--col-${idx}`];
       const pct = savedVal ? parseFloat(savedVal) : (segColTotal > 0 ? (col.defaultSize / segColTotal) * 100 : 100);
