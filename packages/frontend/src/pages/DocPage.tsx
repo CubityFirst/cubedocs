@@ -10,9 +10,13 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Pencil, X, Save, Globe, Lock, Settings } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Pencil, X, Save, Settings, Globe, Lock } from "lucide-react";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
 import { getToken } from "@/lib/auth";
+import { useToast } from "@/hooks/use-toast";
 
 function toId(text: string): string {
   return text.toLowerCase().replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-");
@@ -81,6 +85,7 @@ interface Doc {
   content: string;
   updatedAt: string;
   published_at: string | null;
+  show_heading: number;
   myRole?: string;
 }
 
@@ -89,6 +94,7 @@ export function DocPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const { updateDocTitle } = useOutletContext<DocsLayoutContext>();
+  const { toast } = useToast();
 
   const [doc, setDoc] = useState<Doc | null>(null);
   const [myRole, setMyRole] = useState<string | null>(null);
@@ -176,11 +182,28 @@ export function DocPage() {
       const json = await res.json() as { ok: boolean; data?: Doc };
       if (json.ok && json.data) {
         setDoc(json.data);
+        toast({ title: json.data.published_at ? "Document published." : "Document unpublished." });
       }
     } catch {
-      // fail silently
+      toast({ title: "Could not update publish state.", variant: "destructive" });
     } finally {
       setTogglingPublish(false);
+    }
+  }
+
+  async function handleToggleHeading(show: boolean) {
+    if (!docId || !doc) return;
+    try {
+      const token = getToken();
+      const res = await fetch(`/api/docs/${docId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ showHeading: show }),
+      });
+      const json = await res.json() as { ok: boolean; data?: Doc };
+      if (json.ok && json.data) setDoc(json.data);
+    } catch {
+      // fail silently
     }
   }
 
@@ -280,19 +303,53 @@ export function DocPage() {
               <Button variant="ghost" size="icon" onClick={startEditing} title="Edit document">
                 <Pencil className="h-4 w-4" />
               </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => navigate(`/projects/${projectId}/docs/${docId}/settings`)}
-                title="Document settings"
-              >
-                <Settings className="h-4 w-4" />
-              </Button>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="ghost" size="icon" title="Document settings">
+                    <Settings className="h-4 w-4" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-64 p-4" align="end">
+                  <div className="flex flex-col gap-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        {doc.published_at ? (
+                          <Globe className="h-4 w-4 text-green-600 dark:text-green-400" />
+                        ) : (
+                          <Lock className="h-4 w-4 text-muted-foreground" />
+                        )}
+                        <Label className="text-sm font-medium cursor-pointer">
+                          {doc.published_at ? "Published" : "Publish"}
+                        </Label>
+                      </div>
+                      <Button
+                        variant={doc.published_at ? "outline" : "default"}
+                        size="sm"
+                        disabled={togglingPublish}
+                        onClick={handleTogglePublish}
+                      >
+                        {togglingPublish ? "Saving…" : doc.published_at ? "Unpublish" : "Publish"}
+                      </Button>
+                    </div>
+                    <Separator />
+                    <div className="flex items-center justify-between gap-3">
+                      <Label htmlFor="show-heading" className="text-sm font-medium cursor-pointer">
+                        Show page heading
+                      </Label>
+                      <Switch
+                        id="show-heading"
+                        checked={doc.show_heading !== 0}
+                        onCheckedChange={handleToggleHeading}
+                      />
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
           )}
 
           <article className="prose prose-neutral dark:prose-invert max-w-none">
-            <h1>{doc.title}</h1>
+            {doc.show_heading !== 0 && <h1>{doc.title}</h1>}
             {doc.content.trim() ? (
               <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>{doc.content}</ReactMarkdown>
             ) : (
@@ -302,28 +359,6 @@ export function DocPage() {
             )}
           </article>
 
-          <Separator className="mt-16" />
-          <div className="flex items-center gap-3 pt-6">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={togglingPublish}
-              onClick={handleTogglePublish}
-              className="gap-2"
-            >
-              {doc.published_at ? (
-                <>
-                  <Globe className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
-                  Published
-                </>
-              ) : (
-                <>
-                  <Lock className="h-3.5 w-3.5 text-muted-foreground" />
-                  Publish
-                </>
-              )}
-            </Button>
-          </div>
         </div>
       </div>
 

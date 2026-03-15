@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { getToken } from "@/lib/auth";
-import { Globe, Lock } from "lucide-react";
+import { Globe, Link, Lock } from "lucide-react";
 
 type Role = "viewer" | "editor" | "admin" | "owner";
 
@@ -362,18 +362,34 @@ export function SiteSettingsPage() {
                   </p>
                 </div>
               </div>
-              <Button
-                variant={project.published_at ? "outline" : "default"}
-                size="sm"
-                disabled={togglingPublish}
-                onClick={handleTogglePublish}
-              >
-                {togglingPublish
-                  ? "Saving…"
-                  : project.published_at
-                  ? "Unpublish"
-                  : "Publish site"}
-              </Button>
+              <div className="flex items-center gap-2">
+                {project.published_at && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => {
+                      const url = `${window.location.origin}/s/${projectId}`;
+                      navigator.clipboard.writeText(url);
+                      toast({ title: "Link copied to clipboard." });
+                    }}
+                  >
+                    <Link className="h-4 w-4" />
+                  </Button>
+                )}
+                <Button
+                  variant={project.published_at ? "outline" : "default"}
+                  size="sm"
+                  disabled={togglingPublish}
+                  onClick={handleTogglePublish}
+                >
+                  {togglingPublish
+                    ? "Saving…"
+                    : project.published_at
+                    ? "Unpublish"
+                    : "Publish site"}
+                </Button>
+              </div>
             </div>
           </div>
         </>

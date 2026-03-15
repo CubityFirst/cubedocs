@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS docs (
   project_id   TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   author_id    TEXT NOT NULL,
   published_at TEXT,
+  show_heading INTEGER NOT NULL DEFAULT 1,
   created_at   TEXT NOT NULL,
   updated_at   TEXT NOT NULL
 );

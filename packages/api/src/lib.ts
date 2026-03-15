@@ -11,6 +11,7 @@ export interface Doc {
   projectId: string;
   authorId: string;
   publishedAt: string | null;
+  show_heading: number;
   createdAt: string;
   updatedAt: string;
 }

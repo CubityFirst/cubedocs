@@ -81,16 +81,18 @@ export async function handleDocs(
     if (role === null) return errorResponse(Errors.FORBIDDEN);
     if (ROLE_RANK[role] < ROLE_RANK["editor"]) return errorResponse(Errors.FORBIDDEN);
 
-    const body = await request.json<Partial<{ title: string; content: string; publishedAt: string | null }>>();
+    const body = await request.json<Partial<{ title: string; content: string; publishedAt: string | null; showHeading: boolean }>>();
     const now = new Date().toISOString();
 
     if (body.content !== undefined) {
       await env.ASSETS.put(`${doc.project_id}/${docId}`, body.content);
     }
 
+    const showHeading = body.showHeading !== undefined ? (body.showHeading ? 1 : 0) : null;
+
     await env.DB.prepare(
-      "UPDATE docs SET title = COALESCE(?, title), published_at = ?, updated_at = ? WHERE id = ?",
-    ).bind(body.title ?? null, body.publishedAt ?? null, now, docId).run();
+      "UPDATE docs SET title = COALESCE(?, title), published_at = ?, show_heading = COALESCE(?, show_heading), updated_at = ? WHERE id = ?",
+    ).bind(body.title ?? null, body.publishedAt ?? null, showHeading, now, docId).run();
 
     const updated = await env.DB.prepare("SELECT * FROM docs WHERE id = ?").bind(docId).first<Doc>();
     if (!updated) return errorResponse(Errors.NOT_FOUND);
