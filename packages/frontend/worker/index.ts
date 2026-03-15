@@ -19,7 +19,7 @@ export default {
       const assetResponse = await env.ASSETS.fetch(request);
       if (assetResponse.ok) return assetResponse;
 
-      return await env.ASSETS.fetch(new Request(new URL("/index.html", request.url).toString(), request));
+      return await env.ASSETS.fetch(new Request(new URL("/", request.url).toString(), request));
     } catch {
       return new Response("404 Not Found", { status: 404, headers: { "Content-Type": "text/plain" } });
     }
