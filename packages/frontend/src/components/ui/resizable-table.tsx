@@ -1,11 +1,12 @@
 import { useRef } from "react";
 import { cn } from "@/lib/utils";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import type { Layout } from "react-resizable-panels";
 
 export interface ColumnDef {
   label: string;
-  defaultSize: number;
-  minSize?: number;
+  defaultSize: number; // percentage 0-100
+  minSize?: number;    // percentage 0-100
 }
 
 export interface CellDef {
@@ -29,15 +30,21 @@ export function ResizableTable({ columns, checkboxColumn = true, children }: Res
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Set initial CSS custom properties so rows are sized correctly on first render.
+  // React supports CSS custom property keys in style props (keys starting with --).
   const initialStyle = columns.reduce((acc, col, i) => ({
     ...acc,
     [`--col-${i}`]: `${col.defaultSize}%`,
   }), {} as React.CSSProperties);
 
-  const handleLayout = (sizes: number[]) => {
+  // onLayoutChange gives us a { [panelId]: percentage } map.
+  // Panels are given ids col-0, col-1, … so we can look them up by index.
+  const handleLayoutChange = (layout: Layout) => {
     const el = containerRef.current;
     if (!el) return;
-    sizes.forEach((size, i) => el.style.setProperty(`--col-${i}`, `${size}%`));
+    columns.forEach((_, i) => {
+      const size = layout[`col-${i}`];
+      if (size != null) el.style.setProperty(`--col-${i}`, `${size}%`);
+    });
   };
 
   return (
@@ -45,10 +52,16 @@ export function ResizableTable({ columns, checkboxColumn = true, children }: Res
       {/* Header — resize handles live only here */}
       <div className="flex items-center bg-muted/50 border-b h-10">
         {checkboxColumn && <div className="w-10 shrink-0" />}
-        <ResizablePanelGroup direction="horizontal" className="flex-1 h-full" onLayout={handleLayout}>
+        {/* orientation defaults to "horizontal" in v4; omitting it is fine */}
+        <ResizablePanelGroup className="flex-1 h-full" onLayoutChange={handleLayoutChange}>
           {columns.flatMap((col, i) => [
             i > 0 ? <ResizableHandle key={`h${i}`} /> : null,
-            <ResizablePanel key={`p${i}`} defaultSize={col.defaultSize} minSize={col.minSize ?? 8}>
+            <ResizablePanel
+              key={`p${i}`}
+              id={`col-${i}`}
+              defaultSize={`${col.defaultSize}%`}
+              minSize={`${col.minSize ?? 8}%`}
+            >
               <div className="flex items-center h-full px-3 text-xs font-medium text-muted-foreground">
                 {col.label}
               </div>
@@ -104,7 +117,7 @@ export function ResizableTableRow({
           <div
             key={i}
             style={{ width: `var(--col-${i})` }}
-            className={cn("flex items-center overflow-hidden", cell.className ?? "px-3")}
+            className={cn("flex items-center overflow-hidden shrink-0", cell.className ?? "px-3")}
             onClick={cell.onClick}
           >
             {cell.content}

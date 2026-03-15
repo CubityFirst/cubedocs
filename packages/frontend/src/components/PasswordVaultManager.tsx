@@ -80,7 +80,7 @@ async function computeTOTP(secret: string): Promise<string> {
   const step = Math.floor(Date.now() / 1000 / 30);
   const msg = new ArrayBuffer(8);
   new DataView(msg).setUint32(4, step, false);
-  const key = await crypto.subtle.importKey("raw", keyBytes, { name: "HMAC", hash: "SHA-1" }, false, ["sign"]);
+  const key = await crypto.subtle.importKey("raw", keyBytes.buffer.slice(keyBytes.byteOffset, keyBytes.byteOffset + keyBytes.byteLength) as ArrayBuffer, { name: "HMAC", hash: "SHA-1" }, false, ["sign"]);
   const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, msg));
   const off = sig[19] & 0xf;
   const code = ((sig[off] & 0x7f) << 24 | sig[off + 1] << 16 | sig[off + 2] << 8 | sig[off + 3]) % 1_000_000;

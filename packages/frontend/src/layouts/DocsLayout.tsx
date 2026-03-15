@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type Dispatch, type SetStateAction } from "react";
 import { Outlet, useMatch, useNavigate, useLocation, NavLink } from "react-router-dom";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -51,7 +51,7 @@ export interface DocsLayoutContext {
   updateDocTitle: (docId: string, title: string) => void;
   projectName: string;
   addDoc: (doc: { id: string; title: string }) => void;
-  setBreadcrumbs: (crumbs: BreadcrumbItem[]) => void;
+  setBreadcrumbs: Dispatch<SetStateAction<BreadcrumbItem[]>>;
 }
 
 export function DocsLayout() {
