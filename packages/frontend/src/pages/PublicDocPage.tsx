@@ -7,7 +7,7 @@ import { Callout, type CalloutType } from "@/components/Callout";
 import { MarkdownCode } from "@/components/CodeBlock";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { BookOpen, FileText } from "lucide-react";
+import { BookOpen, FileText, Folder } from "lucide-react";
 
 function toId(text: string): string {
   return text.toLowerCase().replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-");
@@ -73,6 +73,13 @@ const markdownComponents = {
 interface NavDoc {
   id: string;
   title: string;
+  folder_id: string | null;
+}
+
+interface NavFolder {
+  id: string;
+  name: string;
+  parent_id: string | null;
 }
 
 interface PublicData {
@@ -80,6 +87,56 @@ interface PublicData {
   sitePublished: boolean;
   project: { id: string; name: string };
   docs: NavDoc[] | null;
+  folders: NavFolder[] | null;
+}
+
+function NavTree({
+  projectId,
+  folders,
+  docs,
+  parentId = null,
+  depth = 0,
+}: {
+  projectId: string;
+  folders: NavFolder[];
+  docs: NavDoc[];
+  parentId?: string | null;
+  depth?: number;
+}) {
+  const childFolders = folders.filter(f => f.parent_id === parentId);
+  const childDocs = docs.filter(d => d.folder_id === parentId);
+
+  return (
+    <>
+      {childFolders.map(folder => (
+        <div key={folder.id}>
+          <div
+            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground"
+            style={{ paddingLeft: `${0.5 + depth * 0.75}rem` }}
+          >
+            <Folder className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate font-medium">{folder.name}</span>
+          </div>
+          <NavTree projectId={projectId} folders={folders} docs={docs} parentId={folder.id} depth={depth + 1} />
+        </div>
+      ))}
+      {childDocs.map(doc => (
+        <NavLink
+          key={doc.id}
+          to={`/s/${projectId}/${doc.id}`}
+          className={({ isActive }) =>
+            `flex items-center gap-2 rounded-md py-1.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground ${
+              isActive ? "bg-accent text-accent-foreground font-medium" : "text-foreground/80"
+            }`
+          }
+          style={{ paddingLeft: `${1 + depth * 0.75}rem`, paddingRight: "0.5rem" }}
+        >
+          <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <span className="truncate">{doc.title}</span>
+        </NavLink>
+      ))}
+    </>
+  );
 }
 
 export function PublicDocPage() {
@@ -157,20 +214,11 @@ export function PublicDocPage() {
           <Separator />
           <ScrollArea className="flex-1 px-2 py-3">
             <nav className="flex flex-col gap-0.5">
-              {data.docs!.map(doc => (
-                <NavLink
-                  key={doc.id}
-                  to={`/s/${data.project.id}/${doc.id}`}
-                  className={({ isActive }) =>
-                    `flex items-center gap-2 rounded-md px-4 py-1.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground ${
-                      isActive ? "bg-accent text-accent-foreground font-medium" : "text-foreground/80"
-                    }`
-                  }
-                >
-                  <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <span className="truncate">{doc.title}</span>
-                </NavLink>
-              ))}
+              <NavTree
+                projectId={data.project.id}
+                folders={data.folders ?? []}
+                docs={data.docs!}
+              />
             </nav>
           </ScrollArea>
         </aside>

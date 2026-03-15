@@ -11,7 +11,14 @@ interface PublicProject {
 interface PublicDoc {
   id: string;
   title: string;
+  folder_id: string | null;
   published_at: string | null;
+}
+
+interface PublicFolder {
+  id: string;
+  name: string;
+  parent_id: string | null;
 }
 
 export async function handlePublic(
@@ -32,10 +39,14 @@ export async function handlePublic(
     if (!project) return errorResponse(Errors.NOT_FOUND);
 
     const docs = await env.DB.prepare(
-      "SELECT id, title FROM docs WHERE project_id = ? ORDER BY created_at ASC",
-    ).bind(project.id).all<Pick<PublicDoc, "id" | "title">>();
+      "SELECT id, title, folder_id FROM docs WHERE project_id = ? ORDER BY created_at ASC",
+    ).bind(project.id).all<Pick<PublicDoc, "id" | "title" | "folder_id">>();
 
-    return okResponse({ ...project, docs: docs.results });
+    const folders = await env.DB.prepare(
+      "SELECT id, name, parent_id FROM folders WHERE project_id = ? ORDER BY name ASC",
+    ).bind(project.id).all<PublicFolder>();
+
+    return okResponse({ ...project, docs: docs.results, folders: folders.results });
   }
 
   // /public/docs/:projectId/:docId
@@ -60,12 +71,18 @@ export async function handlePublic(
     const r2Object = await env.ASSETS.get(`${projectId}/${docId}`);
     const content = r2Object ? await r2Object.text() : "";
 
-    let docs: Pick<PublicDoc, "id" | "title">[] | null = null;
+    let docs: Pick<PublicDoc, "id" | "title" | "folder_id">[] | null = null;
+    let folders: PublicFolder[] | null = null;
     if (sitePublished) {
       const docsResult = await env.DB.prepare(
-        "SELECT id, title FROM docs WHERE project_id = ? ORDER BY created_at ASC",
-      ).bind(projectId).all<Pick<PublicDoc, "id" | "title">>();
+        "SELECT id, title, folder_id FROM docs WHERE project_id = ? ORDER BY created_at ASC",
+      ).bind(projectId).all<Pick<PublicDoc, "id" | "title" | "folder_id">>();
       docs = docsResult.results;
+
+      const foldersResult = await env.DB.prepare(
+        "SELECT id, name, parent_id FROM folders WHERE project_id = ? ORDER BY name ASC",
+      ).bind(projectId).all<PublicFolder>();
+      folders = foldersResult.results;
     }
 
     return okResponse({
@@ -73,6 +90,7 @@ export async function handlePublic(
       sitePublished,
       project: { id: project.id, name: project.name },
       docs,
+      folders,
     });
   }
 

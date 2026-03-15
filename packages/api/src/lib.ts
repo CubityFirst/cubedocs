@@ -4,6 +4,14 @@ export interface Session {
   expiresAt: number;
 }
 
+export interface Folder {
+  id: string;
+  name: string;
+  project_id: string;
+  parent_id: string | null;
+  created_at: string;
+}
+
 export interface Doc {
   id: string;
   title: string;

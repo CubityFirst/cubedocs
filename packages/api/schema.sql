@@ -31,7 +31,17 @@ CREATE TABLE IF NOT EXISTS project_members (
   UNIQUE(project_id, user_id)
 );
 
+CREATE TABLE IF NOT EXISTS folders (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  parent_id  TEXT REFERENCES folders(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_docs_project ON docs(project_id);
+CREATE INDEX IF NOT EXISTS idx_docs_folder ON docs(folder_id);
 CREATE INDEX IF NOT EXISTS idx_projects_owner ON projects(owner_id);
 CREATE INDEX IF NOT EXISTS idx_members_project ON project_members(project_id);
 CREATE INDEX IF NOT EXISTS idx_members_user ON project_members(user_id);
+CREATE INDEX IF NOT EXISTS idx_folders_project ON folders(project_id);

@@ -2,6 +2,7 @@ import { errorResponse, Errors } from "./lib";
 import { authenticate } from "./auth";
 import { handleProjects } from "./routes/projects";
 import { handleDocs } from "./routes/docs";
+import { handleFolders } from "./routes/folders";
 import { handleMembers } from "./routes/members";
 import { handlePublic } from "./routes/public";
 
@@ -43,6 +44,10 @@ export default {
         const user = await authenticate(request, env);
         if (!user) return addCorsHeaders(errorResponse(Errors.UNAUTHORIZED));
         response = await handleDocs(request, env, user, url);
+      } else if (url.pathname.startsWith("/folders")) {
+        const user = await authenticate(request, env);
+        if (!user) return addCorsHeaders(errorResponse(Errors.UNAUTHORIZED));
+        response = await handleFolders(request, env, user, url);
       } else {
         response = errorResponse(Errors.NOT_FOUND);
       }

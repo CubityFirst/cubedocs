@@ -38,6 +38,8 @@ const SECTIONS = [
 
 export interface DocsLayoutContext {
   updateDocTitle: (docId: string, title: string) => void;
+  projectName: string;
+  addDoc: (doc: { id: string; title: string }) => void;
 }
 
 export function DocsLayout() {
@@ -156,7 +158,15 @@ export function DocsLayout() {
     setDocs(prev => prev.map(d => d.id === docId ? { ...d, title } : d));
   }
 
-  const outletContext: DocsLayoutContext = { updateDocTitle };
+  function addDoc(doc: { id: string; title: string }) {
+    setDocs(prev => prev.some(d => d.id === doc.id) ? prev : [...prev, doc]);
+  }
+
+  const outletContext: DocsLayoutContext = {
+    updateDocTitle,
+    projectName: currentProject?.name ?? "",
+    addDoc,
+  };
 
   return (
     <div className="flex h-screen bg-background text-foreground">
@@ -183,23 +193,21 @@ export function DocsLayout() {
             </button>
 
             {currentProject && (
-              <p className="mb-3 truncate px-2 text-sm font-semibold">{currentProject.name}</p>
+              <div className="mb-3 flex items-center gap-1 px-2">
+                <p className="flex-1 truncate text-sm font-semibold">{currentProject.name}</p>
+                <NavLink
+                  to={`/projects/${projectId}/settings`}
+                  className={({ isActive }) =>
+                    `shrink-0 rounded-md p-1 transition-colors hover:bg-accent hover:text-foreground ${
+                      isActive ? "bg-accent text-foreground" : "text-muted-foreground"
+                    }`
+                  }
+                  title="Site Settings"
+                >
+                  <SlidersHorizontal className="h-3.5 w-3.5" />
+                </NavLink>
+              </div>
             )}
-
-            <Separator className="mb-3" />
-
-            {/* Site settings link */}
-            <NavLink
-              to={`/projects/${projectId}/settings`}
-              className={({ isActive }) =>
-                `mb-3 flex items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-accent hover:text-foreground ${
-                  isActive ? "bg-accent text-foreground font-medium" : "text-muted-foreground"
-                }`
-              }
-            >
-              <SlidersHorizontal className="h-3.5 w-3.5" />
-              Site Settings
-            </NavLink>
 
             <Separator className="mb-3" />
 
@@ -208,49 +216,33 @@ export function DocsLayout() {
               {SECTIONS.map(section => (
                 <div key={section.id}>
                   {/* Section header */}
-                  <div className={`mb-1 flex items-center gap-2 px-2 ${section.disabled ? "opacity-40" : ""}`}>
-                    <section.icon className="h-3.5 w-3.5 shrink-0" />
-                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      {section.label}
-                    </span>
-                    {section.disabled && (
-                      <Badge variant="outline" className="ml-auto text-[10px]">soon</Badge>
-                    )}
-                  </div>
-
-                  {/* Section content */}
-                  {!section.disabled && section.id === "documents" && (
-                    <div className="flex flex-col gap-0.5">
-                      {docs.length === 0 ? (
-                        <p className="px-4 py-2 text-xs text-muted-foreground/60">No documents yet</p>
-                      ) : (
-                        docs.map(doc => (
-                          <NavLink
-                            key={doc.id}
-                            to={`/projects/${projectId}/docs/${doc.id}`}
-                            className={({ isActive }) =>
-                              `flex items-center gap-2 rounded-md px-4 py-1.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground ${
-                                isActive ? "bg-accent text-accent-foreground font-medium" : "text-foreground/80"
-                              }`
-                            }
-                          >
-                            <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                            <span className="truncate">{doc.title}</span>
-                          </NavLink>
-                        ))
+                  {!section.disabled && section.id === "documents" ? (
+                    <NavLink
+                      to={`/projects/${projectId}`}
+                      end
+                      className={({ isActive }) =>
+                        `mb-1 flex w-full items-center gap-2 rounded-md px-2 py-1 transition-colors hover:bg-accent hover:text-foreground ${
+                          isActive ? "text-foreground" : "text-muted-foreground"
+                        }`
+                      }
+                    >
+                      <section.icon className="h-3.5 w-3.5 shrink-0" />
+                      <span className="text-xs font-semibold uppercase tracking-wider">
+                        {section.label}
+                      </span>
+                    </NavLink>
+                  ) : (
+                    <div className={`mb-1 flex items-center gap-2 px-2 ${section.disabled ? "opacity-40" : ""}`}>
+                      <section.icon className="h-3.5 w-3.5 shrink-0" />
+                      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        {section.label}
+                      </span>
+                      {section.disabled && (
+                        <Badge variant="outline" className="ml-auto text-[10px]">soon</Badge>
                       )}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="mt-0.5 w-full justify-start gap-2 px-4 text-muted-foreground"
-                        onClick={handleNewDoc}
-                        disabled={creatingDoc}
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                        {creatingDoc ? "Creating…" : "New document"}
-                      </Button>
                     </div>
                   )}
+
                 </div>
               ))}
             </nav>
@@ -341,11 +333,6 @@ export function DocsLayout() {
 
       {/* Main content */}
       <main className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex h-14 items-center border-b border-border px-6">
-          <h1 className="text-sm font-medium text-muted-foreground">
-            {currentProject ? currentProject.name : "Documentation"}
-          </h1>
-        </header>
         <ScrollArea className="flex-1">
           <Outlet context={outletContext} />
         </ScrollArea>

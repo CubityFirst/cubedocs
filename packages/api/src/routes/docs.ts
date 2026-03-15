@@ -21,7 +21,7 @@ export async function handleDocs(
   const docId = parts[0] || null;
   const params = url.searchParams;
 
-  // GET /docs?projectId=xxx — any member
+  // GET /docs?projectId=xxx[&folderId=yyy] — any member
   if (!docId && request.method === "GET") {
     const projectId = params.get("projectId");
     if (!projectId) return errorResponse(Errors.BAD_REQUEST);
@@ -29,15 +29,29 @@ export async function handleDocs(
     const role = await getCallerRole(env.DB, projectId, user.userId);
     if (role === null) return errorResponse(Errors.FORBIDDEN);
 
-    const rows = await env.DB.prepare(
-      "SELECT * FROM docs WHERE project_id = ? ORDER BY created_at DESC",
-    ).bind(projectId).all<Doc>();
+    const folderId = params.get("folderId");
+    const docWithAuthor = `
+      SELECT d.id, d.title, d.folder_id, d.author_id, d.created_at, d.updated_at,
+        COALESCE(pm.name, CASE WHEN p.owner_id = d.author_id THEN 'Owner' ELSE d.author_id END) AS author_name,
+        CASE WHEN p.owner_id = d.author_id THEN 'owner' ELSE pm.role END AS author_role
+      FROM docs d
+      JOIN projects p ON p.id = d.project_id
+      LEFT JOIN project_members pm ON pm.project_id = d.project_id AND pm.user_id = d.author_id
+    `;
+    const rows = folderId
+      ? await env.DB.prepare(`${docWithAuthor} WHERE d.project_id = ? AND d.folder_id = ? ORDER BY d.title ASC`)
+          .bind(projectId, folderId).all<Doc & { author_name: string; author_role: string | null }>()
+      : params.has("folderId")
+        ? await env.DB.prepare(`${docWithAuthor} WHERE d.project_id = ? AND d.folder_id IS NULL ORDER BY d.title ASC`)
+            .bind(projectId).all<Doc & { author_name: string; author_role: string | null }>()
+        : await env.DB.prepare(`${docWithAuthor} WHERE d.project_id = ? ORDER BY d.created_at DESC`)
+            .bind(projectId).all<Doc & { author_name: string; author_role: string | null }>();
     return okResponse(rows.results);
   }
 
   // POST /docs — editor or above
   if (!docId && request.method === "POST") {
-    const body = await request.json<{ title: string; content: string; projectId: string }>();
+    const body = await request.json<{ title: string; content: string; projectId: string; folderId?: string | null }>();
     if (!body.title || !body.projectId) return errorResponse(Errors.BAD_REQUEST);
 
     const role = await getCallerRole(env.DB, body.projectId, user.userId);
@@ -47,14 +61,15 @@ export async function handleDocs(
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     const content = body.content ?? "";
+    const folderId = body.folderId ?? null;
 
     await env.ASSETS.put(`${body.projectId}/${id}`, content);
     await env.DB.prepare(
-      "INSERT INTO docs (id, title, project_id, author_id, published_at, created_at, updated_at) VALUES (?, ?, ?, ?, NULL, ?, ?)",
-    ).bind(id, body.title, body.projectId, user.userId, now, now).run();
+      "INSERT INTO docs (id, title, project_id, author_id, folder_id, published_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NULL, ?, ?)",
+    ).bind(id, body.title, body.projectId, user.userId, folderId, now, now).run();
 
     return okResponse(
-      { id, title: body.title, content, projectId: body.projectId, authorId: user.userId, publishedAt: null, createdAt: now, updatedAt: now },
+      { id, title: body.title, content, projectId: body.projectId, authorId: user.userId, folderId, publishedAt: null, createdAt: now, updatedAt: now },
       201,
     );
   }
@@ -81,7 +96,7 @@ export async function handleDocs(
     if (role === null) return errorResponse(Errors.FORBIDDEN);
     if (ROLE_RANK[role] < ROLE_RANK["editor"]) return errorResponse(Errors.FORBIDDEN);
 
-    const body = await request.json<Partial<{ title: string; content: string; publishedAt: string | null; showHeading: boolean }>>();
+    const body = await request.json<Partial<{ title: string; content: string; publishedAt: string | null; showHeading: boolean; folderId: string | null }>>();
     const now = new Date().toISOString();
 
     if (body.content !== undefined) {
@@ -93,6 +108,11 @@ export async function handleDocs(
     await env.DB.prepare(
       "UPDATE docs SET title = COALESCE(?, title), published_at = ?, show_heading = COALESCE(?, show_heading), updated_at = ? WHERE id = ?",
     ).bind(body.title ?? null, body.publishedAt ?? null, showHeading, now, docId).run();
+
+    if (body.folderId !== undefined) {
+      await env.DB.prepare("UPDATE docs SET folder_id = ? WHERE id = ?")
+        .bind(body.folderId, docId).run();
+    }
 
     const updated = await env.DB.prepare("SELECT * FROM docs WHERE id = ?").bind(docId).first<Doc>();
     if (!updated) return errorResponse(Errors.NOT_FOUND);
