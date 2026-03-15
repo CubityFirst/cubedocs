@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 import { Outlet, useMatch, useNavigate, useLocation, NavLink } from "react-router-dom";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Toaster } from "@/components/ui/toaster";
@@ -240,7 +240,7 @@ export function DocsLayout() {
           /* ── Project sidebar ── */
           <ScrollArea className="flex-1 px-2 py-3">
             {/* Sections */}
-            <nav className="flex flex-col gap-4">
+            <nav className="flex flex-col gap-1">
               {SECTIONS.map(section => (
                 <div key={section.id}>
                   {/* Section header */}
@@ -249,15 +249,11 @@ export function DocsLayout() {
                       to={section.id === "documents" ? `/projects/${projectId}` : `/projects/${projectId}/${section.id}`}
                       end={section.id === "documents"}
                       className={({ isActive }) =>
-                        `mb-1 flex w-full items-center gap-2 rounded-md px-2 py-1 transition-colors hover:bg-accent hover:text-foreground ${
-                          isActive ? "text-foreground" : "text-muted-foreground"
-                        }`
+                        cn(buttonVariants({ variant: "ghost", size: "sm" }), "mb-1 w-full justify-start", isActive ? "bg-accent text-foreground" : "text-muted-foreground")
                       }
                     >
                       <section.icon className="h-3.5 w-3.5 shrink-0" />
-                      <span className="text-xs font-semibold uppercase tracking-wider">
-                        {section.label}
-                      </span>
+                      {section.label}
                     </NavLink>
                   ) : (
                     <div className="mb-1 flex items-center gap-2 px-2 opacity-40">
@@ -288,14 +284,16 @@ export function DocsLayout() {
             ) : (
               <nav className="flex flex-col gap-1">
                 {projects.map(p => (
-                  <button
+                  <Button
                     key={p.id}
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start gap-2"
                     onClick={() => navigate(`/projects/${p.id}`)}
-                    className="flex items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
                   >
                     <BookOpen className="h-4 w-4 shrink-0" />
                     {p.name}
-                  </button>
+                  </Button>
                 ))}
                 <Button
                   variant="ghost"
