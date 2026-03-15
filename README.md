@@ -16,11 +16,20 @@ It's built as a monorepo with a React frontend and Cloudflare Workers backend, a
 
 ## Features
 
-- **Auth** — Register, log in, JWT-based sessions
+- **Auth** — Register, log in, JWT-based sessions, Cloudflare Turnstile CAPTCHA
 - **Projects** — Create named documentation sites with slugs and metadata
+- **Members** — Invite and manage project members
+- **Folders** — Organize documents into folders within a project
 - **Markdown editor** — Split-view editor with live preview
 - **GitHub-Flavored Markdown** — Tables, strikethrough, task lists, etc.
+- **Syntax highlighting** — Code blocks with Shiki
 - **Callouts** — Custom callout blocks (note, warning, tip, error, success, and more) via a remark plugin
+- **Document history** — View and restore previous versions of documents
+- **File manager** — Upload and manage files attached to documents
+- **Password vault** — Store and manage encrypted passwords per project
+- **Public docs** — Share documents publicly via clean URLs
+- **Site settings** — Configure project-level settings
+- **User settings** — Manage account preferences
 - **Clean URLs** — Document and project slugs for human-readable links
 - **Cloudflare-native backend** — Workers, D1, R2
 

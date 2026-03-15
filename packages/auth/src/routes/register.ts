@@ -2,6 +2,7 @@ import zxcvbn from "zxcvbn";
 import { okResponse, errorResponse, Errors } from "../lib";
 import { hashPassword } from "../password";
 import { signJwt } from "../jwt";
+import { verifyTurnstile } from "../turnstile";
 import type { Env } from "../index";
 
 export async function handleRegister(request: Request, env: Env): Promise<Response> {
@@ -14,6 +15,9 @@ export async function handleRegister(request: Request, env: Env): Promise<Respon
   if (zxcvbn(body.password).score < 3) {
     return errorResponse(Errors.BAD_REQUEST);
   }
+
+  const turnstileValid = await verifyTurnstile(body.turnstileToken, env.TURNSTILE_SECRET);
+  if (!turnstileValid) return errorResponse(Errors.BAD_REQUEST);
 
   const existing = await env.DB.prepare("SELECT id FROM users WHERE email = ?")
     .bind(body.email.toLowerCase())
