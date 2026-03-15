@@ -70,43 +70,35 @@ const markdownComponents = {
   code: MarkdownCode,
 };
 
-interface PublicDoc {
-  id: string;
-  title: string;
-  slug: string;
-  content: string;
-}
-
 interface NavDoc {
   id: string;
   title: string;
-  slug: string;
 }
 
 interface PublicData {
-  doc: PublicDoc;
+  doc: { id: string; title: string; content: string };
   sitePublished: boolean;
-  project: { name: string; slug: string };
+  project: { id: string; name: string };
   docs: NavDoc[] | null;
 }
 
 export function PublicDocPage() {
-  const { siteSlug, docSlug } = useParams<{ siteSlug: string; docSlug: string }>();
+  const { projectId, docId } = useParams<{ projectId: string; docId: string }>();
   const navigate = useNavigate();
   const [data, setData] = useState<PublicData | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {
-    if (!siteSlug) return;
+    if (!projectId) return;
 
-    // If no docSlug, fetch the site to get the first doc and redirect
-    if (!docSlug) {
-      fetch(`/api/public/projects/${siteSlug}`)
+    // If no docId, fetch the site to get the first doc and redirect
+    if (!docId) {
+      fetch(`/api/public/projects/${projectId}`)
         .then(r => r.json())
-        .then((json: { ok: boolean; data?: { slug: string; docs: NavDoc[] } }) => {
+        .then((json: { ok: boolean; data?: { id: string; docs: NavDoc[] } }) => {
           if (json.ok && json.data && json.data.docs.length > 0) {
-            navigate(`/s/${siteSlug}/${json.data.docs[0].slug}`, { replace: true });
+            navigate(`/s/${projectId}/${json.data.docs[0].id}`, { replace: true });
           } else {
             setNotFound(true);
             setLoading(false);
@@ -118,7 +110,7 @@ export function PublicDocPage() {
 
     setLoading(true);
     setNotFound(false);
-    fetch(`/api/public/docs/${siteSlug}/${docSlug}`)
+    fetch(`/api/public/docs/${projectId}/${docId}`)
       .then(r => {
         if (r.status === 404) { setNotFound(true); return null; }
         return r.json() as Promise<{ ok: boolean; data?: PublicData }>;
@@ -129,7 +121,7 @@ export function PublicDocPage() {
       })
       .catch(() => setNotFound(true))
       .finally(() => setLoading(false));
-  }, [siteSlug, docSlug, navigate]);
+  }, [projectId, docId, navigate]);
 
   if (loading) {
     return (
@@ -168,7 +160,7 @@ export function PublicDocPage() {
               {data.docs!.map(doc => (
                 <NavLink
                   key={doc.id}
-                  to={`/s/${data.project.slug}/${doc.slug}`}
+                  to={`/s/${data.project.id}/${doc.id}`}
                   className={({ isActive }) =>
                     `flex items-center gap-2 rounded-md px-4 py-1.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground ${
                       isActive ? "bg-accent text-accent-foreground font-medium" : "text-foreground/80"

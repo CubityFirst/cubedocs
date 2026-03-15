@@ -24,13 +24,11 @@ import {
 interface Project {
   id: string;
   name: string;
-  slug: string;
 }
 
 interface Doc {
   id: string;
   title: string;
-  slug: string;
 }
 
 const SECTIONS = [
@@ -49,7 +47,6 @@ export function DocsLayout() {
   // site creation
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
-  const [slug, setSlug] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -115,16 +112,15 @@ export function DocsLayout() {
       const res = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ name, slug }),
+        body: JSON.stringify({ name }),
       });
       const json = await res.json() as { ok: boolean; data?: Project; error?: string };
       if (json.ok && json.data) {
         setProjects(prev => [json.data!, ...prev]);
         setCreating(false);
         setName("");
-        setSlug("");
       } else {
-        setError(res.status === 409 ? "A site with that slug already exists." : "Failed to create site.");
+        setError("Failed to create site.");
       }
     } catch {
       setError("Could not connect to the server.");
@@ -133,21 +129,15 @@ export function DocsLayout() {
     }
   }
 
-  function handleNameChange(value: string) {
-    setName(value);
-    if (!slug) setSlug(value.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, ""));
-  }
-
   async function handleNewDoc() {
     if (!projectId || creatingDoc) return;
     setCreatingDoc(true);
     try {
       const token = getToken();
-      const slug = `untitled-${Math.random().toString(36).slice(2, 8)}`;
       const res = await fetch("/api/docs", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ title: "Untitled", slug, content: "", projectId }),
+        body: JSON.stringify({ title: "Untitled", content: "", projectId }),
       });
       const json = await res.json() as { ok: boolean; data?: Doc & { id: string } };
       if (json.ok && json.data) {
@@ -307,7 +297,7 @@ export function DocsLayout() {
                   <span className="text-xs font-medium">New site</span>
                   <button
                     type="button"
-                    onClick={() => { setCreating(false); setError(null); setName(""); setSlug(""); }}
+                    onClick={() => { setCreating(false); setError(null); setName(""); }}
                     className="text-muted-foreground hover:text-foreground"
                   >
                     <X className="h-3.5 w-3.5" />
@@ -319,18 +309,7 @@ export function DocsLayout() {
                     id="site-name"
                     placeholder="My Docs"
                     value={name}
-                    onChange={e => handleNameChange(e.target.value)}
-                    className="h-7 text-xs"
-                    required
-                  />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <Label htmlFor="site-slug" className="text-xs">Slug</Label>
-                  <Input
-                    id="site-slug"
-                    placeholder="my-docs"
-                    value={slug}
-                    onChange={e => setSlug(e.target.value)}
+                    onChange={e => setName(e.target.value)}
                     className="h-7 text-xs"
                     required
                   />

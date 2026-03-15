@@ -78,7 +78,6 @@ const markdownComponents = {
 interface Doc {
   id: string;
   title: string;
-  slug: string;
   content: string;
   updatedAt: string;
   published_at: string | null;

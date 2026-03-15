@@ -37,8 +37,8 @@ export async function handleDocs(
 
   // POST /docs — editor or above
   if (!docId && request.method === "POST") {
-    const body = await request.json<{ title: string; slug: string; content: string; projectId: string }>();
-    if (!body.title || !body.slug || !body.projectId) return errorResponse(Errors.BAD_REQUEST);
+    const body = await request.json<{ title: string; content: string; projectId: string }>();
+    if (!body.title || !body.projectId) return errorResponse(Errors.BAD_REQUEST);
 
     const role = await getCallerRole(env.DB, body.projectId, user.userId);
     if (role === null) return errorResponse(Errors.FORBIDDEN);
@@ -50,11 +50,11 @@ export async function handleDocs(
 
     await env.ASSETS.put(`${body.projectId}/${id}`, content);
     await env.DB.prepare(
-      "INSERT INTO docs (id, slug, title, project_id, author_id, published_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NULL, ?, ?)",
-    ).bind(id, body.slug, body.title, body.projectId, user.userId, now, now).run();
+      "INSERT INTO docs (id, title, project_id, author_id, published_at, created_at, updated_at) VALUES (?, ?, ?, ?, NULL, ?, ?)",
+    ).bind(id, body.title, body.projectId, user.userId, now, now).run();
 
     return okResponse(
-      { id, slug: body.slug, title: body.title, content, projectId: body.projectId, authorId: user.userId, publishedAt: null, createdAt: now, updatedAt: now },
+      { id, title: body.title, content, projectId: body.projectId, authorId: user.userId, publishedAt: null, createdAt: now, updatedAt: now },
       201,
     );
   }

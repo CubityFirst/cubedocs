@@ -22,8 +22,8 @@ export function App() {
         <Route path="/projects/:projectId/docs/:docId" element={<DocPage />} />
         <Route path="/projects/:projectId/settings" element={<SiteSettingsPage />} />
       </Route>
-      <Route path="/s/:siteSlug" element={<PublicDocPage />} />
-      <Route path="/s/:siteSlug/:docSlug" element={<PublicDocPage />} />
+      <Route path="/s/:projectId" element={<PublicDocPage />} />
+      <Route path="/s/:projectId/:docId" element={<PublicDocPage />} />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );

@@ -6,7 +6,6 @@ export interface Session {
 
 export interface Doc {
   id: string;
-  slug: string;
   title: string;
   content: string;
   projectId: string;
@@ -19,7 +18,6 @@ export interface Doc {
 export interface Project {
   id: string;
   name: string;
-  slug: string;
   ownerId: string;
   createdAt: string;
 }

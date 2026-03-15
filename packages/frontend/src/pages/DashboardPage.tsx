@@ -9,7 +9,6 @@ import { getToken } from "@/lib/auth";
 interface Project {
   id: string;
   name: string;
-  slug: string;
   description: string | null;
   doc_count: number;
 }
@@ -61,7 +60,6 @@ export function DashboardPage() {
                   </div>
                   <div>
                     <CardTitle>{project.name}</CardTitle>
-                    <CardDescription>{project.slug}</CardDescription>
                   </div>
                 </div>
                 <Badge variant="outline" className="shrink-0">

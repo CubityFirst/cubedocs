@@ -49,7 +49,6 @@ const ASSIGNABLE_ROLES: Role[] = ["viewer", "editor", "admin"];
 interface Project {
   id: string;
   name: string;
-  slug: string;
   description: string | null;
   owner_id: string;
   published_at: string | null;
@@ -319,12 +318,6 @@ export function SiteSettingsPage() {
             onChange={e => setDescription(e.target.value)}
             disabled={!isAdminOrOwner}
           />
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label>Slug</Label>
-          <Input value={project.slug} disabled className="text-muted-foreground" />
-          <p className="text-xs text-muted-foreground">Slugs cannot be changed after creation.</p>
         </div>
 
         {saveError && (

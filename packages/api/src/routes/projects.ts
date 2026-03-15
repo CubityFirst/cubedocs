@@ -41,16 +41,16 @@ export async function handleProjects(
 
   // POST /projects
   if (!projectId && request.method === "POST") {
-    const body = await request.json<{ name: string; slug: string }>();
-    if (!body.name || !body.slug) return errorResponse(Errors.BAD_REQUEST);
+    const body = await request.json<{ name: string }>();
+    if (!body.name) return errorResponse(Errors.BAD_REQUEST);
 
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     await env.DB.prepare(
-      "INSERT INTO projects (id, name, slug, owner_id, created_at) VALUES (?, ?, ?, ?, ?)",
-    ).bind(id, body.name, body.slug, user.userId, now).run();
+      "INSERT INTO projects (id, name, owner_id, created_at) VALUES (?, ?, ?, ?)",
+    ).bind(id, body.name, user.userId, now).run();
 
-    return okResponse({ id, name: body.name, slug: body.slug, ownerId: user.userId, createdAt: now }, 201);
+    return okResponse({ id, name: body.name, ownerId: user.userId, createdAt: now }, 201);
   }
 
   // GET /projects/:id — any member can view
