@@ -84,6 +84,12 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
   const [path, setPath] = useState<BreadcrumbEntry[]>(initialPath);
   const currentFolderId = path[path.length - 1].id;
 
+  // Sync path from browser history (handles back/forward navigation)
+  useEffect(() => {
+    const restored = location.state?.restorePath;
+    setPath(restored ?? [{ id: null, name: projectName }]);
+  }, [location.state]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
   const [folderCounts, setFolderCounts] = useState<Map<string, { files: number; folders: number }>>(new Map());
 
@@ -180,11 +186,13 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
   }
 
   function enterFolder(folder: FolderItem) {
-    setPath(prev => [...prev, { id: folder.id, name: folder.name }]);
+    const newPath = [...path, { id: folder.id, name: folder.name }];
+    navigate(location.pathname, { state: { restorePath: newPath } });
   }
 
   function navigateToCrumb(index: number) {
-    setPath(prev => prev.slice(0, index + 1));
+    const newPath = path.slice(0, index + 1);
+    navigate(location.pathname, { state: { restorePath: newPath } });
   }
 
   async function handleCreateFolder(e: React.FormEvent) {
