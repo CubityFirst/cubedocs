@@ -167,7 +167,7 @@ export async function handleDocs(
     if (caller === null) return errorResponse(Errors.FORBIDDEN);
     if (ROLE_RANK[caller.role] < ROLE_RANK["editor"]) return errorResponse(Errors.FORBIDDEN);
 
-    const body = await request.json<Partial<{ title: string; content: string; publishedAt: string | null; showHeading: boolean; folderId: string | null }>>();
+    const body = await request.json<Partial<{ title: string; content: string; publishedAt: string | null; showHeading: boolean; showLastUpdated: boolean; folderId: string | null }>>();
     const now = new Date().toISOString();
 
     if (body.content !== undefined) {
@@ -191,10 +191,11 @@ export async function handleDocs(
     }
 
     const showHeading = body.showHeading !== undefined ? (body.showHeading ? 1 : 0) : null;
+    const showLastUpdated = body.showLastUpdated !== undefined ? (body.showLastUpdated ? 1 : 0) : null;
 
     await env.DB.prepare(
-      "UPDATE docs SET title = COALESCE(?, title), published_at = ?, show_heading = COALESCE(?, show_heading), updated_at = ? WHERE id = ?",
-    ).bind(body.title ?? null, body.publishedAt ?? null, showHeading, now, docId).run();
+      "UPDATE docs SET title = COALESCE(?, title), published_at = ?, show_heading = COALESCE(?, show_heading), show_last_updated = COALESCE(?, show_last_updated), updated_at = ? WHERE id = ?",
+    ).bind(body.title ?? null, body.publishedAt ?? null, showHeading, showLastUpdated, now, docId).run();
 
     if (body.folderId !== undefined) {
       await env.DB.prepare("UPDATE docs SET folder_id = ? WHERE id = ?")

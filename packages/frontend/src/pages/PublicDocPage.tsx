@@ -84,7 +84,7 @@ interface NavFolder {
 }
 
 interface PublicData {
-  doc: { id: string; title: string; content: string };
+  doc: { id: string; title: string; content: string; showLastUpdated: boolean; updatedAt: string };
   sitePublished: boolean;
   project: { id: string; name: string };
   docs: NavDoc[] | null;
@@ -250,6 +250,11 @@ export function PublicDocPage() {
               <div className="mx-auto max-w-3xl">
                 <article className="prose prose-neutral dark:prose-invert max-w-none">
                   <h1>{data.doc.title}</h1>
+                  {data.doc.showLastUpdated && (
+                    <p className="not-prose -mt-2 mb-6 text-sm text-muted-foreground">
+                      Last updated {new Date(data.doc.updatedAt).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}
+                    </p>
+                  )}
                   {data.doc.content.trim() ? (
                     <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>
                       {data.doc.content}

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation, useOutletContext } from "react-router-dom";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
-import { Folder, FileText, Plus, FolderPlus, Search, X } from "lucide-react";
+import { Folder, FileText, Plus, FolderPlus, Search, X, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -249,6 +249,26 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
     await loadContents();
   }
 
+  async function handleDownloadDoc(e: React.MouseEvent, doc: DocItem) {
+    e.stopPropagation();
+    const token = getToken();
+    const res = await fetch(`/api/docs/${doc.id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const json = await res.json() as { ok: boolean; data?: { content: string; title: string } };
+    if (!json.ok || !json.data) return;
+    const content = json.data.content ?? "";
+    const title = json.data.title || "Untitled";
+    const filename = `${title.replace(/[<>:"/\\|?*]/g, "_")}.md`;
+    const blob = new Blob([content], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   function onDragStart(type: "doc" | "folder", id: string) {
     draggedItem.current = { type, id };
   }
@@ -384,8 +404,18 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
                       onClick: navToDoc,
                     },
                     {
-                      content: <span className="text-sm text-muted-foreground truncate">{formatRelativeTime(doc.updated_at)}</span>,
-                      onClick: navToDoc,
+                      content: (
+                        <div className="flex items-center justify-between gap-2 w-full">
+                          <span className="text-sm text-muted-foreground truncate">{formatRelativeTime(doc.updated_at)}</span>
+                          <button
+                            onClick={e => handleDownloadDoc(e, doc)}
+                            className="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
+                            title="Download as markdown"
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ),
                     },
                   ]}
                 />

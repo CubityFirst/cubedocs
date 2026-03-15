@@ -104,9 +104,10 @@ interface Doc {
   id: string;
   title: string;
   content: string;
-  updatedAt: string;
+  updated_at: string;
   published_at: string | null;
   show_heading: number;
+  show_last_updated: number;
   myRole?: string;
   blame?: (BlameEntry | null)[];
 }
@@ -230,6 +231,22 @@ export function DocPage() {
     }
   }
 
+  async function handleToggleLastUpdated(show: boolean) {
+    if (!docId || !doc) return;
+    try {
+      const token = getToken();
+      const res = await fetch(`/api/docs/${docId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ showLastUpdated: show }),
+      });
+      const json = await res.json() as { ok: boolean; data?: Doc };
+      if (json.ok && json.data) setDoc(json.data);
+    } catch {
+      // fail silently
+    }
+  }
+
   async function handleToggleHeading(show: boolean) {
     if (!docId || !doc) return;
     try {
@@ -266,8 +283,7 @@ export function DocPage() {
     return (
       <div className="flex h-full flex-col">
         {/* Toolbar */}
-        <div className="flex items-center justify-between border-b border-border px-6 py-2">
-          <span className="text-xs text-muted-foreground">Editing</span>
+        <div className="flex items-center justify-end border-b border-border px-6 py-2">
           <div className="flex items-center gap-2">
             {saveError && <p className="text-xs text-destructive">{saveError}</p>}
             <Button variant="ghost" size="sm" onClick={cancelEditing} className="gap-1.5">
@@ -319,7 +335,7 @@ export function DocPage() {
           </div>
 
           <div className="flex w-1/2 flex-col overflow-auto">
-            <div className="border-b border-border px-4 py-1.5">
+            <div className="border-b border-border px-4 py-1.5 flex items-center">
               <span className="text-xs font-medium text-muted-foreground">Preview</span>
             </div>
             <div className="flex-1 overflow-auto px-8 py-6">
@@ -434,6 +450,22 @@ export function DocPage() {
                         onCheckedChange={handleToggleHeading}
                       />
                     </div>
+                    <Separator />
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex flex-col gap-1">
+                        <Label htmlFor="show-last-updated" className="text-sm font-medium cursor-pointer">
+                          Show last updated
+                        </Label>
+                        <p className="text-xs text-muted-foreground">
+                          Display when the document was last modified.
+                        </p>
+                      </div>
+                      <Switch
+                        id="show-last-updated"
+                        checked={doc.show_last_updated !== 0}
+                        onCheckedChange={handleToggleLastUpdated}
+                      />
+                    </div>
                   </div>
                 </DialogContent>
               </Dialog>
@@ -442,6 +474,11 @@ export function DocPage() {
 
           <article className="prose prose-neutral dark:prose-invert max-w-none">
             {doc.show_heading !== 0 && <h1>{doc.title}</h1>}
+            {doc.show_last_updated !== 0 && (
+              <p className="not-prose -mt-2 mb-6 text-sm text-muted-foreground">
+                Last updated {timeAgo(doc.updated_at)}
+              </p>
+            )}
             {doc.content.trim() ? (
               <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>{doc.content}</ReactMarkdown>
             ) : (

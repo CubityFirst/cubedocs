@@ -20,6 +20,7 @@ export interface Doc {
   authorId: string;
   publishedAt: string | null;
   show_heading: number;
+  show_last_updated: number;
   createdAt: string;
   updatedAt: string;
 }

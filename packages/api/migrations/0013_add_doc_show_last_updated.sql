@@ -1,0 +1,1 @@
+ALTER TABLE docs ADD COLUMN show_last_updated INTEGER NOT NULL DEFAULT 1;
