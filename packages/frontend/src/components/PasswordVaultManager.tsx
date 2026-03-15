@@ -446,159 +446,143 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
 
   // ── JSX ──────────────────────────────────────────────────────────────────
 
+  const VAULT_COLUMNS = [
+    { label: "Name", defaultSize: 28, minSize: 12 },
+    { label: "", defaultSize: 18, minSize: 14 },
+    { label: "Username", defaultSize: 20, minSize: 10 },
+    { label: "URL", defaultSize: 18, minSize: 10 },
+    { label: "Last changed", defaultSize: 16, minSize: 10 },
+  ];
+
   function renderTable(folderRows: FolderItem[], entryRows: PasswordEntry[]) {
-    const [s0, s1, s2, s3, s4] = colSizes;
     return (
-      <div className="rounded-md border overflow-hidden">
-        {/* Header row with resizable column handles */}
-        <div className="flex items-center bg-muted/50 border-b h-10">
-          <div className="w-10 shrink-0" />
-          <ResizablePanelGroup direction="horizontal" className="flex-1 h-full" onLayout={setColSizes}>
-            <ResizablePanel defaultSize={28} minSize={12}>
-              <div className="flex items-center h-full px-3 text-xs font-medium text-muted-foreground">Name</div>
-            </ResizablePanel>
-            <ResizableHandle />
-            <ResizablePanel defaultSize={18} minSize={14}>
-              <div className="flex items-center h-full px-1 text-xs font-medium text-muted-foreground"></div>
-            </ResizablePanel>
-            <ResizableHandle />
-            <ResizablePanel defaultSize={20} minSize={10}>
-              <div className="flex items-center h-full px-3 text-xs font-medium text-muted-foreground">Username</div>
-            </ResizablePanel>
-            <ResizableHandle />
-            <ResizablePanel defaultSize={18} minSize={10}>
-              <div className="flex items-center h-full px-3 text-xs font-medium text-muted-foreground">URL</div>
-            </ResizablePanel>
-            <ResizableHandle />
-            <ResizablePanel defaultSize={16} minSize={10}>
-              <div className="flex items-center h-full px-3 text-xs font-medium text-muted-foreground">Last changed</div>
-            </ResizablePanel>
-          </ResizablePanelGroup>
-        </div>
-
-        {/* Folder rows */}
-        {folderRows.map(folder => {
-          const isDropTarget = dropTarget === folder.id;
-          return (
-            <div
-              key={folder.id}
+      <ResizableTable columns={VAULT_COLUMNS}>
+        <>
+          {folderRows.map(folder => {
+            const isDropTarget = dropTarget === folder.id;
+            return (
+              <ResizableTableRow
+                key={folder.id}
+                draggable
+                  onDragStart={() => onDragStart("folder", folder.id)}
+                  onDragEnd={onDragEnd}
+                  onDragOver={e => {
+                    if (draggedItem.current?.id === folder.id) return;
+                    e.preventDefault();
+                    setDropTarget(folder.id);
+                  }}
+                  onDragLeave={() => setDropTarget(null)}
+                  onDrop={async e => {
+                    e.preventDefault();
+                    setDropTarget(null);
+                    const item = draggedItem.current;
+                    if (!item || item.id === folder.id) return;
+                    if (item.type === "entry") await moveEntry(item.id, folder.id);
+                    else await moveFolder(item.id, folder.id);
+                  }}
+                  className={`cursor-pointer ${isDropTarget ? "bg-primary/10 ring-1 ring-inset ring-primary/40" : ""}`}
+                  cells={[
+                    {
+                      content: (
+                        <>
+                          <Folder className={`h-4 w-4 shrink-0 mr-2 ${isDropTarget ? "text-primary" : "text-primary/70"}`} />
+                          <span className="text-sm font-medium truncate">{folder.name}</span>
+                        </>
+                      ),
+                      onClick: () => enterFolder(folder),
+                    },
+                    { content: null },
+                    { content: null },
+                    { content: null },
+                    { content: null },
+                  ]}
+                />
+              );
+            })}
+          {entryRows.map(entry => (
+            <ResizableTableRow
+              key={entry.id}
               draggable
-              onDragStart={() => onDragStart("folder", folder.id)}
-              onDragEnd={onDragEnd}
-              onClick={() => enterFolder(folder)}
-              onDragOver={e => {
-                if (draggedItem.current?.id === folder.id) return;
-                e.preventDefault();
-                setDropTarget(folder.id);
-              }}
-              onDragLeave={() => setDropTarget(null)}
-              onDrop={async e => {
-                e.preventDefault();
-                setDropTarget(null);
-                const item = draggedItem.current;
-                if (!item || item.id === folder.id) return;
-                if (item.type === "entry") await moveEntry(item.id, folder.id);
-                else await moveFolder(item.id, folder.id);
-              }}
-              className={`flex items-center border-b h-10 cursor-pointer select-none transition-colors hover:bg-muted/40 ${isDropTarget ? "bg-primary/10 ring-1 ring-inset ring-primary/40" : ""}`}
-            >
-              <div className="w-10 shrink-0" />
-              <div className="flex-1 flex min-w-0">
-                <div style={{ width: `${s0}%` }} className="flex items-center px-3 overflow-hidden">
-                  <Folder className={`h-4 w-4 shrink-0 mr-2 ${isDropTarget ? "text-primary" : "text-primary/70"}`} />
-                  <span className="text-sm font-medium truncate">{folder.name}</span>
-                </div>
-                <div style={{ width: `${s1}%` }} />
-                <div style={{ width: `${s2}%` }} />
-                <div style={{ width: `${s3}%` }} />
-                <div style={{ width: `${s4}%` }} />
-              </div>
-            </div>
-          );
-        })}
-
-        {/* Entry rows */}
-        {entryRows.map(entry => (
-          <div
-            key={entry.id}
-            draggable
-            onDragStart={() => onDragStart("entry", entry.id)}
-            onDragEnd={onDragEnd}
-            className="flex items-center border-b last:border-b-0 h-10 select-none hover:bg-muted/40 transition-colors"
-          >
-            <div className="w-10 shrink-0 px-3" onClick={e => e.stopPropagation()}>
-              <Checkbox
-                checked={selectedEntries.has(entry.id)}
-                onCheckedChange={checked => {
-                  setSelectedEntries(prev => {
-                    const next = new Set(prev);
-                    if (checked) next.add(entry.id);
-                    else next.delete(entry.id);
-                    return next;
-                  });
-                }}
+                onDragStart={() => onDragStart("entry", entry.id)}
+                onDragEnd={onDragEnd}
+                checkboxCell={
+                  <Checkbox
+                    checked={selectedEntries.has(entry.id)}
+                    onCheckedChange={checked => {
+                      setSelectedEntries(prev => {
+                        const next = new Set(prev);
+                        if (checked) next.add(entry.id);
+                        else next.delete(entry.id);
+                        return next;
+                      });
+                    }}
+                  />
+                }
+                cells={[
+                  {
+                    content: (
+                      <>
+                        <Lock className="h-4 w-4 shrink-0 mr-2 text-muted-foreground/60" />
+                        <span className="text-sm truncate">{entry.title}</span>
+                      </>
+                    ),
+                    className: "px-3 cursor-pointer",
+                    onClick: () => openDetail(entry),
+                  },
+                  {
+                    content: (
+                      <div className="flex items-center gap-0.5" onClick={e => e.stopPropagation()}>
+                        <Button
+                          variant="ghost" size="icon" className="h-7 w-7"
+                          title="Copy username" disabled={!entry.username}
+                          onClick={() => entry.username && copyToClipboard(entry.username, `row-username-${entry.id}`)}
+                        >
+                          {copiedField === `row-username-${entry.id}` ? <Check className="h-3.5 w-3.5 text-green-500" /> : <User className="h-3.5 w-3.5" />}
+                        </Button>
+                        <Button
+                          variant="ghost" size="icon" className="h-7 w-7"
+                          title="Copy password"
+                          onClick={() => copyDecryptedField(entry.id, "password")}
+                        >
+                          {copiedField === `row-password-${entry.id}` ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Key className="h-3.5 w-3.5" />}
+                        </Button>
+                        <Button
+                          variant="ghost" size="icon" className="h-7 w-7"
+                          title="Copy TOTP"
+                          onClick={() => copyDecryptedField(entry.id, "totp")}
+                        >
+                          {copiedField === `row-totp-${entry.id}` ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Clock className="h-3.5 w-3.5" />}
+                        </Button>
+                        <Button
+                          variant="ghost" size="icon" className="h-7 w-7"
+                          title="Open URL" disabled={!entry.url} asChild={!!entry.url}
+                        >
+                          {entry.url ? (
+                            <a href={entry.url} target="_blank" rel="noopener noreferrer">
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                          ) : (
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          )}
+                        </Button>
+                      </div>
+                    ),
+                    className: "px-1",
+                  },
+                  {
+                    content: <span className="text-sm text-muted-foreground truncate">{entry.username ?? ""}</span>,
+                  },
+                  {
+                    content: <span className="text-sm text-muted-foreground truncate">{entry.url ? formatHostname(entry.url) : ""}</span>,
+                  },
+                  {
+                    content: <span className="text-sm text-muted-foreground truncate">{formatRelativeTime(entry.last_change_date)}</span>,
+                  },
+                ]}
               />
-            </div>
-            <div className="flex-1 flex min-w-0">
-              {/* Name */}
-              <div style={{ width: `${s0}%` }} className="flex items-center px-3 overflow-hidden cursor-pointer" onClick={() => openDetail(entry)}>
-                <Lock className="h-4 w-4 shrink-0 mr-2 text-muted-foreground/60" />
-                <span className="text-sm truncate">{entry.title}</span>
-              </div>
-              {/* Actions — after Name, before Username */}
-              <div style={{ width: `${s1}%` }} className="flex items-center px-1 overflow-hidden" onClick={e => e.stopPropagation()}>
-                <div className="flex items-center gap-0.5">
-                  <Button
-                    variant="ghost" size="icon" className="h-7 w-7"
-                    title="Copy username" disabled={!entry.username}
-                    onClick={() => entry.username && copyToClipboard(entry.username, `row-username-${entry.id}`)}
-                  >
-                    {copiedField === `row-username-${entry.id}` ? <Check className="h-3.5 w-3.5 text-green-500" /> : <User className="h-3.5 w-3.5" />}
-                  </Button>
-                  <Button
-                    variant="ghost" size="icon" className="h-7 w-7"
-                    title="Copy password"
-                    onClick={() => copyDecryptedField(entry.id, "password")}
-                  >
-                    {copiedField === `row-password-${entry.id}` ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Key className="h-3.5 w-3.5" />}
-                  </Button>
-                  <Button
-                    variant="ghost" size="icon" className="h-7 w-7"
-                    title="Copy TOTP"
-                    onClick={() => copyDecryptedField(entry.id, "totp")}
-                  >
-                    {copiedField === `row-totp-${entry.id}` ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Clock className="h-3.5 w-3.5" />}
-                  </Button>
-                  <Button
-                    variant="ghost" size="icon" className="h-7 w-7"
-                    title="Open URL" disabled={!entry.url} asChild={!!entry.url}
-                  >
-                    {entry.url ? (
-                      <a href={entry.url} target="_blank" rel="noopener noreferrer">
-                        <ExternalLink className="h-3.5 w-3.5" />
-                      </a>
-                    ) : (
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    )}
-                  </Button>
-                </div>
-              </div>
-              {/* Username */}
-              <div style={{ width: `${s2}%` }} className="flex items-center px-3 overflow-hidden">
-                <span className="text-sm text-muted-foreground truncate">{entry.username ?? ""}</span>
-              </div>
-              {/* URL */}
-              <div style={{ width: `${s3}%` }} className="flex items-center px-3 overflow-hidden">
-                <span className="text-sm text-muted-foreground truncate">{entry.url ? formatHostname(entry.url) : ""}</span>
-              </div>
-              {/* Last changed */}
-              <div style={{ width: `${s4}%` }} className="flex items-center px-3 overflow-hidden">
-                <span className="text-sm text-muted-foreground truncate">{formatRelativeTime(entry.last_change_date)}</span>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </>
+      </ResizableTable>
     );
   }
 
