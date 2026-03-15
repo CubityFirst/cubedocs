@@ -135,8 +135,8 @@ export function PublicDocPage() {
     return (
       <div className="flex h-screen items-center justify-center">
         <div className="text-center">
-          <p className="text-lg font-semibold">Page not found</p>
-          <p className="mt-1 text-sm text-muted-foreground">This document is not publicly available.</p>
+          <p className="text-lg font-semibold">Not found</p>
+          <p className="mt-1 text-sm text-muted-foreground">No published document exists at this location.</p>
         </div>
       </div>
     );

@@ -13,7 +13,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Pencil, X, Save, Settings, Globe, Lock } from "lucide-react";
+import { Pencil, X, Save, Settings, Globe, Lock, Link } from "lucide-react";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
 import { getToken } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
@@ -331,6 +331,27 @@ export function DocPage() {
                         {togglingPublish ? "Saving…" : doc.published_at ? "Unpublish" : "Publish"}
                       </Button>
                     </div>
+                    {doc.published_at && (
+                      <>
+                        <Separator />
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            <Link className="h-4 w-4 text-muted-foreground" />
+                            <Label className="text-sm font-medium cursor-pointer">Share link</Label>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              navigator.clipboard.writeText(`${window.location.origin}/s/${projectId}/${docId}`);
+                              toast({ title: "Link copied to clipboard." });
+                            }}
+                          >
+                            Copy
+                          </Button>
+                        </div>
+                      </>
+                    )}
                     <Separator />
                     <div className="flex items-center justify-between gap-3">
                       <Label htmlFor="show-heading" className="text-sm font-medium cursor-pointer">
