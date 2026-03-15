@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { BookOpen, Plus } from "lucide-react";
+import { BookOpen, Globe } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { getToken } from "@/lib/auth";
 
 interface Project {
@@ -11,6 +11,7 @@ interface Project {
   name: string;
   description: string | null;
   doc_count: number;
+  published_at: string | null;
 }
 
 export function DashboardPage() {
@@ -73,24 +74,20 @@ export function DashboardPage() {
                 )}
               </CardContent>
 
-              <CardFooter className="gap-2">
-                <Button
-                  variant="link"
-                  size="sm"
-                  className="h-auto p-0 text-xs opacity-0 transition-opacity group-hover:opacity-100"
-                  onClick={() => navigate(`/projects/${project.id}`)}
-                >
-                  Open site →
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="ml-auto h-auto gap-1 px-2.5 py-1 text-xs"
-                >
-                  <Plus className="h-3 w-3" />
-                  New doc
-                </Button>
+              <CardFooter>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Globe
+                      className={`h-[18px] w-[18px] ${project.published_at ? "text-green-500" : "text-muted-foreground/40"}`}
+                      strokeWidth={1.5}
+                    />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {project.published_at ? "Site is public" : "Site is private"}
+                  </TooltipContent>
+                </Tooltip>
               </CardFooter>
+
             </Card>
           ))}
         </div>
