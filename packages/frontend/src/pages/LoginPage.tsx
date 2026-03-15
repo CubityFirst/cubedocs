@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AuthForm } from "@/components/AuthForm";
+import { Turnstile } from "@/components/Turnstile";
 import { getToken, setToken } from "@/lib/auth";
 
 export function LoginPage() {
@@ -11,8 +12,12 @@ export function LoginPage() {
   const from = (location.state as { from?: string } | null)?.from ?? "/dashboard";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const handleTurnstileVerify = useCallback((token: string) => setTurnstileToken(token), []);
+  const handleTurnstileExpire = useCallback(() => setTurnstileToken(null), []);
 
   useEffect(() => {
     if (getToken()) {
@@ -23,12 +28,16 @@ export function LoginPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (!turnstileToken) {
+      setError("Please complete the security challenge.");
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch("/api/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, turnstileToken }),
       });
       const json = await res.json() as { ok: boolean; data?: { token: string }; error?: string };
       if (json.ok && json.data) {
@@ -82,6 +91,7 @@ export function LoginPage() {
           required
         />
       </div>
+      <Turnstile onVerify={handleTurnstileVerify} onExpire={handleTurnstileExpire} />
     </AuthForm>
   );
 }

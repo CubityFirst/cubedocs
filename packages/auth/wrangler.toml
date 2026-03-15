@@ -18,3 +18,4 @@ custom_domain = true
 
 # Secrets (set via `wrangler secret put`):
 #   JWT_SECRET
+#   TURNSTILE_SECRET

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation, useOutletContext } from "react-router-dom";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
-import { Folder, FileText, Plus, FolderPlus, Search } from "lucide-react";
+import { Folder, FileText, Plus, FolderPlus, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -85,6 +85,7 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
   const currentFolderId = path[path.length - 1].id;
 
   const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
+  const [folderCounts, setFolderCounts] = useState<Map<string, { files: number; folders: number }>>(new Map());
 
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<DocItem[] | null>(null);
@@ -103,6 +104,23 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
   }, [currentFolderId, projectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    if (folders.length === 0) { setFolderCounts(new Map()); return; }
+    const token = getToken();
+    if (!token) return;
+    Promise.all(
+      folders.map(async folder => {
+        const [fRes, dRes] = await Promise.all([
+          fetch(`/api/folders?projectId=${projectId}&type=docs&parentId=${folder.id}`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`/api/docs?projectId=${projectId}&folderId=${folder.id}`, { headers: { Authorization: `Bearer ${token}` } }),
+        ]);
+        const fJson = await fRes.json() as { ok: boolean; data?: FolderItem[] };
+        const dJson = await dRes.json() as { ok: boolean; data?: DocItem[] };
+        return { id: folder.id, files: dJson.data?.length ?? 0, folders: fJson.data?.length ?? 0 };
+      })
+    ).then(results => setFolderCounts(new Map(results.map(r => [r.id, { files: r.files, folders: r.folders }]))));
+  }, [folders]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
     if (!searchQuery.trim()) {
       setSearchResults(null);
       return;
@@ -110,14 +128,15 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
     const timer = setTimeout(async () => {
       const token = getToken();
       if (!token) return;
-      const res = await fetch(`/api/docs?projectId=${projectId}&q=${encodeURIComponent(searchQuery.trim())}`, {
+      const folderParam = currentFolderId ? `&rootFolderId=${currentFolderId}` : "";
+      const res = await fetch(`/api/docs?projectId=${projectId}&q=${encodeURIComponent(searchQuery.trim())}${folderParam}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const json = await res.json() as { ok: boolean; data?: DocItem[] };
       if (json.ok && json.data) setSearchResults(json.data);
     }, 250);
     return () => clearTimeout(timer);
-  }, [searchQuery, projectId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [searchQuery, projectId, currentFolderId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync folder path to layout breadcrumbs
   useEffect(() => {
@@ -262,14 +281,14 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
   }
 
   const FILE_COLUMNS = [
-    { label: "Name", defaultSize: 45, minSize: 15 },
-    { label: "Created by", defaultSize: 30, minSize: 15 },
+    { label: "Name", defaultSize: 0, minWidth: 200, maxWidth: 500 },
+    { label: "Created by", defaultSize: 0, minWidth: 150, maxWidth: 400 },
     { label: "Last updated", defaultSize: 25, minSize: 12 },
   ];
 
   function renderTable(folderRows: FolderItem[], docRows: DocItem[]) {
     return (
-      <ResizableTable columns={FILE_COLUMNS}>
+      <ResizableTable columns={FILE_COLUMNS} storageKey="file-columns">
         <>
           {folderRows.map(folder => {
             const isDropTarget = dropTarget === folder.id;
@@ -301,6 +320,17 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
                         <>
                           <Folder className={`h-4 w-4 shrink-0 mr-2 ${isDropTarget ? "text-primary" : "text-primary/70"}`} />
                           <span className="text-sm font-medium truncate">{folder.name}</span>
+                          {folderCounts.has(folder.id) && (() => {
+                            const c = folderCounts.get(folder.id)!;
+                            const parts = [];
+                            if (c.files > 0) parts.push(`${c.files} ${c.files === 1 ? "file" : "files"}`);
+                            if (c.folders > 0) parts.push(`${c.folders} ${c.folders === 1 ? "folder" : "folders"}`);
+                            return parts.length > 0 ? (
+                              <Badge variant="outline" className="ml-2 shrink-0 text-xs text-muted-foreground">
+                                {parts.join(", ")}
+                              </Badge>
+                            ) : null;
+                          })()}
                         </>
                       ),
                       onClick: () => enterFolder(folder),
@@ -377,8 +407,16 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
             placeholder="Search files…"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="pl-9"
+            className="pl-9 pr-8"
           />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 h-5 w-5 flex items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
         <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setShowNewFolder(true)}>
           <FolderPlus className="h-3.5 w-3.5" />

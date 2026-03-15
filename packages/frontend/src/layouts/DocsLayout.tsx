@@ -1,4 +1,5 @@
 import { useState, useEffect, type Dispatch, type SetStateAction } from "react";
+import { cn } from "@/lib/utils";
 import { Outlet, useMatch, useNavigate, useLocation, NavLink } from "react-router-dom";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -25,6 +26,7 @@ import {
 interface Project {
   id: string;
   name: string;
+  role: string;
 }
 
 interface Doc {
@@ -55,6 +57,7 @@ export interface DocsLayoutContext {
 }
 
 export function DocsLayout() {
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [projects, setProjects] = useState<Project[]>([]);
   const [docs, setDocs] = useState<Doc[]>([]);
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([]);
@@ -68,6 +71,9 @@ export function DocsLayout() {
   // doc creation (instant, no form)
   const [creatingDoc, setCreatingDoc] = useState(false);
 
+  // current user
+  const [userName, setUserName] = useState<string | null>(null);
+
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -79,6 +85,15 @@ export function DocsLayout() {
   const projectMatch = useMatch("/projects/:projectId/*");
   const projectId = projectMatch?.params.projectId ?? null;
   const currentProject = projectId ? projects.find(p => p.id === projectId) ?? null : null;
+
+  useEffect(() => {
+    const token = getToken();
+    if (!token) return;
+    fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json() as Promise<{ ok: boolean; data?: { name: string } }>)
+      .then(json => { if (json.ok && json.data) setUserName(json.data.name); })
+      .catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const token = getToken();
@@ -185,7 +200,8 @@ export function DocsLayout() {
   return (
     <div className="flex h-screen bg-background text-foreground">
       {/* Sidebar */}
-      <aside className="flex w-64 flex-col border-r border-border">
+      <div className="relative shrink-0">
+      <aside className={cn("flex h-full flex-col border-r border-border transition-[width] duration-200 overflow-hidden", sidebarOpen ? "w-64" : "w-0")}>
         {/* Logo */}
         <div className="flex h-14 items-center gap-2 px-4">
           <BookOpen className="h-5 w-5 text-primary" />
@@ -332,16 +348,35 @@ export function DocsLayout() {
 
         {/* Footer */}
         <div className="flex flex-col gap-1 p-2">
-          <Button variant="ghost" size="sm" className="w-full justify-start gap-2">
+          {/* User identity row */}
+          <div className="flex items-center gap-2 px-2 py-1.5">
+            <span className="flex-1 truncate text-sm font-medium">
+              {userName ?? "—"}
+            </span>
+            {currentProject && (
+              <Badge variant="secondary" className="shrink-0 text-[10px] capitalize">
+                {currentProject.role}
+              </Badge>
+            )}
+          </div>
+          <Button variant="ghost" size="sm" className="w-full justify-start gap-2" onClick={() => navigate("/settings")}>
             <Settings className="h-4 w-4" />
             Settings
           </Button>
-          <Button variant="ghost" size="sm" className="w-full justify-start gap-2 text-muted-foreground">
+          <Button variant="ghost" size="sm" className="w-full justify-start gap-2 text-muted-foreground" onClick={() => { clearToken(); navigate("/login"); }}>
             <LogOut className="h-4 w-4" />
             Sign out
           </Button>
         </div>
       </aside>
+      <button
+        onClick={() => setSidebarOpen(v => !v)}
+        aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+        className="absolute top-1/2 -translate-y-1/2 -right-3 z-10 flex h-10 w-3 items-center justify-center rounded-r-full border border-l-0 border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+      >
+        <ChevronLeft className={cn("h-2.5 w-2.5 transition-transform duration-200", !sidebarOpen && "rotate-180")} />
+      </button>
+      </div>
 
       {/* Main content */}
       <main className="flex flex-1 flex-col overflow-hidden">
@@ -373,9 +408,9 @@ export function DocsLayout() {
             })}
           </div>
         )}
-        <ScrollArea className="flex-1">
+        <div className="flex-1 overflow-y-auto min-h-0">
           <Outlet context={outletContext} />
-        </ScrollArea>
+        </div>
       </main>
       <Toaster />
     </div>

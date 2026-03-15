@@ -1,4 +1,4 @@
-import { useState, useEffect, isValidElement } from "react";
+import { useState, useEffect, useCallback, isValidElement } from "react";
 import { useParams, useLocation, useNavigate, useOutletContext } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -51,6 +51,27 @@ function extractHeadings(content: string): Heading[] {
   return headings;
 }
 
+interface BlameEntry {
+  u: string;
+  n: string;
+  t: string;
+}
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  return `${Math.floor(months / 12)}y ago`;
+}
+
 const remarkPlugins = [remarkGfm, remarkCallouts];
 
 const markdownComponents = {
@@ -87,6 +108,7 @@ interface Doc {
   published_at: string | null;
   show_heading: number;
   myRole?: string;
+  blame?: (BlameEntry | null)[];
 }
 
 export function DocPage() {
@@ -105,6 +127,13 @@ export function DocPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [togglingPublish, setTogglingPublish] = useState(false);
+  const [activeLine, setActiveLine] = useState<number>(0);
+
+  const handleEditorActivity = useCallback((e: React.MouseEvent<HTMLTextAreaElement> | React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const ta = e.currentTarget;
+    const beforeCursor = ta.value.slice(0, ta.selectionStart ?? 0);
+    setActiveLine(beforeCursor.split("\n").length - 1);
+  }, []);
 
   useEffect(() => {
     if (!docId) return;
@@ -142,6 +171,7 @@ export function DocPage() {
     setTitleDraft(doc.title);
     setDraft(doc.content);
     setSaveError(null);
+    setActiveLine(0);
     setEditing(true);
   }
 
@@ -265,13 +295,23 @@ export function DocPage() {
         {/* Split editor / preview */}
         <div className="flex flex-1 overflow-hidden">
           <div className="flex w-1/2 flex-col border-r border-border">
-            <div className="border-b border-border px-4 py-1.5">
+            <div className="border-b border-border px-4 py-1.5 flex items-center justify-between gap-4">
               <span className="text-xs font-medium text-muted-foreground">Markdown</span>
+              {(() => {
+                const entry = doc.blame?.[activeLine] ?? null;
+                return entry ? (
+                  <span className="text-xs text-muted-foreground/70 font-mono truncate">
+                    // Edited by {entry.n} · {timeAgo(entry.t)}
+                  </span>
+                ) : null;
+              })()}
             </div>
             <Textarea
               className="flex-1 rounded-none border-0 bg-background p-4 font-mono text-sm leading-relaxed shadow-none ring-0 focus-visible:ring-0"
               value={draft}
               onChange={e => setDraft(e.target.value)}
+              onClick={handleEditorActivity}
+              onKeyUp={handleEditorActivity}
               placeholder="Write your document in Markdown…"
               autoFocus={!location.state?.isNew}
               spellCheck={false}

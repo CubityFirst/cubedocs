@@ -9,6 +9,7 @@ import { DocPage } from "./pages/DocPage";
 import { PasswordVaultPage } from "./pages/PasswordVaultPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { SiteSettingsPage } from "./pages/SiteSettingsPage";
+import { UserSettingsPage } from "./pages/UserSettingsPage";
 import { PublicDocPage } from "./pages/PublicDocPage";
 
 export function App() {
@@ -23,6 +24,7 @@ export function App() {
         <Route path="/projects/:projectId/docs/:docId" element={<DocPage />} />
         <Route path="/projects/:projectId/passwords" element={<PasswordVaultPage />} />
         <Route path="/projects/:projectId/settings" element={<SiteSettingsPage />} />
+        <Route path="/settings" element={<UserSettingsPage />} />
       </Route>
       <Route path="/s/:projectId" element={<PublicDocPage />} />
       <Route path="/s/:projectId/:docId" element={<PublicDocPage />} />

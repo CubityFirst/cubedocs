@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation, useOutletContext } from "react-router-dom";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
-import { Folder, Lock, Plus, FolderPlus, Search, Eye, EyeOff, Copy, Check, ExternalLink, Pencil, Trash2, Shuffle, User, Key, Clock } from "lucide-react";
+import { Folder, Lock, Plus, FolderPlus, Search, Eye, EyeOff, Copy, Check, ExternalLink, Pencil, Trash2, Shuffle, User, Key, Clock, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ResizableTable, ResizableTableRow } from "@/components/ui/resizable-table";
+import { Badge } from "@/components/ui/badge";
 import { getToken } from "@/lib/auth";
 
 interface FolderItem {
@@ -167,6 +168,7 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
   const currentFolderId = path[path.length - 1].id;
 
   const [selectedEntries, setSelectedEntries] = useState<Set<string>>(new Set());
+  const [folderCounts, setFolderCounts] = useState<Map<string, { files: number; folders: number }>>(new Map());
 
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<PasswordEntry[] | null>(null);
@@ -199,6 +201,23 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
   }, [currentFolderId, projectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    if (folders.length === 0) { setFolderCounts(new Map()); return; }
+    const token = getToken();
+    if (!token) return;
+    Promise.all(
+      folders.map(async folder => {
+        const [fRes, eRes] = await Promise.all([
+          fetch(`/api/folders?projectId=${projectId}&type=passwords&parentId=${folder.id}`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`/api/passwords?projectId=${projectId}&folderId=${folder.id}`, { headers: { Authorization: `Bearer ${token}` } }),
+        ]);
+        const fJson = await fRes.json() as { ok: boolean; data?: FolderItem[] };
+        const eJson = await eRes.json() as { ok: boolean; data?: PasswordEntry[] };
+        return { id: folder.id, files: eJson.data?.length ?? 0, folders: fJson.data?.length ?? 0 };
+      })
+    ).then(results => setFolderCounts(new Map(results.map(r => [r.id, { files: r.files, folders: r.folders }]))));
+  }, [folders]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
     setBreadcrumbs(path.map((crumb, i) => {
       const isLast = i === path.length - 1;
       const crumbKey = crumb.id ?? "root";
@@ -220,14 +239,15 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
     const timer = setTimeout(async () => {
       const token = getToken();
       if (!token) return;
-      const res = await fetch(`/api/passwords?projectId=${projectId}&q=${encodeURIComponent(searchQuery.trim())}`, {
+      const folderParam = currentFolderId ? `&rootFolderId=${currentFolderId}` : "";
+      const res = await fetch(`/api/passwords?projectId=${projectId}&q=${encodeURIComponent(searchQuery.trim())}${folderParam}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const json = await res.json() as { ok: boolean; data?: PasswordEntry[] };
       if (json.ok && json.data) setSearchResults(json.data);
     }, 250);
     return () => clearTimeout(timer);
-  }, [searchQuery, projectId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [searchQuery, projectId, currentFolderId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadContents() {
     const token = getToken();
@@ -448,16 +468,16 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
   // ── JSX ──────────────────────────────────────────────────────────────────
 
   const VAULT_COLUMNS = [
-    { label: "Name", defaultSize: 34, minSize: 12 },
-    { label: "", defaultSize: 0, fixedWidth: 126 },
-    { label: "Username", defaultSize: 22, minSize: 10 },
-    { label: "URL", defaultSize: 20, minSize: 10 },
+    { label: "Name", defaultSize: 0, minWidth: 200, maxWidth: 400 },
+    { label: "", defaultSize: 0, minWidth: 126, maxWidth: 180 },
+    { label: "Username", defaultSize: 0, minWidth: 150, maxWidth: 400 },
+    { label: "URL", defaultSize: 0, minWidth: 130, maxWidth: 400 },
     { label: "Last changed", defaultSize: 18, minSize: 10 },
   ];
 
   function renderTable(folderRows: FolderItem[], entryRows: PasswordEntry[]) {
     return (
-      <ResizableTable columns={VAULT_COLUMNS}>
+      <ResizableTable columns={VAULT_COLUMNS} storageKey="vault-columns">
         <>
           {folderRows.map(folder => {
             const isDropTarget = dropTarget === folder.id;
@@ -489,6 +509,17 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
                         <>
                           <Folder className={`h-4 w-4 shrink-0 mr-2 ${isDropTarget ? "text-primary" : "text-primary/70"}`} />
                           <span className="text-sm font-medium truncate">{folder.name}</span>
+                          {folderCounts.has(folder.id) && (() => {
+                            const c = folderCounts.get(folder.id)!;
+                            const parts = [];
+                            if (c.files > 0) parts.push(`${c.files} ${c.files === 1 ? "entry" : "entries"}`);
+                            if (c.folders > 0) parts.push(`${c.folders} ${c.folders === 1 ? "folder" : "folders"}`);
+                            return parts.length > 0 ? (
+                              <Badge variant="outline" className="ml-2 shrink-0 text-xs text-muted-foreground">
+                                {parts.join(", ")}
+                              </Badge>
+                            ) : null;
+                          })()}
                         </>
                       ),
                       onClick: () => enterFolder(folder),
@@ -601,8 +632,16 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
             placeholder="Search entries…"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="pl-9"
+            className="pl-9 pr-8"
           />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 h-5 w-5 flex items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
         <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setShowNewFolder(true)}>
           <FolderPlus className="h-3.5 w-3.5" />

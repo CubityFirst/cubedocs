@@ -19,8 +19,8 @@ export async function handleProjects(
   // GET /projects — list projects where user is a member (includes owned)
   if (!projectId && request.method === "GET") {
     const rows = await env.DB.prepare(
-      "SELECT p.*, (SELECT COUNT(*) FROM docs WHERE project_id = p.id) as doc_count FROM projects p INNER JOIN project_members pm ON pm.project_id = p.id WHERE pm.user_id = ? ORDER BY p.created_at DESC",
-    ).bind(user.userId).all<Project & { doc_count: number }>();
+      "SELECT p.*, pm.role, (SELECT COUNT(*) FROM docs WHERE project_id = p.id) as doc_count FROM projects p INNER JOIN project_members pm ON pm.project_id = p.id WHERE pm.user_id = ? ORDER BY p.created_at DESC",
+    ).bind(user.userId).all<Project & { role: Role; doc_count: number }>();
     return okResponse(rows.results);
   }
 

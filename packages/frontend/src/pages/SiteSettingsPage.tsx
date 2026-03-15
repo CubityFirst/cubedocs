@@ -16,6 +16,17 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -530,30 +541,34 @@ export function SiteSettingsPage() {
               Deleting this site will permanently remove all of its documents and members. This action cannot be undone.
             </p>
 
-            <Dialog open={deleteOpen} onOpenChange={open => { setDeleteOpen(open); if (!open) setDeleteError(null); }}>
-              <DialogTrigger asChild>
+            <AlertDialog open={deleteOpen} onOpenChange={open => { setDeleteOpen(open); if (!open) setDeleteError(null); }}>
+              <AlertDialogTrigger asChild>
                 <Button variant="destructive" className="self-start">Delete site</Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Delete "{project.name}"?</DialogTitle>
-                  <DialogDescription>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete "{project.name}"?</AlertDialogTitle>
+                  <AlertDialogDescription>
                     This will permanently delete the site and all of its documents. This action cannot be undone.
-                  </DialogDescription>
-                </DialogHeader>
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
                 {deleteError && (
                   <Alert variant="destructive">
                     <AlertDescription>{deleteError}</AlertDescription>
                   </Alert>
                 )}
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setDeleteOpen(false)}>Cancel</Button>
-                  <Button variant="destructive" disabled={deleting} onClick={handleDelete}>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    disabled={deleting}
+                    onClick={handleDelete}
+                  >
                     {deleting ? "Deleting…" : "Yes, delete"}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         </>
       )}

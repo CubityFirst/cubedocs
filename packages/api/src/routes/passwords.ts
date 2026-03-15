@@ -79,8 +79,22 @@ export async function handlePasswords(
 
     let rows;
     if (q) {
-      rows = await env.DB.prepare(`${base} WHERE project_id = ? AND LOWER(title) LIKE LOWER(?) ORDER BY title ASC`)
-        .bind(projectId, `%${q}%`).all();
+      const rootFolderId = params.get("rootFolderId");
+      if (rootFolderId) {
+        rows = await env.DB.prepare(`
+          WITH RECURSIVE subtree(id) AS (
+            SELECT id FROM folders WHERE id = ?
+            UNION ALL
+            SELECT f.id FROM folders f JOIN subtree s ON f.parent_id = s.id
+          )
+          ${base} WHERE project_id = ? AND folder_id IN (SELECT id FROM subtree)
+            AND (LOWER(title) LIKE LOWER(?) OR LOWER(COALESCE(username, '')) LIKE LOWER(?) OR LOWER(COALESCE(url, '')) LIKE LOWER(?))
+          ORDER BY title ASC
+        `).bind(rootFolderId, projectId, `%${q}%`, `%${q}%`, `%${q}%`).all();
+      } else {
+        rows = await env.DB.prepare(`${base} WHERE project_id = ? AND (LOWER(title) LIKE LOWER(?) OR LOWER(COALESCE(username, '')) LIKE LOWER(?) OR LOWER(COALESCE(url, '')) LIKE LOWER(?)) ORDER BY title ASC`)
+          .bind(projectId, `%${q}%`, `%${q}%`, `%${q}%`).all();
+      }
     } else if (folderId) {
       rows = await env.DB.prepare(`${base} WHERE project_id = ? AND folder_id = ? ORDER BY title ASC`)
         .bind(projectId, folderId).all();

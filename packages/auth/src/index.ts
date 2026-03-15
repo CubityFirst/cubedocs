@@ -4,11 +4,13 @@ import { handleLogin } from "./routes/login";
 import { handleVerify } from "./routes/verify";
 import { handleLookup } from "./routes/lookup";
 import { handleLookupById } from "./routes/lookup-by-id";
+import { handleUpdateName } from "./routes/update-name";
 
 export interface Env {
   DB: D1Database;
   JWT_SECRET: string;
   JWT_ISSUER: string;
+  TURNSTILE_SECRET: string;
 }
 
 export default {
@@ -33,6 +35,8 @@ export default {
         response = await handleLookup(request, env);
       } else if (url.pathname === "/lookup-by-id" && request.method === "POST") {
         response = await handleLookupById(request, env);
+      } else if (url.pathname === "/update-name" && request.method === "POST") {
+        response = await handleUpdateName(request, env);
       } else {
         response = errorResponse(Errors.NOT_FOUND);
       }

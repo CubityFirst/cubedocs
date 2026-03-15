@@ -30,6 +30,40 @@ export default {
         return env.AUTH.fetch(new Request(`https://auth${url.pathname}`, request));
       }
 
+      // GET /me — returns authenticated user's name and email
+      if (url.pathname === "/me" && request.method === "GET") {
+        const user = await authenticate(request, env);
+        if (!user) return addCorsHeaders(errorResponse(Errors.UNAUTHORIZED));
+        const lookupRes = await env.AUTH.fetch("https://auth/lookup-by-id", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: user.userId }),
+        });
+        if (!lookupRes.ok) return addCorsHeaders(errorResponse(Errors.INTERNAL));
+        const data = await lookupRes.json<{ ok: boolean; data?: { name: string; email: string } }>();
+        if (!data.ok || !data.data) return addCorsHeaders(errorResponse(Errors.INTERNAL));
+        return addCorsHeaders(Response.json({ ok: true, data: { name: data.data.name, email: data.data.email, userId: user.userId } }));
+      }
+
+      // PATCH /me — update authenticated user's name
+      if (url.pathname === "/me" && request.method === "PATCH") {
+        const user = await authenticate(request, env);
+        if (!user) return addCorsHeaders(errorResponse(Errors.UNAUTHORIZED));
+        const body = await request.json<{ name?: string }>();
+        if (!body.name?.trim()) return addCorsHeaders(errorResponse(Errors.BAD_REQUEST));
+        const updateRes = await env.AUTH.fetch("https://auth/update-name", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: user.userId, name: body.name.trim() }),
+        });
+        if (!updateRes.ok) return addCorsHeaders(errorResponse(Errors.INTERNAL));
+        const trimmedName = body.name.trim();
+        // Keep project_members names in sync
+        await env.DB.prepare("UPDATE project_members SET name = ? WHERE user_id = ?")
+          .bind(trimmedName, user.userId).run();
+        return addCorsHeaders(Response.json({ ok: true, data: { name: trimmedName } }));
+      }
+
       // Public (unauthenticated) routes
       if (url.pathname.startsWith("/public")) {
         response = await handlePublic(request, env, url);

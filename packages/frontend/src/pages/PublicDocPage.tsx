@@ -8,6 +8,7 @@ import { MarkdownCode } from "@/components/CodeBlock";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { BookOpen, FileText, Folder } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 function toId(text: string): string {
   return text.toLowerCase().replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-");
@@ -108,18 +109,30 @@ function NavTree({
 
   return (
     <>
-      {childFolders.map(folder => (
-        <div key={folder.id}>
-          <div
-            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground"
-            style={{ paddingLeft: `${0.5 + depth * 0.75}rem` }}
-          >
-            <Folder className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate font-medium">{folder.name}</span>
+      {childFolders.map(folder => {
+        const childFolderCount = folders.filter(f => f.parent_id === folder.id).length;
+        const childDocCount = docs.filter(d => d.folder_id === folder.id).length;
+        const parts = [];
+        if (childDocCount > 0) parts.push(`${childDocCount} ${childDocCount === 1 ? "file" : "files"}`);
+        if (childFolderCount > 0) parts.push(`${childFolderCount} ${childFolderCount === 1 ? "folder" : "folders"}`);
+        return (
+          <div key={folder.id}>
+            <div
+              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground"
+              style={{ paddingLeft: `${0.5 + depth * 0.75}rem` }}
+            >
+              <Folder className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate font-medium">{folder.name}</span>
+              {parts.length > 0 && (
+                <Badge variant="outline" className="ml-auto shrink-0 text-xs text-muted-foreground">
+                  {parts.join(", ")}
+                </Badge>
+              )}
+            </div>
+            <NavTree projectId={projectId} folders={folders} docs={docs} parentId={folder.id} depth={depth + 1} />
           </div>
-          <NavTree projectId={projectId} folders={folders} docs={docs} parentId={folder.id} depth={depth + 1} />
-        </div>
-      ))}
+        );
+      })}
       {childDocs.map(doc => (
         <NavLink
           key={doc.id}
