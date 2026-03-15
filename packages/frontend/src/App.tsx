@@ -8,6 +8,7 @@ import { ProjectPage } from "./pages/ProjectPage";
 import { DocPage } from "./pages/DocPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { SiteSettingsPage } from "./pages/SiteSettingsPage";
+import { PublicDocPage } from "./pages/PublicDocPage";
 
 export function App() {
   return (
@@ -21,6 +22,8 @@ export function App() {
         <Route path="/projects/:projectId/docs/:docId" element={<DocPage />} />
         <Route path="/projects/:projectId/settings" element={<SiteSettingsPage />} />
       </Route>
+      <Route path="/s/:siteSlug" element={<PublicDocPage />} />
+      <Route path="/s/:siteSlug/:docSlug" element={<PublicDocPage />} />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );

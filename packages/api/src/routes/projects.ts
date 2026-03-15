@@ -68,13 +68,14 @@ export async function handleProjects(
     if (role === null) return errorResponse(Errors.NOT_FOUND);
     if (ROLE_RANK[role] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
 
-    const body = await request.json<{ name?: string; description?: string | null }>();
+    const body = await request.json<{ name?: string; description?: string | null; publishedAt?: string | null }>();
     if (body.name !== undefined && !body.name.trim()) return errorResponse(Errors.BAD_REQUEST);
 
     const fields: string[] = [];
     const values: unknown[] = [];
     if (body.name !== undefined) { fields.push("name = ?"); values.push(body.name.trim()); }
     if (body.description !== undefined) { fields.push("description = ?"); values.push(body.description ?? null); }
+    if (body.publishedAt !== undefined) { fields.push("published_at = ?"); values.push(body.publishedAt ?? null); }
     if (fields.length === 0) return errorResponse(Errors.BAD_REQUEST);
 
     values.push(projectId);

@@ -3,6 +3,7 @@ import { authenticate } from "./auth";
 import { handleProjects } from "./routes/projects";
 import { handleDocs } from "./routes/docs";
 import { handleMembers } from "./routes/members";
+import { handlePublic } from "./routes/public";
 
 export interface Env {
   DB: D1Database;
@@ -27,8 +28,10 @@ export default {
         return env.AUTH.fetch(new Request(`https://auth${url.pathname}`, request));
       }
 
-      // /projects/:id/members
-      if (/^\/projects\/[^/]+\/members/.test(url.pathname)) {
+      // Public (unauthenticated) routes
+      if (url.pathname.startsWith("/public")) {
+        response = await handlePublic(request, env, url);
+      } else if (/^\/projects\/[^/]+\/members/.test(url.pathname)) {
         const user = await authenticate(request, env);
         if (!user) return addCorsHeaders(errorResponse(Errors.UNAUTHORIZED));
         response = await handleMembers(request, env, user, url);

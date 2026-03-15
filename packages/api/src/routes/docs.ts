@@ -69,7 +69,7 @@ export async function handleDocs(
     if (!row) return errorResponse(Errors.NOT_FOUND);
     const r2Object = await env.ASSETS.get(`${meta.project_id}/${docId}`);
     const content = r2Object ? await r2Object.text() : "";
-    return okResponse({ ...row, content });
+    return okResponse({ ...row, content, myRole: role });
   }
 
   // PUT /docs/:id — editor or above

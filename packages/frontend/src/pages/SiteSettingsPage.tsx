@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { getToken } from "@/lib/auth";
+import { Globe, Lock } from "lucide-react";
 
 type Role = "viewer" | "editor" | "admin" | "owner";
 
@@ -51,6 +52,7 @@ interface Project {
   slug: string;
   description: string | null;
   owner_id: string;
+  published_at: string | null;
 }
 
 interface Member {
@@ -95,6 +97,8 @@ export function SiteSettingsPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const [togglingPublish, setTogglingPublish] = useState(false);
 
   const token = getToken();
   const currentUser = token ? parseToken(token) : null;
@@ -229,6 +233,30 @@ export function SiteSettingsPage() {
     }
   }
 
+  async function handleTogglePublish() {
+    if (!projectId || !project) return;
+    setTogglingPublish(true);
+    const publishedAt = project.published_at ? null : new Date().toISOString();
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ publishedAt }),
+      });
+      const json = await res.json() as { ok: boolean; data?: Project };
+      if (json.ok && json.data) {
+        setProject(json.data);
+        toast({ title: json.data.published_at ? "Site published." : "Site unpublished." });
+      } else {
+        toast({ title: "Failed to update publish state.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Could not connect to the server.", variant: "destructive" });
+    } finally {
+      setTogglingPublish(false);
+    }
+  }
+
   async function handleDelete() {
     if (!projectId) return;
     setDeleting(true);
@@ -311,6 +339,52 @@ export function SiteSettingsPage() {
           </Button>
         )}
       </form>
+
+      {/* Publishing section — admins and owners only */}
+      {isAdminOrOwner && (
+        <>
+          <Separator className="my-10" />
+          <div className="flex flex-col gap-4">
+            <div>
+              <h3 className="text-base font-semibold">Publishing</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Control public access to this site. When published, anyone with the link can view all documents.
+              </p>
+            </div>
+            <div className="flex items-center justify-between rounded-md border border-border px-4 py-3">
+              <div className="flex items-center gap-3">
+                {project.published_at ? (
+                  <Globe className="h-4 w-4 text-green-600 dark:text-green-400" />
+                ) : (
+                  <Lock className="h-4 w-4 text-muted-foreground" />
+                )}
+                <div>
+                  <p className="text-sm font-medium">
+                    {project.published_at ? "Published" : "Private"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {project.published_at
+                      ? "This site is publicly accessible."
+                      : "Only members can view this site."}
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant={project.published_at ? "outline" : "default"}
+                size="sm"
+                disabled={togglingPublish}
+                onClick={handleTogglePublish}
+              >
+                {togglingPublish
+                  ? "Saving…"
+                  : project.published_at
+                  ? "Unpublish"
+                  : "Publish site"}
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Members section — admins and owners only */}
       {isAdminOrOwner && (

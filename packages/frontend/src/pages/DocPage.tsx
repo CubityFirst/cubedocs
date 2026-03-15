@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Pencil, X, Save } from "lucide-react";
+import { Pencil, X, Save, Globe, Lock, Settings } from "lucide-react";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
 import { getToken } from "@/lib/auth";
 
@@ -81,21 +81,25 @@ interface Doc {
   slug: string;
   content: string;
   updatedAt: string;
+  published_at: string | null;
+  myRole?: string;
 }
 
 export function DocPage() {
-  const { projectId: _projectId, docId } = useParams<{ projectId: string; docId: string }>();
+  const { projectId, docId } = useParams<{ projectId: string; docId: string }>();
   const location = useLocation();
   const navigate = useNavigate();
   const { updateDocTitle } = useOutletContext<DocsLayoutContext>();
 
   const [doc, setDoc] = useState<Doc | null>(null);
+  const [myRole, setMyRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [togglingPublish, setTogglingPublish] = useState(false);
 
   useEffect(() => {
     if (!docId) return;
@@ -107,6 +111,7 @@ export function DocPage() {
       .then((json: { ok: boolean; data?: Doc }) => {
         if (json.ok && json.data) {
           setDoc(json.data);
+          setMyRole(json.data.myRole ?? null);
           if (location.state?.isNew) {
             setTitleDraft(json.data.title);
             setDraft(json.data.content);
@@ -155,6 +160,28 @@ export function DocPage() {
       setSaveError("Could not connect to the server.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleTogglePublish() {
+    if (!docId || !doc) return;
+    setTogglingPublish(true);
+    const publishedAt = doc.published_at ? null : new Date().toISOString();
+    try {
+      const token = getToken();
+      const res = await fetch(`/api/docs/${docId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ publishedAt }),
+      });
+      const json = await res.json() as { ok: boolean; data?: Doc };
+      if (json.ok && json.data) {
+        setDoc(json.data);
+      }
+    } catch {
+      // fail silently
+    } finally {
+      setTogglingPublish(false);
     }
   }
 
@@ -241,28 +268,61 @@ export function DocPage() {
   }
 
   const headings = extractHeadings(doc.content);
+  const isEditor = myRole === "editor" || myRole === "admin" || myRole === "owner";
 
   return (
     <div className="flex min-h-full">
       {/* Article */}
       <div className="flex-1 min-w-0 px-6 py-10">
-        <div className="mx-auto max-w-3xl">
+        <div className="mx-auto max-w-3xl relative">
+          {/* Top-right editor actions */}
+          {isEditor && (
+            <div className="absolute top-0 right-0 flex items-center gap-1">
+              <Button variant="ghost" size="icon" onClick={startEditing} title="Edit document">
+                <Pencil className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => navigate(`/projects/${projectId}/docs/${docId}/settings`)}
+                title="Document settings"
+              >
+                <Settings className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+
           <article className="prose prose-neutral dark:prose-invert max-w-none">
             <h1>{doc.title}</h1>
             {doc.content.trim() ? (
               <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>{doc.content}</ReactMarkdown>
             ) : (
               <p className="not-prose text-sm italic text-muted-foreground/60">
-                This page has no content yet. Click "Edit this page" to add some.
+                This page has no content yet.
               </p>
             )}
           </article>
 
           <Separator className="mt-16" />
-          <div className="pt-6">
-            <Button variant="outline" size="sm" onClick={startEditing} className="gap-2">
-              <Pencil className="h-3.5 w-3.5" />
-              Edit this page
+          <div className="flex items-center gap-3 pt-6">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={togglingPublish}
+              onClick={handleTogglePublish}
+              className="gap-2"
+            >
+              {doc.published_at ? (
+                <>
+                  <Globe className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
+                  Published
+                </>
+              ) : (
+                <>
+                  <Lock className="h-3.5 w-3.5 text-muted-foreground" />
+                  Publish
+                </>
+              )}
             </Button>
           </div>
         </div>
