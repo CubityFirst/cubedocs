@@ -1,0 +1,1 @@
+ALTER TABLE projects ADD COLUMN vault_enabled INTEGER NOT NULL DEFAULT 0;

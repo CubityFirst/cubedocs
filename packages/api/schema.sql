@@ -1,10 +1,12 @@
 CREATE TABLE IF NOT EXISTS projects (
-  id           TEXT PRIMARY KEY,
-  name         TEXT NOT NULL,
-  description  TEXT,
-  owner_id     TEXT NOT NULL,
-  published_at TEXT,
-  created_at   TEXT NOT NULL
+  id            TEXT PRIMARY KEY,
+  name          TEXT NOT NULL,
+  description   TEXT,
+  owner_id      TEXT NOT NULL,
+  published_at    TEXT,
+  vault_enabled   INTEGER NOT NULL DEFAULT 0,
+  changelog_mode  TEXT NOT NULL DEFAULT 'off' CHECK(changelog_mode IN ('off', 'on', 'enforced')),
+  created_at      TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS docs (
@@ -66,3 +68,17 @@ CREATE TABLE IF NOT EXISTS passwords (
 
 CREATE INDEX IF NOT EXISTS idx_passwords_project ON passwords(project_id);
 CREATE INDEX IF NOT EXISTS idx_passwords_folder ON passwords(folder_id);
+
+CREATE TABLE IF NOT EXISTS asset_revisions (
+  id          TEXT PRIMARY KEY,
+  asset_type  TEXT NOT NULL CHECK(asset_type IN ('doc', 'password')),
+  asset_id    TEXT NOT NULL,
+  project_id  TEXT NOT NULL,
+  editor_id   TEXT NOT NULL,
+  editor_name TEXT NOT NULL,
+  created_at  TEXT NOT NULL,
+  data        TEXT,
+  changelog   TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_asset_revisions_asset ON asset_revisions(asset_id);

@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation, useOutletContext } from "react-router-dom";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
-import { Folder, Lock, Plus, FolderPlus, Search, Eye, EyeOff, Copy, Check, ExternalLink, Pencil, Trash2, Shuffle, User, Key, Clock, X } from "lucide-react";
+import { Folder, Lock, Plus, FolderPlus, Search, Eye, EyeOff, Copy, Check, ExternalLink, Pencil, Trash2, Shuffle, User, Key, Clock, X, History } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { HistorySheet, type RevisionMeta } from "@/components/HistorySheet";
+import { HistoryBanner } from "@/components/HistoryBanner";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ResizableTable, ResizableTableRow } from "@/components/ui/resizable-table";
 import { Badge } from "@/components/ui/badge";
@@ -59,6 +61,15 @@ interface EntryForm {
 }
 
 const BLANK_FORM: EntryForm = { title: "", username: "", password: "", totp: "", url: "", notes: "" };
+
+interface RevisionDetail extends RevisionMeta {
+  title: string;
+  username: string | null;
+  password: string;
+  totp: string | null;
+  url: string | null;
+  notes: string | null;
+}
 
 // ── Crypto helpers ──────────────────────────────────────────────────────────
 
@@ -179,6 +190,7 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
 
   // Dialog: null = closed, 'new' = create form, 'view' = detail view, 'edit' = edit form
   const [dialog, setDialog] = useState<null | "new" | "view" | "edit">(null);
+  const [historySheetOpen, setHistorySheetOpen] = useState(false);
   const [detailEntry, setDetailEntry] = useState<PasswordDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [form, setForm] = useState<EntryForm>(BLANK_FORM);
@@ -191,6 +203,10 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
 
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [historyRevisions, setHistoryRevisions] = useState<RevisionMeta[] | null>(null);
+  const [viewingHistoryRevision, setViewingHistoryRevision] = useState<RevisionDetail | null>(null);
+  const [loadingHistoryRevision, setLoadingHistoryRevision] = useState(false);
+  const [reverting, setReverting] = useState(false);
 
   // Drag state
   const draggedItem = useRef<{ type: "entry" | "folder"; id: string } | null>(null);
@@ -400,6 +416,63 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
     if (json.ok) {
       setEntries(prev => prev.filter(e => e.id !== detailEntry.id));
       setDialog(null);
+    }
+  }
+
+  async function openHistory() {
+    if (!detailEntry) return;
+    setHistoryRevisions(null);
+    setViewingHistoryRevision(null);
+    setHistorySheetOpen(true);
+    const token = getToken();
+    const res = await fetch(`/api/passwords/${detailEntry.id}/revisions`, { headers: { Authorization: `Bearer ${token}` } });
+    const json = await res.json() as { ok: boolean; data?: RevisionMeta[] };
+    if (json.ok) setHistoryRevisions(json.data ?? []);
+  }
+
+  async function viewHistoryRevision(revisionId: string) {
+    if (!detailEntry) return;
+    setLoadingHistoryRevision(true);
+    setViewingHistoryRevision(null);
+    setRevealPassword(false);
+    setRevealTotp(false);
+    const token = getToken();
+    const res = await fetch(`/api/passwords/${detailEntry.id}/revisions/${revisionId}`, { headers: { Authorization: `Bearer ${token}` } });
+    const json = await res.json() as { ok: boolean; data?: RevisionDetail };
+    if (json.ok && json.data) setViewingHistoryRevision(json.data);
+    setLoadingHistoryRevision(false);
+  }
+
+  async function handleRevert() {
+    if (!detailEntry || !viewingHistoryRevision) return;
+    setReverting(true);
+    try {
+      const token = getToken();
+      const res = await fetch(`/api/passwords/${detailEntry.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          title: viewingHistoryRevision.title,
+          username: viewingHistoryRevision.username,
+          password: viewingHistoryRevision.password,
+          totp: viewingHistoryRevision.totp,
+          url: viewingHistoryRevision.url,
+          notes: viewingHistoryRevision.notes,
+        }),
+      });
+      const json = await res.json() as { ok: boolean; data?: PasswordDetail };
+      if (json.ok && json.data) {
+        setDetailEntry(json.data);
+        setEntries(prev => prev.map(e => e.id === json.data!.id
+          ? { ...e, title: json.data!.title, username: json.data!.username, url: json.data!.url, last_change_date: json.data!.last_change_date, updated_at: json.data!.updated_at }
+          : e,
+        ));
+        setViewingHistoryRevision(null);
+        setRevealPassword(false);
+        setRevealTotp(false);
+      }
+    } finally {
+      setReverting(false);
     }
   }
 
@@ -696,37 +769,50 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
         <DialogContent className="sm:max-w-md">
 
           {/* ── View mode ───────────────────────────────────────────────── */}
-          {dialog === "view" && (
+          {dialog === "view" && (() => {
+            const viewData = viewingHistoryRevision ?? detailEntry;
+            return (
             <>
               <DialogHeader>
                 <div className="flex items-start justify-between pr-8">
                   <DialogTitle className="leading-snug">{detailEntry?.title ?? "…"}</DialogTitle>
                   {!loadingDetail && detailEntry && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 shrink-0 -mt-0.5"
-                      onClick={startEdit}
-                      title="Edit"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
+                    <div className="flex items-center gap-0.5 -mt-0.5">
+                      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={openHistory} title="View history">
+                        <History className="h-3.5 w-3.5" />
+                      </Button>
+                      {!viewingHistoryRevision && (
+                        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={startEdit} title="Edit">
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
                   )}
                 </div>
               </DialogHeader>
 
+              {viewingHistoryRevision && (
+                <HistoryBanner
+                  editorName={viewingHistoryRevision.editor_name}
+                  createdAt={viewingHistoryRevision.created_at}
+                  onBack={() => { setViewingHistoryRevision(null); setRevealPassword(false); setRevealTotp(false); }}
+                  onRevert={handleRevert}
+                  reverting={reverting}
+                />
+              )}
+
               {loadingDetail ? (
                 <div className="py-8 text-center text-sm text-muted-foreground">Loading…</div>
-              ) : detailEntry ? (
+              ) : viewData ? (
                 <div className="flex flex-col gap-4 pt-1">
 
                   {/* Username */}
-                  {detailEntry.username && (
+                  {viewData.username && (
                     <div className="flex flex-col gap-1">
                       <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Username</span>
                       <div className="flex items-center gap-1">
-                        <span className="flex-1 text-sm break-all">{detailEntry.username}</span>
-                        <CopyBtn text={detailEntry.username} field="username" copied={copiedField} onCopy={copyToClipboard} />
+                        <span className="flex-1 text-sm break-all">{viewData.username}</span>
+                        {!viewingHistoryRevision && <CopyBtn text={viewData.username} field="username" copied={copiedField} onCopy={copyToClipboard} />}
                       </div>
                     </div>
                   )}
@@ -736,109 +822,113 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
                     <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Password</span>
                     <div className="flex items-center gap-1">
                       <span className="flex-1 font-mono text-sm break-all">
-                        {revealPassword ? detailEntry.password : "•".repeat(Math.min(detailEntry.password.length, 24))}
+                        {revealPassword ? viewData.password : "•".repeat(Math.min(viewData.password.length, 24))}
                       </span>
                       <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => setRevealPassword(p => !p)}>
                         {revealPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                       </Button>
-                      <CopyBtn text={detailEntry.password} field="password" copied={copiedField} onCopy={copyToClipboard} />
+                      {!viewingHistoryRevision && <CopyBtn text={viewData.password} field="password" copied={copiedField} onCopy={copyToClipboard} />}
                     </div>
                   </div>
 
                   {/* TOTP */}
-                  {detailEntry.totp && (
+                  {viewData.totp && (
                     <div className="flex flex-col gap-1">
                       <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">TOTP</span>
                       <div className="flex items-center gap-1">
                         <div className="flex-1">
                           {revealTotp
-                            ? <TOTPDisplay secret={detailEntry.totp} />
+                            ? <TOTPDisplay secret={viewData.totp} />
                             : <span className="font-mono text-lg tracking-widest text-muted-foreground">••••••</span>}
                         </div>
                         <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => setRevealTotp(p => !p)}>
                           {revealTotp ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 shrink-0"
-                          onClick={async () => {
-                            if (!detailEntry.totp) return;
-                            try { copyToClipboard(await computeTOTP(detailEntry.totp), "totp"); } catch {}
-                          }}
-                        >
-                          {copiedField === "totp" ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
-                        </Button>
+                        {!viewingHistoryRevision && (
+                          <Button
+                            variant="ghost" size="icon" className="h-7 w-7 shrink-0"
+                            onClick={async () => {
+                              if (!viewData.totp) return;
+                              try { copyToClipboard(await computeTOTP(viewData.totp), "totp"); } catch {}
+                            }}
+                          >
+                            {copiedField === "totp" ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+                          </Button>
+                        )}
                       </div>
                     </div>
                   )}
 
                   {/* URL */}
-                  {detailEntry.url && (
+                  {viewData.url && (
                     <div className="flex flex-col gap-1">
                       <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">URL</span>
                       <div className="flex items-center gap-1">
                         <a
-                          href={detailEntry.url}
+                          href={viewData.url}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="flex-1 text-sm text-primary truncate hover:underline"
                         >
-                          {detailEntry.url}
+                          {viewData.url}
                         </a>
                         <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" asChild>
-                          <a href={detailEntry.url} target="_blank" rel="noopener noreferrer">
+                          <a href={viewData.url} target="_blank" rel="noopener noreferrer">
                             <ExternalLink className="h-3.5 w-3.5" />
                           </a>
                         </Button>
-                        <CopyBtn text={detailEntry.url} field="url" copied={copiedField} onCopy={copyToClipboard} />
+                        {!viewingHistoryRevision && <CopyBtn text={viewData.url} field="url" copied={copiedField} onCopy={copyToClipboard} />}
                       </div>
                     </div>
                   )}
 
                   {/* Notes */}
-                  {detailEntry.notes && (
+                  {viewData.notes && (
                     <div className="flex flex-col gap-1">
                       <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Notes</span>
                       <div className="flex items-start gap-1">
-                        <p className="flex-1 text-sm whitespace-pre-wrap">{detailEntry.notes}</p>
-                        <CopyBtn text={detailEntry.notes} field="notes" copied={copiedField} onCopy={copyToClipboard} />
+                        <p className="flex-1 text-sm whitespace-pre-wrap">{viewData.notes}</p>
+                        {!viewingHistoryRevision && <CopyBtn text={viewData.notes} field="notes" copied={copiedField} onCopy={copyToClipboard} />}
                       </div>
                     </div>
                   )}
 
-                  {/* Last changed */}
-                  <div className="flex flex-col gap-1 border-t pt-3">
-                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Last changed</span>
-                    <span className="text-sm text-muted-foreground">{formatRelativeTime(detailEntry.last_change_date)}</span>
-                  </div>
-
-                  {/* Delete */}
-                  {confirmDelete ? (
-                    <div className="flex items-center gap-2">
-                      <span className="flex-1 text-sm text-destructive">Delete this entry?</span>
-                      <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(false)}>Cancel</Button>
-                      <Button variant="destructive" size="sm" onClick={handleDelete}>Delete</Button>
+                  {/* Last changed — live only */}
+                  {!viewingHistoryRevision && detailEntry && (
+                    <div className="flex flex-col gap-1 border-t pt-3">
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Last changed</span>
+                      <span className="text-sm text-muted-foreground">{formatRelativeTime(detailEntry.last_change_date)}</span>
                     </div>
-                  ) : (
-                    <DialogFooter className="pt-0">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="mr-auto text-destructive hover:text-destructive"
-                        onClick={() => setConfirmDelete(true)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-                        Delete
-                      </Button>
-                    </DialogFooter>
+                  )}
+
+                  {/* Delete — live only */}
+                  {!viewingHistoryRevision && (
+                    confirmDelete ? (
+                      <div className="flex items-center gap-2">
+                        <span className="flex-1 text-sm text-destructive">Delete this entry?</span>
+                        <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(false)}>Cancel</Button>
+                        <Button variant="destructive" size="sm" onClick={handleDelete}>Delete</Button>
+                      </div>
+                    ) : (
+                      <DialogFooter className="pt-0">
+                        <Button
+                          variant="ghost" size="sm"
+                          className="mr-auto text-destructive hover:text-destructive"
+                          onClick={() => setConfirmDelete(true)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                          Delete
+                        </Button>
+                      </DialogFooter>
+                    )
                   )}
                 </div>
               ) : (
                 <div className="py-8 text-center text-sm text-destructive">Failed to load entry.</div>
               )}
             </>
-          )}
+            );
+          })()}
 
           {/* ── New / Edit form ──────────────────────────────────────────── */}
           {(dialog === "new" || dialog === "edit") && (
@@ -960,6 +1050,16 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
 
         </DialogContent>
       </Dialog>
+
+      {/* ── History sheet ──────────────────────────────────────────────────── */}
+      <HistorySheet
+        open={historySheetOpen}
+        onOpenChange={setHistorySheetOpen}
+        revisions={historyRevisions}
+        selectedId={viewingHistoryRevision?.id}
+        loading={loadingHistoryRevision}
+        onSelect={viewHistoryRevision}
+      />
 
     </div>
   );

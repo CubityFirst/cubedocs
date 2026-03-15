@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, isValidElement } from "react";
+import { useState, useEffect, useCallback, useRef, isValidElement } from "react";
 import { useParams, useLocation, useNavigate, useOutletContext } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -12,8 +12,10 @@ import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Pencil, X, Save, Settings, Globe, Lock, Link } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { HistorySheet, type RevisionMeta } from "@/components/HistorySheet";
+import { HistoryBanner } from "@/components/HistoryBanner";
+import { Pencil, X, Save, Settings, Globe, Lock, Link, History, LayoutList } from "lucide-react";
 import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
 import { getToken } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
@@ -55,6 +57,11 @@ interface BlameEntry {
   u: string;
   n: string;
   t: string;
+  c?: string | null;
+}
+
+function truncate(s: string, max: number): string {
+  return s.length > max ? s.slice(0, max) + "…" : s;
 }
 
 function timeAgo(iso: string): string {
@@ -71,6 +78,7 @@ function timeAgo(iso: string): string {
   if (months < 12) return `${months}mo ago`;
   return `${Math.floor(months / 12)}y ago`;
 }
+
 
 const remarkPlugins = [remarkGfm, remarkCallouts];
 
@@ -112,11 +120,15 @@ interface Doc {
   blame?: (BlameEntry | null)[];
 }
 
+interface RevisionDetail extends RevisionMeta {
+  content: string;
+}
+
 export function DocPage() {
   const { projectId, docId } = useParams<{ projectId: string; docId: string }>();
   const location = useLocation();
   const navigate = useNavigate();
-  const { updateDocTitle, setBreadcrumbs } = useOutletContext<DocsLayoutContext>();
+  const { updateDocTitle, setBreadcrumbs, projectPublishedAt, changelogMode } = useOutletContext<DocsLayoutContext>();
   const { toast } = useToast();
 
   const [doc, setDoc] = useState<Doc | null>(null);
@@ -129,6 +141,16 @@ export function DocPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [togglingPublish, setTogglingPublish] = useState(false);
   const [activeLine, setActiveLine] = useState<number>(0);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [revisions, setRevisions] = useState<RevisionMeta[] | null>(null);
+  const [viewingRevision, setViewingRevision] = useState<RevisionDetail | null>(null);
+  const [loadingRevision, setLoadingRevision] = useState(false);
+  const [reverting, setReverting] = useState(false);
+  const [changelogDialogOpen, setChangelogDialogOpen] = useState(false);
+  const [changelogText, setChangelogText] = useState("");
+  const [showBlame, setShowBlame] = useState(false);
+  const [editorScrollTop, setEditorScrollTop] = useState(0);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleEditorActivity = useCallback((e: React.MouseEvent<HTMLTextAreaElement> | React.KeyboardEvent<HTMLTextAreaElement>) => {
     const ta = e.currentTarget;
@@ -181,16 +203,18 @@ export function DocPage() {
     setSaveError(null);
   }
 
-  async function handleSave() {
+  async function handleSave(changelog?: string) {
     if (!docId || !doc) return;
     setSaving(true);
     setSaveError(null);
     try {
       const token = getToken();
+      const body: Record<string, unknown> = { title: titleDraft, content: draft };
+      if (changelog) body.changelog = changelog;
       const res = await fetch(`/api/docs/${docId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ title: titleDraft, content: draft }),
+        body: JSON.stringify(body),
       });
       const json = await res.json() as { ok: boolean; data?: Doc };
       if (json.ok && json.data) {
@@ -205,6 +229,15 @@ export function DocPage() {
       setSaveError("Could not connect to the server.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  function handleSaveClick() {
+    if (changelogMode === "off") {
+      handleSave();
+    } else {
+      setChangelogText("");
+      setChangelogDialogOpen(true);
     }
   }
 
@@ -263,6 +296,51 @@ export function DocPage() {
     }
   }
 
+  async function openHistory() {
+    setHistoryOpen(true);
+    setViewingRevision(null);
+    setRevisions(null);
+    const token = getToken();
+    const res = await fetch(`/api/docs/${docId}/revisions`, { headers: { Authorization: `Bearer ${token}` } });
+    const json = await res.json() as { ok: boolean; data?: RevisionMeta[] };
+    if (json.ok) setRevisions(json.data ?? []);
+  }
+
+  async function viewRevision(revisionId: string) {
+    setLoadingRevision(true);
+    const token = getToken();
+    const res = await fetch(`/api/docs/${docId}/revisions/${revisionId}`, { headers: { Authorization: `Bearer ${token}` } });
+    const json = await res.json() as { ok: boolean; data?: RevisionDetail };
+    if (json.ok && json.data) setViewingRevision(json.data);
+    setLoadingRevision(false);
+  }
+
+  async function handleRevert() {
+    if (!docId || !viewingRevision) return;
+    setReverting(true);
+    try {
+      const token = getToken();
+      const res = await fetch(`/api/docs/${docId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ content: viewingRevision.content }),
+      });
+      const json = await res.json() as { ok: boolean; data?: Doc };
+      if (json.ok && json.data) {
+        setDoc(json.data);
+        updateDocTitle(docId, json.data.title);
+        setViewingRevision(null);
+        toast({ title: "Document reverted to historical version." });
+      } else {
+        toast({ title: "Failed to revert.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Could not connect to the server.", variant: "destructive" });
+    } finally {
+      setReverting(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="mx-auto max-w-3xl px-6 py-10">
@@ -290,7 +368,7 @@ export function DocPage() {
               <X className="h-3.5 w-3.5" />
               Cancel
             </Button>
-            <Button size="sm" onClick={handleSave} disabled={saving} className="gap-1.5">
+            <Button size="sm" onClick={handleSaveClick} disabled={saving} className="gap-1.5">
               <Save className="h-3.5 w-3.5" />
               {saving ? "Saving…" : "Save"}
             </Button>
@@ -311,45 +389,135 @@ export function DocPage() {
         {/* Split editor / preview */}
         <div className="flex flex-1 overflow-hidden">
           <div className="flex w-1/2 flex-col border-r border-border">
-            <div className="border-b border-border px-4 py-1.5 flex items-center justify-between gap-4">
+            <div className="border-b border-border px-4 py-1.5 flex items-center">
               <span className="text-xs font-medium text-muted-foreground">Markdown</span>
+            </div>
+            <div className="relative flex-1 overflow-hidden">
+              <Textarea
+                ref={textareaRef}
+                className="absolute inset-0 rounded-none border-0 bg-background p-4 font-mono text-sm leading-relaxed shadow-none ring-0 focus-visible:ring-0"
+                value={draft}
+                onChange={e => setDraft(e.target.value)}
+                onClick={handleEditorActivity}
+                onKeyUp={handleEditorActivity}
+                onScroll={e => setEditorScrollTop(e.currentTarget.scrollTop)}
+                placeholder="Write your document in Markdown…"
+                autoFocus={!location.state?.isNew}
+                spellCheck={false}
+              />
               {(() => {
                 const entry = doc.blame?.[activeLine] ?? null;
-                return entry ? (
-                  <span className="text-xs text-muted-foreground/70 font-mono truncate">
-                    // Edited by {entry.n} · {timeAgo(entry.t)}
-                  </span>
-                ) : null;
+                if (!entry) return null;
+                const lineHeight = 22.75; // text-sm (14px) × leading-relaxed (1.625)
+                const paddingTop = 16; // p-4
+                const top = paddingTop + activeLine * lineHeight - editorScrollTop;
+                const parts: string[] = [];
+                if (entry.c) parts.push(`"${truncate(entry.c, 32)}"`);
+                parts.push(entry.n);
+                parts.push(timeAgo(entry.t));
+                return (
+                  <div
+                    className="pointer-events-none absolute right-4 font-mono text-xs text-muted-foreground/35 select-none whitespace-nowrap"
+                    style={{ top: `${top}px`, lineHeight: `${lineHeight}px` }}
+                  >
+                    {parts.join(" · ")}
+                  </div>
+                );
               })()}
             </div>
-            <Textarea
-              className="flex-1 rounded-none border-0 bg-background p-4 font-mono text-sm leading-relaxed shadow-none ring-0 focus-visible:ring-0"
-              value={draft}
-              onChange={e => setDraft(e.target.value)}
-              onClick={handleEditorActivity}
-              onKeyUp={handleEditorActivity}
-              placeholder="Write your document in Markdown…"
-              autoFocus={!location.state?.isNew}
-              spellCheck={false}
-            />
           </div>
 
           <div className="flex w-1/2 flex-col overflow-auto">
-            <div className="border-b border-border px-4 py-1.5 flex items-center">
+            <div className="border-b border-border px-4 py-1.5 flex items-center justify-between">
               <span className="text-xs font-medium text-muted-foreground">Preview</span>
+              <button
+                onClick={() => setShowBlame(b => !b)}
+                title="Toggle blame view"
+                className={`rounded p-0.5 transition-colors ${showBlame ? "text-foreground" : "text-muted-foreground/40 hover:text-muted-foreground"}`}
+              >
+                <LayoutList className="h-3.5 w-3.5" />
+              </button>
             </div>
-            <div className="flex-1 overflow-auto px-8 py-6">
-              {titleDraft && <h1 className="mb-4 text-2xl font-bold">{titleDraft}</h1>}
-              {draft.trim() ? (
-                <article className="prose prose-neutral dark:prose-invert max-w-none">
-                  <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>{draft}</ReactMarkdown>
-                </article>
-              ) : (
-                <p className="text-sm text-muted-foreground/50">Nothing to preview yet.</p>
-              )}
-            </div>
+            {showBlame ? (
+              <div className="flex-1 overflow-auto px-4 py-4">
+                {draft.split("\n").map((line, i) => {
+                  const entry = doc.blame?.[i] ?? null;
+                  const parts: string[] = [];
+                  if (entry?.c) parts.push(`"${truncate(entry.c, 32)}"`);
+                  if (entry) { parts.push(entry.n); parts.push(timeAgo(entry.t)); }
+                  const blameText = parts.length ? parts.join(" · ") : null;
+                  return (
+                    <div key={i} className="flex items-baseline leading-relaxed min-h-[1.5rem]">
+                      <span className="flex-1 whitespace-pre font-mono text-sm">{line}</span>
+                      {blameText && (
+                        <span className="ml-16 shrink-0 font-mono text-xs text-muted-foreground/35 whitespace-nowrap select-none">
+                          {blameText}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="flex-1 overflow-auto px-8 py-6">
+                {titleDraft && <h1 className="mb-4 text-2xl font-bold">{titleDraft}</h1>}
+                {draft.trim() ? (
+                  <article className="prose prose-neutral dark:prose-invert max-w-none">
+                    <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>{draft}</ReactMarkdown>
+                  </article>
+                ) : (
+                  <p className="text-sm text-muted-foreground/50">Nothing to preview yet.</p>
+                )}
+              </div>
+            )}
           </div>
         </div>
+
+        <Dialog open={changelogDialogOpen} onOpenChange={open => { if (!saving) setChangelogDialogOpen(open); }}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>What did you change?</DialogTitle>
+              <DialogDescription>
+                {changelogMode === "enforced"
+                  ? "A changelog entry is required before saving."
+                  : "Leave a brief note describing your changes. This will appear in the document history."}
+              </DialogDescription>
+            </DialogHeader>
+            <Textarea
+              value={changelogText}
+              onChange={e => setChangelogText(e.target.value)}
+              placeholder="e.g. Fixed typo in introduction, added new section on deployment…"
+              className="min-h-[80px]"
+              autoFocus
+            />
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setChangelogDialogOpen(false)} disabled={saving}>
+                Cancel
+              </Button>
+              {changelogMode !== "enforced" && (
+                <Button
+                  variant="outline"
+                  disabled={saving}
+                  onClick={() => {
+                    setChangelogDialogOpen(false);
+                    handleSave();
+                  }}
+                >
+                  Skip
+                </Button>
+              )}
+              <Button
+                disabled={saving || (changelogMode === "enforced" && !changelogText.trim())}
+                onClick={() => {
+                  setChangelogDialogOpen(false);
+                  handleSave(changelogText.trim() || undefined);
+                }}
+              >
+                {saving ? "Saving…" : "Save"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }
@@ -368,6 +536,17 @@ export function DocPage() {
               <Button variant="ghost" size="icon" onClick={startEditing} title="Edit document">
                 <Pencil className="h-4 w-4" />
               </Button>
+              <Button variant="ghost" size="icon" title="View history" onClick={openHistory}>
+                <History className="h-4 w-4" />
+              </Button>
+              <HistorySheet
+                open={historyOpen}
+                onOpenChange={setHistoryOpen}
+                revisions={revisions}
+                selectedId={viewingRevision?.id}
+                loading={loadingRevision}
+                onSelect={viewRevision}
+              />
               <Dialog>
                 <DialogTrigger asChild>
                   <Button variant="ghost" size="icon" title="Document settings">
@@ -379,61 +558,56 @@ export function DocPage() {
                     <DialogTitle>Document Settings</DialogTitle>
                   </DialogHeader>
                   <div className="flex flex-col gap-6 py-2">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex flex-col gap-1">
-                        <div className="flex items-center gap-2">
-                          {doc.published_at ? (
-                            <Globe className="h-4 w-4 text-green-600 dark:text-green-400" />
-                          ) : (
-                            <Lock className="h-4 w-4 text-muted-foreground" />
-                          )}
-                          <Label className="text-sm font-medium">
-                            {doc.published_at ? "Published" : "Publish"}
-                          </Label>
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          {doc.published_at
-                            ? "This document is publicly accessible via its share link."
-                            : "Make this document publicly accessible via a share link."}
-                        </p>
-                      </div>
-                      <Button
-                        variant={doc.published_at ? "outline" : "default"}
-                        size="sm"
-                        disabled={togglingPublish}
-                        onClick={handleTogglePublish}
-                        className="shrink-0"
-                      >
-                        {togglingPublish ? "Saving…" : doc.published_at ? "Unpublish" : "Publish"}
-                      </Button>
-                    </div>
-                    {doc.published_at && (
-                      <>
-                        <Separator />
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex flex-col gap-1">
-                            <div className="flex items-center gap-2">
-                              <Link className="h-4 w-4 text-muted-foreground" />
-                              <Label className="text-sm font-medium">Share link</Label>
-                            </div>
-                            <p className="text-xs text-muted-foreground">
-                              Copy the public URL to share this document with others.
-                            </p>
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-2">
+                            {doc.published_at ? (
+                              <Globe className="h-4 w-4 text-green-600 dark:text-green-400" />
+                            ) : (
+                              <Lock className="h-4 w-4 text-muted-foreground" />
+                            )}
+                            <Label className="text-sm font-medium">
+                              {doc.published_at ? "Published" : "Unpublished"}
+                            </Label>
                           </div>
+                          <p className="text-xs text-muted-foreground">
+                            {doc.published_at
+                              ? "This document is marked as published."
+                              : "This document is marked as unpublished."}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1">
+                          {doc.published_at && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => {
+                                navigator.clipboard.writeText(`${window.location.origin}/s/${projectId}/${docId}`);
+                                toast({ title: "Link copied to clipboard." });
+                              }}
+                              title="Copy share link"
+                            >
+                              <Link className="h-4 w-4" />
+                            </Button>
+                          )}
                           <Button
-                            variant="outline"
+                            variant={doc.published_at ? "outline" : "default"}
                             size="sm"
-                            className="shrink-0"
-                            onClick={() => {
-                              navigator.clipboard.writeText(`${window.location.origin}/s/${projectId}/${docId}`);
-                              toast({ title: "Link copied to clipboard." });
-                            }}
+                            disabled={togglingPublish}
+                            onClick={handleTogglePublish}
                           >
-                            Copy
+                            {togglingPublish ? "Saving…" : doc.published_at ? "Unpublish" : "Publish"}
                           </Button>
                         </div>
-                      </>
-                    )}
+                      </div>
+                      {projectPublishedAt && (
+                        <p className="text-xs text-amber-600 dark:text-amber-400">
+                          The site is currently published — individual document publish status has no effect until the site is unpublished.
+                        </p>
+                      )}
+                    </div>
                     <Separator />
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex flex-col gap-1">
@@ -472,15 +646,27 @@ export function DocPage() {
             </div>
           )}
 
+          {viewingRevision && (
+            <HistoryBanner
+              editorName={viewingRevision.editor_name}
+              createdAt={viewingRevision.created_at}
+              onBack={() => setViewingRevision(null)}
+              onRevert={isEditor ? handleRevert : undefined}
+              reverting={reverting}
+              className={`mb-6${isEditor ? " mr-32" : ""}`}
+            />
+          )}
           <article className="prose prose-neutral dark:prose-invert max-w-none">
             {doc.show_heading !== 0 && <h1>{doc.title}</h1>}
-            {doc.show_last_updated !== 0 && (
+            {!viewingRevision && doc.show_last_updated !== 0 && (
               <p className="not-prose -mt-2 mb-6 text-sm text-muted-foreground">
                 Last updated {timeAgo(doc.updated_at)}
               </p>
             )}
-            {doc.content.trim() ? (
-              <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>{doc.content}</ReactMarkdown>
+            {(viewingRevision ? viewingRevision.content : doc.content).trim() ? (
+              <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>
+                {viewingRevision ? viewingRevision.content : doc.content}
+              </ReactMarkdown>
             ) : (
               <p className="not-prose text-sm italic text-muted-foreground/60">
                 This page has no content yet.

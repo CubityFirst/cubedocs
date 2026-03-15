@@ -63,6 +63,8 @@ export async function handlePasswords(
 ): Promise<Response> {
   const parts = url.pathname.replace(/^\/passwords\/?/, "").split("/");
   const passwordId = parts[0] || null;
+  const subResource = parts[1] || null;
+  const subId = parts[2] || null;
   const params = url.searchParams;
 
   // GET /passwords?projectId=X[&folderId=Y|&q=query]
@@ -140,6 +142,39 @@ export async function handlePasswords(
     return okResponse({ id, title: body.title, username: body.username ?? null, url: body.url ?? null, folder_id: body.folderId ?? null, last_change_date: now, updated_at: now }, 201);
   }
 
+  // GET /passwords/:id/revisions/:revisionId — any member
+  if (passwordId && subResource === "revisions" && subId && request.method === "GET") {
+    const meta = await env.DB.prepare("SELECT project_id FROM passwords WHERE id = ?")
+      .bind(passwordId).first<{ project_id: string }>();
+    if (!meta) return errorResponse(Errors.NOT_FOUND);
+    const role = await getCallerRole(env.DB, meta.project_id, user.userId);
+    if (role === null) return errorResponse(Errors.FORBIDDEN);
+    const revision = await env.DB.prepare(
+      "SELECT id, editor_id, editor_name, created_at, data FROM asset_revisions WHERE id = ? AND asset_type = 'password' AND asset_id = ?",
+    ).bind(subId, passwordId).first<{ id: string; editor_id: string; editor_name: string; created_at: string; data: string }>();
+    if (!revision) return errorResponse(Errors.NOT_FOUND);
+    type Snap = { title: string; username: string | null; password_enc: string; totp_enc: string | null; url: string | null; notes_enc: string | null };
+    const snap = JSON.parse(revision.data) as Snap;
+    const key = await deriveKey(env.JWT_SECRET, meta.project_id);
+    const password = await decryptField(key, snap.password_enc);
+    const totp = snap.totp_enc ? await decryptField(key, snap.totp_enc) : null;
+    const notes = snap.notes_enc ? await decryptField(key, snap.notes_enc) : null;
+    return okResponse({ id: revision.id, editor_id: revision.editor_id, editor_name: revision.editor_name, created_at: revision.created_at, title: snap.title, username: snap.username, password, totp, url: snap.url, notes });
+  }
+
+  // GET /passwords/:id/revisions — any member
+  if (passwordId && subResource === "revisions" && !subId && request.method === "GET") {
+    const meta = await env.DB.prepare("SELECT project_id FROM passwords WHERE id = ?")
+      .bind(passwordId).first<{ project_id: string }>();
+    if (!meta) return errorResponse(Errors.NOT_FOUND);
+    const role = await getCallerRole(env.DB, meta.project_id, user.userId);
+    if (role === null) return errorResponse(Errors.FORBIDDEN);
+    const rows = await env.DB.prepare(
+      "SELECT id, editor_id, editor_name, created_at FROM asset_revisions WHERE asset_type = 'password' AND asset_id = ? ORDER BY created_at DESC",
+    ).bind(passwordId).all<{ id: string; editor_id: string; editor_name: string; created_at: string }>();
+    return okResponse(rows.results);
+  }
+
   // GET /passwords/:id — any member, returns decrypted fields
   if (passwordId && request.method === "GET") {
     const row = await env.DB.prepare("SELECT * FROM passwords WHERE id = ?").bind(passwordId).first<PasswordRow>();
@@ -202,6 +237,26 @@ export async function handlePasswords(
 
     const updated = await env.DB.prepare("SELECT * FROM passwords WHERE id = ?").bind(passwordId).first<PasswordRow>();
     if (!updated) return errorResponse(Errors.NOT_FOUND);
+
+    const isCredentialChange = body.title !== undefined || body.username !== undefined ||
+      body.password !== undefined || body.totp !== undefined || body.url !== undefined || body.notes !== undefined;
+    if (isCredentialChange) {
+      const nameRow = await env.DB.prepare("SELECT name FROM project_members WHERE project_id = ? AND user_id = ?")
+        .bind(meta.project_id, user.userId).first<{ name: string }>();
+      const editorName = nameRow?.name ?? user.userId;
+      const snap = JSON.stringify({
+        title: updated.title,
+        username: updated.username,
+        password_enc: updated.password_enc,
+        totp_enc: updated.totp_enc,
+        url: updated.url,
+        notes_enc: updated.notes_enc,
+      });
+      await env.DB.prepare(
+        "INSERT INTO asset_revisions (id, asset_type, asset_id, project_id, editor_id, editor_name, created_at, data) VALUES (?, 'password', ?, ?, ?, ?, ?, ?)",
+      ).bind(crypto.randomUUID(), passwordId, meta.project_id, user.userId, editorName, now, snap).run();
+    }
+
     const password = await decryptField(key, updated.password_enc);
     const totp = updated.totp_enc ? await decryptField(key, updated.totp_enc) : null;
     const notes = updated.notes_enc ? await decryptField(key, updated.notes_enc) : null;

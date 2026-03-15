@@ -27,6 +27,9 @@ interface Project {
   id: string;
   name: string;
   role: string;
+  vault_enabled: number;
+  published_at: string | null;
+  changelog_mode: string;
 }
 
 interface Doc {
@@ -35,8 +38,8 @@ interface Doc {
 }
 
 const SECTIONS = [
-  { id: "documents", label: "Documents", icon: FileText, disabled: false },
-  { id: "passwords", label: "Passwords", icon: KeyRound, disabled: false },
+  { id: "documents", label: "Documents", icon: FileText },
+  { id: "passwords", label: "Passwords", icon: KeyRound },
 ] as const;
 
 export interface BreadcrumbItem {
@@ -52,6 +55,8 @@ export interface BreadcrumbItem {
 export interface DocsLayoutContext {
   updateDocTitle: (docId: string, title: string) => void;
   projectName: string;
+  projectPublishedAt: string | null;
+  changelogMode: string;
   addDoc: (doc: { id: string; title: string }) => void;
   setBreadcrumbs: Dispatch<SetStateAction<BreadcrumbItem[]>>;
 }
@@ -193,6 +198,8 @@ export function DocsLayout() {
   const outletContext: DocsLayoutContext = {
     updateDocTitle,
     projectName: currentProject?.name ?? "",
+    projectPublishedAt: currentProject?.published_at ?? null,
+    changelogMode: currentProject?.changelog_mode ?? "off",
     addDoc,
     setBreadcrumbs,
   };
@@ -241,31 +248,20 @@ export function DocsLayout() {
           <ScrollArea className="flex-1 px-2 py-3">
             {/* Sections */}
             <nav className="flex flex-col gap-1">
-              {SECTIONS.map(section => (
-                <div key={section.id}>
-                  {/* Section header */}
-                  {!section.disabled ? (
-                    <NavLink
-                      to={section.id === "documents" ? `/projects/${projectId}` : `/projects/${projectId}/${section.id}`}
-                      end={section.id === "documents"}
-                      className={({ isActive }) =>
-                        cn(buttonVariants({ variant: "ghost", size: "sm" }), "mb-1 w-full justify-start", isActive ? "bg-accent text-foreground" : "text-muted-foreground")
-                      }
-                    >
-                      <section.icon className="h-3.5 w-3.5 shrink-0" />
-                      {section.label}
-                    </NavLink>
-                  ) : (
-                    <div className="mb-1 flex items-center gap-2 px-2 opacity-40">
-                      <section.icon className="h-3.5 w-3.5 shrink-0" />
-                      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                        {section.label}
-                      </span>
-                      <Badge variant="outline" className="ml-auto text-[10px]">soon</Badge>
-                    </div>
-                  )}
-
-                </div>
+              {SECTIONS.filter(section =>
+                section.id !== "passwords" || currentProject?.vault_enabled === 1
+              ).map(section => (
+                <NavLink
+                  key={section.id}
+                  to={section.id === "documents" ? `/projects/${projectId}` : `/projects/${projectId}/${section.id}`}
+                  end={section.id === "documents"}
+                  className={({ isActive }) =>
+                    cn(buttonVariants({ variant: "ghost", size: "sm" }), "mb-1 w-full justify-start", isActive ? "bg-accent text-foreground" : "text-muted-foreground")
+                  }
+                >
+                  <section.icon className="h-3.5 w-3.5 shrink-0" />
+                  {section.label}
+                </NavLink>
               ))}
             </nav>
           </ScrollArea>

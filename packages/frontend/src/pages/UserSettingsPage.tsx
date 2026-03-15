@@ -55,44 +55,57 @@ export function UserSettingsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl px-6 py-10">
-      <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Manage your account preferences.</p>
+    <div className="mx-auto max-w-3xl px-6 py-10">
+      <div className="flex gap-12">
+        {/* Sidebar nav */}
+        <aside className="hidden md:block w-40 shrink-0">
+          <nav className="sticky top-10 flex flex-col">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">On this page</p>
+            <a href="#account" className="py-1 text-sm text-muted-foreground transition-colors hover:text-foreground">Account</a>
+          </nav>
+        </aside>
 
-      <Separator className="my-6" />
+        {/* Main content */}
+        <div className="flex-1 min-w-0">
+          <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Manage your account preferences.</p>
 
-      {/* Account section */}
-      <section>
-        <h2 className="text-base font-semibold">Account</h2>
-        <p className="mt-0.5 text-sm text-muted-foreground">Update your personal information.</p>
+          <Separator className="my-6" />
 
-        <form onSubmit={handleSaveName} className="mt-4 flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="email">Email</Label>
-            <Input id="email" value={email} disabled className="max-w-sm" />
-          </div>
+          {/* Account section */}
+          <section id="account">
+            <h2 className="text-base font-semibold">Account</h2>
+            <p className="mt-0.5 text-sm text-muted-foreground">Update your personal information.</p>
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="display-name">Display name</Label>
-            <Input
-              id="display-name"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              className="max-w-sm"
-              required
-            />
-          </div>
+            <form onSubmit={handleSaveName} className="mt-4 flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="email">Email</Label>
+                <Input id="email" value={email} disabled className="max-w-sm" />
+              </div>
 
-          <div>
-            <Button
-              type="submit"
-              disabled={saving || !name.trim() || name.trim() === currentName}
-            >
-              {saving ? "Saving…" : "Save changes"}
-            </Button>
-          </div>
-        </form>
-      </section>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="display-name">Display name</Label>
+                <Input
+                  id="display-name"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  className="max-w-sm"
+                  required
+                />
+              </div>
+
+              <div>
+                <Button
+                  type="submit"
+                  disabled={saving || !name.trim() || name.trim() === currentName}
+                >
+                  {saving ? "Saving…" : "Save changes"}
+                </Button>
+              </div>
+            </form>
+          </section>
+        </div>
+      </div>
     </div>
   );
 }

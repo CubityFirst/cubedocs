@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { BookOpen, Globe } from "lucide-react";
+import { BookOpen, Globe, KeyRound, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -11,6 +11,8 @@ interface Project {
   name: string;
   description: string | null;
   doc_count: number;
+  member_count: number;
+  password_count: number;
   published_at: string | null;
 }
 
@@ -74,16 +76,41 @@ export function DashboardPage() {
                 )}
               </CardContent>
 
-              <CardFooter>
+              <CardFooter className="flex items-center gap-3">
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Globe
-                      className={`h-[18px] w-[18px] ${project.published_at ? "text-green-500" : "text-muted-foreground/40"}`}
+                      className={`h-[18px] w-[18px] ${project.published_at ? "cursor-pointer text-green-500 hover:text-green-400" : "text-muted-foreground/40"}`}
+                      strokeWidth={1.5}
+                      onClick={project.published_at ? (e) => { e.stopPropagation(); navigate(`/s/${project.id}`); } : undefined}
+                    />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {project.published_at ? "View public site" : "Site is private"}
+                  </TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <KeyRound
+                      className={`h-[18px] w-[18px] ${project.password_count > 0 ? "text-muted-foreground/60" : "text-muted-foreground/20"}`}
                       strokeWidth={1.5}
                     />
                   </TooltipTrigger>
                   <TooltipContent>
-                    {project.published_at ? "Site is public" : "Site is private"}
+                    {project.password_count > 0 ? `Password vault (${project.password_count} ${project.password_count === 1 ? "entry" : "entries"})` : "No password vault"}
+                  </TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="ml-auto flex items-center gap-1 text-muted-foreground/60">
+                      <Users className="h-[18px] w-[18px]" strokeWidth={1.5} />
+                      <span className="text-xs">{project.member_count}</span>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {project.member_count} {project.member_count === 1 ? "member" : "members"}
                   </TooltipContent>
                 </Tooltip>
               </CardFooter>

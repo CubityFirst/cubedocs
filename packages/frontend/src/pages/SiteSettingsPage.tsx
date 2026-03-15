@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { getToken } from "@/lib/auth";
+import { Switch } from "@/components/ui/switch";
 import { Globe, Link, Lock } from "lucide-react";
 
 type Role = "viewer" | "editor" | "admin" | "owner";
@@ -63,6 +64,8 @@ interface Project {
   description: string | null;
   owner_id: string;
   published_at: string | null;
+  vault_enabled: number;
+  changelog_mode: string;
 }
 
 interface Member {
@@ -109,6 +112,8 @@ export function SiteSettingsPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [togglingPublish, setTogglingPublish] = useState(false);
+  const [togglingVault, setTogglingVault] = useState(false);
+  const [togglingChangelog, setTogglingChangelog] = useState(false);
 
   const token = getToken();
   const currentUser = token ? parseToken(token) : null;
@@ -267,6 +272,52 @@ export function SiteSettingsPage() {
     }
   }
 
+  async function handleToggleVault(enabled: boolean) {
+    if (!projectId || !project) return;
+    setTogglingVault(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ vaultEnabled: enabled }),
+      });
+      const json = await res.json() as { ok: boolean; data?: Project };
+      if (json.ok && json.data) {
+        setProject(json.data);
+        toast({ title: enabled ? "Password vault enabled." : "Password vault disabled." });
+      } else {
+        toast({ title: "Failed to update vault setting.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Could not connect to the server.", variant: "destructive" });
+    } finally {
+      setTogglingVault(false);
+    }
+  }
+
+  async function handleChangelogModeChange(mode: string) {
+    if (!projectId || !project) return;
+    setTogglingChangelog(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ changelogMode: mode }),
+      });
+      const json = await res.json() as { ok: boolean; data?: Project };
+      if (json.ok && json.data) {
+        setProject(json.data);
+        toast({ title: "Changelog setting updated." });
+      } else {
+        toast({ title: "Failed to update changelog setting.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Could not connect to the server.", variant: "destructive" });
+    } finally {
+      setTogglingChangelog(false);
+    }
+  }
+
   async function handleDelete() {
     if (!projectId) return;
     setDeleting(true);
@@ -301,8 +352,23 @@ export function SiteSettingsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-xl px-6 py-10">
-      <h2 className="mb-1 text-xl font-semibold">Site Settings</h2>
+    <div className="mx-auto max-w-4xl px-6 py-10">
+      <div className="flex gap-12">
+        {/* Sidebar nav */}
+        <aside className="hidden md:block w-40 shrink-0">
+          <nav className="sticky top-10 flex flex-col">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">On this page</p>
+            <a href="#general" className="py-1 text-sm text-muted-foreground transition-colors hover:text-foreground">General</a>
+            {isAdminOrOwner && <a href="#publishing" className="py-1 text-sm text-muted-foreground transition-colors hover:text-foreground">Publishing</a>}
+            {isAdminOrOwner && <a href="#features" className="py-1 text-sm text-muted-foreground transition-colors hover:text-foreground">Features</a>}
+            {isAdminOrOwner && <a href="#members" className="py-1 text-sm text-muted-foreground transition-colors hover:text-foreground">Members</a>}
+            {isOwner && <a href="#danger" className="py-1 text-sm text-destructive/70 transition-colors hover:text-destructive">Danger Zone</a>}
+          </nav>
+        </aside>
+
+        {/* Main content */}
+        <div className="flex-1 min-w-0 max-w-xl">
+      <h2 id="general" className="mb-1 text-xl font-semibold">Site Settings</h2>
       <p className="mb-8 text-sm text-muted-foreground">
         Manage settings for <span className="font-medium text-foreground">{project.name}</span>.
       </p>
@@ -349,7 +415,7 @@ export function SiteSettingsPage() {
         <>
           <Separator className="my-10" />
           <div className="flex flex-col gap-4">
-            <div>
+            <div id="publishing">
               <h3 className="text-base font-semibold">Publishing</h3>
               <p className="mt-1 text-sm text-muted-foreground">
                 Control public access to this site. When published, anyone with the link can view all documents.
@@ -406,12 +472,62 @@ export function SiteSettingsPage() {
         </>
       )}
 
+      {/* Features section — admins and owners only */}
+      {isAdminOrOwner && (
+        <>
+          <Separator className="my-10" />
+          <div className="flex flex-col gap-4">
+            <div id="features">
+              <h3 className="text-base font-semibold">Features</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Enable or disable features for this site.
+              </p>
+            </div>
+            <div className="flex items-center justify-between rounded-md border border-border px-4 py-3">
+              <div className="flex flex-col gap-0.5">
+                <p className="text-sm font-medium">Password Vault</p>
+                <p className="text-xs text-muted-foreground">
+                  Store and manage encrypted credentials for this site.
+                </p>
+              </div>
+              <Switch
+                checked={project.vault_enabled === 1}
+                onCheckedChange={handleToggleVault}
+                disabled={togglingVault}
+              />
+            </div>
+            <div className="flex items-center justify-between rounded-md border border-border px-4 py-3">
+              <div className="flex flex-col gap-0.5">
+                <p className="text-sm font-medium">Save Changelog</p>
+                <p className="text-xs text-muted-foreground">
+                  Prompt editors to leave a note describing their changes when saving a document.
+                </p>
+              </div>
+              <Select
+                value={project.changelog_mode}
+                onValueChange={handleChangelogModeChange}
+                disabled={togglingChangelog}
+              >
+                <SelectTrigger className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="off">Off</SelectItem>
+                  <SelectItem value="on">On</SelectItem>
+                  <SelectItem value="enforced">Enforced</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Members section — admins and owners only */}
       {isAdminOrOwner && (
         <>
           <Separator className="my-10" />
 
-          <div className="flex flex-col gap-6">
+          <div id="members" className="flex flex-col gap-6">
             <div>
               <h3 className="text-base font-semibold">Members</h3>
               <p className="mt-1 text-sm text-muted-foreground">
@@ -535,7 +651,7 @@ export function SiteSettingsPage() {
         <>
           <Separator className="my-10" />
 
-          <div className="flex flex-col gap-3">
+          <div id="danger" className="flex flex-col gap-3">
             <h3 className="text-base font-semibold text-destructive">Danger Zone</h3>
             <p className="text-sm text-muted-foreground">
               Deleting this site will permanently remove all of its documents and members. This action cannot be undone.
@@ -572,6 +688,8 @@ export function SiteSettingsPage() {
           </div>
         </>
       )}
+        </div>
+      </div>
     </div>
   );
 }

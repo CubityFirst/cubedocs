@@ -1,7 +1,7 @@
 import { okResponse, errorResponse, Errors, ROLE_RANK, type Session, type Doc, type Role } from "../lib";
 import type { Env } from "../index";
 
-type BlameEntry = { u: string; n: string; t: string } | null;
+type BlameEntry = { u: string; n: string; t: string; c: string | null } | null;
 
 async function getCallerInfo(db: D1Database, projectId: string, userId: string): Promise<{ role: Role; name: string } | null> {
   const row = await db.prepare("SELECT role, name FROM project_members WHERE project_id = ? AND user_id = ?")
@@ -13,7 +13,7 @@ function computeBlame(
   oldLines: string[],
   newLines: string[],
   oldBlame: BlameEntry[],
-  current: { u: string; n: string; t: string },
+  current: { u: string; n: string; t: string; c: string | null },
 ): BlameEntry[] {
   const m = oldLines.length;
   const n = newLines.length;
@@ -60,6 +60,8 @@ export async function handleDocs(
 ): Promise<Response> {
   const parts = url.pathname.replace(/^\/docs\/?/, "").split("/");
   const docId = parts[0] || null;
+  const subResource = parts[1] || null;
+  const subId = parts[2] || null;
   const params = url.searchParams;
 
   // GET /docs?projectId=xxx[&folderId=yyy] — any member
@@ -141,6 +143,33 @@ export async function handleDocs(
     );
   }
 
+  // GET /docs/:id/revisions/:revisionId — any member
+  if (docId && subResource === "revisions" && subId && request.method === "GET") {
+    const meta = await env.DB.prepare("SELECT project_id FROM docs WHERE id = ?").bind(docId).first<{ project_id: string }>();
+    if (!meta) return errorResponse(Errors.NOT_FOUND);
+    const caller = await getCallerInfo(env.DB, meta.project_id, user.userId);
+    if (caller === null) return errorResponse(Errors.FORBIDDEN);
+    const revision = await env.DB.prepare(
+      "SELECT id, editor_id, editor_name, created_at, changelog FROM asset_revisions WHERE id = ? AND asset_type = 'doc' AND asset_id = ?",
+    ).bind(subId, docId).first<{ id: string; editor_id: string; editor_name: string; created_at: string; changelog: string | null }>();
+    if (!revision) return errorResponse(Errors.NOT_FOUND);
+    const r2Object = await env.ASSETS.get(`${meta.project_id}/${docId}/v/${subId}`);
+    const content = r2Object ? await r2Object.text() : "";
+    return okResponse({ ...revision, content });
+  }
+
+  // GET /docs/:id/revisions — any member
+  if (docId && subResource === "revisions" && !subId && request.method === "GET") {
+    const meta = await env.DB.prepare("SELECT project_id FROM docs WHERE id = ?").bind(docId).first<{ project_id: string }>();
+    if (!meta) return errorResponse(Errors.NOT_FOUND);
+    const caller = await getCallerInfo(env.DB, meta.project_id, user.userId);
+    if (caller === null) return errorResponse(Errors.FORBIDDEN);
+    const rows = await env.DB.prepare(
+      "SELECT id, editor_id, editor_name, created_at, changelog FROM asset_revisions WHERE asset_type = 'doc' AND asset_id = ? ORDER BY created_at DESC",
+    ).bind(docId).all<{ id: string; editor_id: string; editor_name: string; created_at: string; changelog: string | null }>();
+    return okResponse(rows.results);
+  }
+
   // GET /docs/:id — any member of the doc's project
   if (docId && request.method === "GET") {
     const meta = await env.DB.prepare("SELECT project_id FROM docs WHERE id = ?").bind(docId).first<{ project_id: string }>();
@@ -167,7 +196,7 @@ export async function handleDocs(
     if (caller === null) return errorResponse(Errors.FORBIDDEN);
     if (ROLE_RANK[caller.role] < ROLE_RANK["editor"]) return errorResponse(Errors.FORBIDDEN);
 
-    const body = await request.json<Partial<{ title: string; content: string; publishedAt: string | null; showHeading: boolean; showLastUpdated: boolean; folderId: string | null }>>();
+    const body = await request.json<Partial<{ title: string; content: string; publishedAt: string | null; showHeading: boolean; showLastUpdated: boolean; folderId: string | null; changelog: string }>>();
     const now = new Date().toISOString();
 
     if (body.content !== undefined) {
@@ -177,17 +206,24 @@ export async function handleDocs(
         env.ASSETS.get(blameKey),
       ]);
       const oldContent = oldR2 ? await oldR2.text() : "";
-      const oldBlame: BlameEntry[] = oldBlameR2 ? JSON.parse(await oldBlameR2.text()) : [];
-      const newBlame = computeBlame(
-        oldContent.split("\n"),
-        body.content.split("\n"),
-        oldBlame,
-        { u: user.userId, n: caller.name, t: now },
-      );
-      await Promise.all([
-        env.ASSETS.put(`${doc.project_id}/${docId}`, body.content),
-        env.ASSETS.put(blameKey, JSON.stringify(newBlame)),
-      ]);
+      if (body.content !== oldContent) {
+        const oldBlame: BlameEntry[] = oldBlameR2 ? JSON.parse(await oldBlameR2.text()) : [];
+        const newBlame = computeBlame(
+          oldContent.split("\n"),
+          body.content.split("\n"),
+          oldBlame,
+          { u: user.userId, n: caller.name, t: now, c: body.changelog ?? null },
+        );
+        const revisionId = crypto.randomUUID();
+        await Promise.all([
+          env.ASSETS.put(`${doc.project_id}/${docId}`, body.content),
+          env.ASSETS.put(blameKey, JSON.stringify(newBlame)),
+          env.ASSETS.put(`${doc.project_id}/${docId}/v/${revisionId}`, body.content),
+        ]);
+        await env.DB.prepare(
+          "INSERT INTO asset_revisions (id, asset_type, asset_id, project_id, editor_id, editor_name, created_at, data, changelog) VALUES (?, 'doc', ?, ?, ?, ?, ?, NULL, ?)",
+        ).bind(revisionId, docId, doc.project_id, user.userId, caller.name, now, body.changelog ?? null).run();
+      }
     }
 
     const showHeading = body.showHeading !== undefined ? (body.showHeading ? 1 : 0) : null;
@@ -218,9 +254,12 @@ export async function handleDocs(
     if (caller === null) return errorResponse(Errors.FORBIDDEN);
     if (ROLE_RANK[caller.role] < ROLE_RANK["editor"]) return errorResponse(Errors.FORBIDDEN);
 
+    const revisions = await env.DB.prepare("SELECT id FROM asset_revisions WHERE asset_type = 'doc' AND asset_id = ?")
+      .bind(docId).all<{ id: string }>();
     await Promise.all([
       env.ASSETS.delete(`${doc.project_id}/${docId}`),
       env.ASSETS.delete(`${doc.project_id}/${docId}.blame`),
+      ...revisions.results.map(r => env.ASSETS.delete(`${doc.project_id}/${docId}/v/${r.id}`)),
     ]);
     await env.DB.prepare("DELETE FROM docs WHERE id = ?").bind(docId).run();
     return okResponse({ deleted: true });

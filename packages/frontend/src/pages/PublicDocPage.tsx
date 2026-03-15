@@ -7,8 +7,8 @@ import { Callout, type CalloutType } from "@/components/Callout";
 import { MarkdownCode } from "@/components/CodeBlock";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { BookOpen, FileText, Folder } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { BookOpen, FileText, Folder, ChevronRight, Search, X } from "lucide-react";
 
 function toId(text: string): string {
   return text.toLowerCase().replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-");
@@ -91,6 +91,59 @@ interface PublicData {
   folders: NavFolder[] | null;
 }
 
+function folderHasDocs(folderId: string, folders: NavFolder[], docs: NavDoc[]): boolean {
+  if (docs.some(d => d.folder_id === folderId)) return true;
+  return folders
+    .filter(f => f.parent_id === folderId)
+    .some(child => folderHasDocs(child.id, folders, docs));
+}
+
+// When a folder or doc is the last child, we erase the parent's border-l below the
+// item's midpoint so the vertical line terminates rather than running past the last item.
+// For folders, the midpoint is top-4 (16px = half of the 32px button row height).
+// For docs, it's top-1/2 (50% of the single-row element height).
+const FOLDER_ERASE = "after:content-[''] after:absolute after:left-[-1px] after:top-4 after:bottom-0 after:w-[2px] after:bg-background";
+const DOC_ERASE    = "after:content-[''] after:absolute after:left-[-1px] after:top-1/2 after:bottom-0 after:w-[2px] after:bg-background";
+
+function FolderNode({
+  folder,
+  projectId,
+  folders,
+  docs,
+  depth,
+  isLast,
+}: {
+  folder: NavFolder;
+  projectId: string;
+  folders: NavFolder[];
+  docs: NavDoc[];
+  depth: number;
+  isLast: boolean;
+}) {
+  const [open, setOpen] = useState(true);
+
+  return (
+    <div className={`relative ${isLast && depth > 0 ? FOLDER_ERASE : ""}`}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        className={`relative w-full flex items-center gap-1.5 rounded-md py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground ${depth > 0 ? "pl-3 pr-2" : "px-2"}`}
+      >
+        {depth > 0 && (
+          <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 h-px w-3 bg-border" />
+        )}
+        <ChevronRight className={`h-3 w-3 shrink-0 transition-transform duration-150 ${open ? "rotate-90" : ""}`} />
+        <Folder className="h-3.5 w-3.5 shrink-0" />
+        <span className="truncate font-medium">{folder.name}</span>
+      </button>
+      {open && (
+        <div className="ml-3 border-l border-border">
+          <NavTree projectId={projectId} folders={folders} docs={docs} parentId={folder.id} depth={depth + 1} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function NavTree({
   projectId,
   folders,
@@ -104,50 +157,48 @@ function NavTree({
   parentId?: string | null;
   depth?: number;
 }) {
-  const childFolders = folders.filter(f => f.parent_id === parentId);
+  const childFolders = folders
+    .filter(f => f.parent_id === parentId)
+    .filter(f => folderHasDocs(f.id, folders, docs));
   const childDocs = docs.filter(d => d.folder_id === parentId);
+  const hasDocs = childDocs.length > 0;
 
   return (
     <>
-      {childFolders.map(folder => {
-        const childFolderCount = folders.filter(f => f.parent_id === folder.id).length;
-        const childDocCount = docs.filter(d => d.folder_id === folder.id).length;
-        const parts = [];
-        if (childDocCount > 0) parts.push(`${childDocCount} ${childDocCount === 1 ? "file" : "files"}`);
-        if (childFolderCount > 0) parts.push(`${childFolderCount} ${childFolderCount === 1 ? "folder" : "folders"}`);
+      {childFolders.map((folder, i) => {
+        const isLast = !hasDocs && i === childFolders.length - 1;
         return (
-          <div key={folder.id}>
-            <div
-              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground"
-              style={{ paddingLeft: `${0.5 + depth * 0.75}rem` }}
-            >
-              <Folder className="h-3.5 w-3.5 shrink-0" />
-              <span className="truncate font-medium">{folder.name}</span>
-              {parts.length > 0 && (
-                <Badge variant="outline" className="ml-auto shrink-0 text-xs text-muted-foreground">
-                  {parts.join(", ")}
-                </Badge>
-              )}
-            </div>
-            <NavTree projectId={projectId} folders={folders} docs={docs} parentId={folder.id} depth={depth + 1} />
-          </div>
+          <FolderNode
+            key={folder.id}
+            folder={folder}
+            projectId={projectId}
+            folders={folders}
+            docs={docs}
+            depth={depth}
+            isLast={isLast}
+          />
         );
       })}
-      {childDocs.map(doc => (
-        <NavLink
-          key={doc.id}
-          to={`/s/${projectId}/${doc.id}`}
-          className={({ isActive }) =>
-            `flex items-center gap-2 rounded-md py-1.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground ${
-              isActive ? "bg-accent text-accent-foreground font-medium" : "text-foreground/80"
-            }`
-          }
-          style={{ paddingLeft: `${1 + depth * 0.75}rem`, paddingRight: "0.5rem" }}
-        >
-          <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <span className="truncate">{doc.title}</span>
-        </NavLink>
-      ))}
+      {childDocs.map((doc, i) => {
+        const isLast = i === childDocs.length - 1;
+        return (
+          <NavLink
+            key={doc.id}
+            to={`/s/${projectId}/${doc.id}`}
+            className={({ isActive }) =>
+              `relative flex items-center gap-2 rounded-md py-1.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground pr-2 ${
+                depth > 0 ? "pl-3" : "pl-2"
+              } ${isActive ? "bg-accent text-accent-foreground font-medium" : "text-foreground/80"} ${isLast && depth > 0 ? DOC_ERASE : ""}`
+            }
+          >
+            {depth > 0 && (
+              <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 h-px w-3 bg-border" />
+            )}
+            <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <span className="truncate">{doc.title}</span>
+          </NavLink>
+        );
+      })}
     </>
   );
 }
@@ -158,6 +209,7 @@ export function PublicDocPage() {
   const [data, setData] = useState<PublicData | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     if (!projectId) return;
@@ -215,6 +267,10 @@ export function PublicDocPage() {
   const headings = extractHeadings(data.doc.content);
   const showNav = data.sitePublished && data.docs && data.docs.length > 0;
 
+  const filteredDocs = searchQuery.trim()
+    ? (data.docs ?? []).filter(d => d.title.toLowerCase().includes(searchQuery.toLowerCase()))
+    : null;
+
   return (
     <div className="flex h-screen bg-background text-foreground">
       {/* Sidebar — only shown when the entire site is published */}
@@ -225,13 +281,53 @@ export function PublicDocPage() {
             <span className="font-semibold tracking-tight">{data.project.name}</span>
           </div>
           <Separator />
-          <ScrollArea className="flex-1 px-2 py-3">
-            <nav className="flex flex-col gap-0.5">
-              <NavTree
-                projectId={data.project.id}
-                folders={data.folders ?? []}
-                docs={data.docs!}
+          <div className="px-3 py-2">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+              <Input
+                placeholder="Search…"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="pl-8 pr-7 h-8 text-sm"
               />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 flex items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+          </div>
+          <ScrollArea className="flex-1 px-2 py-1">
+            <nav className="flex flex-col gap-0.5">
+              {filteredDocs !== null ? (
+                filteredDocs.length === 0 ? (
+                  <p className="px-2 py-4 text-center text-xs text-muted-foreground">No results</p>
+                ) : (
+                  filteredDocs.map(doc => (
+                    <NavLink
+                      key={doc.id}
+                      to={`/s/${data.project.id}/${doc.id}`}
+                      className={({ isActive }) =>
+                        `flex items-center gap-2 rounded-md py-1.5 pl-2 pr-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground ${
+                          isActive ? "bg-accent text-accent-foreground font-medium" : "text-foreground/80"
+                        }`
+                      }
+                    >
+                      <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{doc.title}</span>
+                    </NavLink>
+                  ))
+                )
+              ) : (
+                <NavTree
+                  projectId={data.project.id}
+                  folders={data.folders ?? []}
+                  docs={data.docs!}
+                />
+              )}
             </nav>
           </ScrollArea>
         </aside>
@@ -239,10 +335,12 @@ export function PublicDocPage() {
 
       {/* Main content */}
       <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex h-14 items-center border-b border-border px-6 gap-2">
-          {!showNav && <BookOpen className="h-4 w-4 text-primary shrink-0" />}
-          <h1 className="text-sm font-medium text-muted-foreground truncate">{data.project.name}</h1>
-        </header>
+        {!showNav && (
+          <header className="flex h-14 items-center border-b border-border px-6 gap-2">
+            <BookOpen className="h-4 w-4 text-primary shrink-0" />
+            <h1 className="text-sm font-medium text-muted-foreground truncate">{data.project.name}</h1>
+          </header>
+        )}
         <ScrollArea className="flex-1">
           <div className="flex min-h-full">
             {/* Article */}

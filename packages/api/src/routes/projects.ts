@@ -19,8 +19,8 @@ export async function handleProjects(
   // GET /projects — list projects where user is a member (includes owned)
   if (!projectId && request.method === "GET") {
     const rows = await env.DB.prepare(
-      "SELECT p.*, pm.role, (SELECT COUNT(*) FROM docs WHERE project_id = p.id) as doc_count FROM projects p INNER JOIN project_members pm ON pm.project_id = p.id WHERE pm.user_id = ? ORDER BY p.created_at DESC",
-    ).bind(user.userId).all<Project & { role: Role; doc_count: number }>();
+      "SELECT p.*, pm.role, (SELECT COUNT(*) FROM docs WHERE project_id = p.id) as doc_count, (SELECT COUNT(*) FROM project_members WHERE project_id = p.id) as member_count, (SELECT COUNT(*) FROM passwords WHERE project_id = p.id) as password_count FROM projects p INNER JOIN project_members pm ON pm.project_id = p.id WHERE pm.user_id = ? ORDER BY p.created_at DESC",
+    ).bind(user.userId).all<Project & { role: Role; doc_count: number; member_count: number; password_count: number }>();
     return okResponse(rows.results);
   }
 
@@ -69,14 +69,17 @@ export async function handleProjects(
     if (role === null) return errorResponse(Errors.NOT_FOUND);
     if (ROLE_RANK[role] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
 
-    const body = await request.json<{ name?: string; description?: string | null; publishedAt?: string | null }>();
+    const body = await request.json<{ name?: string; description?: string | null; publishedAt?: string | null; vaultEnabled?: boolean; changelogMode?: string }>();
     if (body.name !== undefined && !body.name.trim()) return errorResponse(Errors.BAD_REQUEST);
+    if (body.changelogMode !== undefined && !["off", "on", "enforced"].includes(body.changelogMode)) return errorResponse(Errors.BAD_REQUEST);
 
     const fields: string[] = [];
     const values: unknown[] = [];
     if (body.name !== undefined) { fields.push("name = ?"); values.push(body.name.trim()); }
     if (body.description !== undefined) { fields.push("description = ?"); values.push(body.description ?? null); }
     if (body.publishedAt !== undefined) { fields.push("published_at = ?"); values.push(body.publishedAt ?? null); }
+    if (body.vaultEnabled !== undefined) { fields.push("vault_enabled = ?"); values.push(body.vaultEnabled ? 1 : 0); }
+    if (body.changelogMode !== undefined) { fields.push("changelog_mode = ?"); values.push(body.changelogMode); }
     if (fields.length === 0) return errorResponse(Errors.BAD_REQUEST);
 
     values.push(projectId);
