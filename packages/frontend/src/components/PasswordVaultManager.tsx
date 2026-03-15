@@ -24,6 +24,7 @@ interface PasswordEntry {
   title: string;
   username: string | null;
   url: string | null;
+  has_totp?: boolean;
   folder_id: string | null;
   last_change_date: string;
   updated_at: string;
@@ -447,11 +448,11 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
   // ── JSX ──────────────────────────────────────────────────────────────────
 
   const VAULT_COLUMNS = [
-    { label: "Name", defaultSize: 28, minSize: 12 },
-    { label: "", defaultSize: 18, minSize: 14 },
-    { label: "Username", defaultSize: 20, minSize: 10 },
-    { label: "URL", defaultSize: 18, minSize: 10 },
-    { label: "Last changed", defaultSize: 16, minSize: 10 },
+    { label: "Name", defaultSize: 34, minSize: 12 },
+    { label: "", defaultSize: 0, fixedWidth: 126 },
+    { label: "Username", defaultSize: 22, minSize: 10 },
+    { label: "URL", defaultSize: 20, minSize: 10 },
+    { label: "Last changed", defaultSize: 18, minSize: 10 },
   ];
 
   function renderTable(folderRows: FolderItem[], entryRows: PasswordEntry[]) {
@@ -463,6 +464,7 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
             return (
               <ResizableTableRow
                 key={folder.id}
+                columns={VAULT_COLUMNS}
                 draggable
                   onDragStart={() => onDragStart("folder", folder.id)}
                   onDragEnd={onDragEnd}
@@ -502,6 +504,7 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
           {entryRows.map(entry => (
             <ResizableTableRow
               key={entry.id}
+              columns={VAULT_COLUMNS}
               draggable
                 onDragStart={() => onDragStart("entry", entry.id)}
                 onDragEnd={onDragEnd}
@@ -547,8 +550,9 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
                           {copiedField === `row-password-${entry.id}` ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Key className="h-3.5 w-3.5" />}
                         </Button>
                         <Button
-                          variant="ghost" size="icon" className="h-7 w-7"
+                          variant="ghost" size="icon" className={`h-7 w-7${!entry.has_totp ? " opacity-25" : ""}`}
                           title="Copy TOTP"
+                          disabled={!entry.has_totp}
                           onClick={() => copyDecryptedField(entry.id, "totp")}
                         >
                           {copiedField === `row-totp-${entry.id}` ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Clock className="h-3.5 w-3.5" />}

@@ -276,6 +276,7 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
             return (
               <ResizableTableRow
                 key={folder.id}
+                columns={FILE_COLUMNS}
                 draggable
                   onDragStart={() => onDragStart("folder", folder.id)}
                   onDragEnd={onDragEnd}
@@ -315,6 +316,7 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
             return (
               <ResizableTableRow
                 key={doc.id}
+                columns={FILE_COLUMNS}
                 draggable
                   onDragStart={() => onDragStart("doc", doc.id)}
                   onDragEnd={onDragEnd}

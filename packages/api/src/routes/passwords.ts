@@ -75,7 +75,7 @@ export async function handlePasswords(
 
     const q = params.get("q");
     const folderId = params.get("folderId");
-    const base = `SELECT id, title, username, url, folder_id, last_change_date, updated_at FROM passwords`;
+    const base = `SELECT id, title, username, url, folder_id, last_change_date, updated_at, (totp_enc IS NOT NULL) AS has_totp FROM passwords`;
 
     let rows;
     if (q) {
