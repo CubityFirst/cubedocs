@@ -446,7 +446,7 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
     Array.from(e.dataTransfer.files).forEach(uploadFileAndCreateDoc);
   }, [uploadFileAndCreateDoc]);
 
-  function onDragStart(type: "doc" | "folder", id: string) {
+  function onDragStart(type: "doc" | "folder" | "file", id: string) {
     draggedItem.current = { type, id };
   }
 
