@@ -51,7 +51,7 @@ export default {
 
 function corsHeaders(): HeadersInit {
   return {
-    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Origin": "https://docs.cubityfir.st",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
   };

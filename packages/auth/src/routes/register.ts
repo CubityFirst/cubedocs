@@ -12,6 +12,10 @@ export async function handleRegister(request: Request, env: Env): Promise<Respon
     return errorResponse(Errors.BAD_REQUEST);
   }
 
+  if (typeof body.name !== "string" || body.name.trim().length === 0 || body.name.length > 100) {
+    return errorResponse(Errors.BAD_REQUEST);
+  }
+
   if (zxcvbn(body.password).score < 3) {
     return errorResponse(Errors.BAD_REQUEST);
   }
