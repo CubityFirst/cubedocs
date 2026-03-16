@@ -82,6 +82,7 @@ function timeAgo(iso: string): string {
 }
 
 
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
@@ -168,6 +169,7 @@ export function DocPage() {
   const [changelogText, setChangelogText] = useState("");
 const [editorScrollTop, setEditorScrollTop] = useState(0);
   const [markdownHelpOpen, setMarkdownHelpOpen] = useState(false);
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleEditorActivity = useCallback((e: React.MouseEvent<HTMLTextAreaElement> | React.KeyboardEvent<HTMLTextAreaElement>) => {
