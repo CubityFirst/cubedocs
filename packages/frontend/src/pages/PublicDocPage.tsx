@@ -45,6 +45,13 @@ function extractHeadings(content: string): Heading[] {
 
 const remarkPlugins = [remarkGfm, remarkCallouts];
 
+function PublicImage({ src, alt, ...props }: React.ComponentPropsWithoutRef<"img">) {
+  const publicSrc = src?.startsWith("/api/files/")
+    ? src.replace("/api/files/", "/api/public/files/")
+    : src;
+  return <img src={publicSrc} alt={alt} {...props} />;
+}
+
 const markdownComponents = {
   blockquote({ children, node, ...props }: React.ComponentPropsWithoutRef<"blockquote"> & { node?: { properties?: Record<string, unknown> } }) {
     const p = node?.properties;
@@ -69,6 +76,7 @@ const markdownComponents = {
   h5: makeHeading("h5"),
   h6: makeHeading("h6"),
   code: MarkdownCode,
+  img: PublicImage,
 };
 
 interface NavDoc {

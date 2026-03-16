@@ -6,6 +6,8 @@ import { Separator } from "@/components/ui/separator";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { Toaster } from "@/components/ui/toaster";
 import { Badge } from "@/components/ui/badge";
 import { clearToken, getToken } from "@/lib/auth";
@@ -15,7 +17,6 @@ import {
   Plus,
   Settings,
   LogOut,
-  X,
   ChevronLeft,
   ChevronRight,
   FileText,
@@ -70,6 +71,7 @@ export function DocsLayout() {
   // site creation
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -148,13 +150,14 @@ export function DocsLayout() {
       const res = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, description: description || undefined }),
       });
       const json = await res.json() as { ok: boolean; data?: Project; error?: string };
       if (json.ok && json.data) {
         setProjects(prev => [json.data!, ...prev]);
         setCreating(false);
         setName("");
+        setDescription("");
       } else {
         setError("Failed to create site.");
       }
@@ -303,36 +306,43 @@ export function DocsLayout() {
               </nav>
             )}
 
-            {/* Inline create form */}
-            {creating && (
-              <form onSubmit={handleCreate} className="mt-3 flex flex-col gap-2 rounded-md border border-border p-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium">New site</span>
-                  <button
-                    type="button"
-                    onClick={() => { setCreating(false); setError(null); setName(""); }}
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-                <div className="flex flex-col gap-1">
-                  <Label htmlFor="site-name" className="text-xs">Name</Label>
-                  <Input
-                    id="site-name"
-                    placeholder="My Docs"
-                    value={name}
-                    onChange={e => setName(e.target.value)}
-                    className="h-7 text-xs"
-                    required
-                  />
-                </div>
-                {error && <p className="text-xs text-destructive">{error}</p>}
-                <Button type="submit" size="sm" className="w-full" disabled={saving}>
-                  {saving ? "Creating…" : "Create"}
-                </Button>
-              </form>
-            )}
+            <Dialog open={creating} onOpenChange={open => { if (!open) { setCreating(false); setError(null); setName(""); setDescription(""); } }}>
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader className="pb-2">
+                  <DialogTitle>New site</DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleCreate} className="flex flex-col gap-5 py-2">
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="site-name">Name</Label>
+                    <Input
+                      id="site-name"
+                      placeholder="My Docs"
+                      value={name}
+                      onChange={e => setName(e.target.value)}
+                      required
+                      autoFocus
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="site-description">Description <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                    <Textarea
+                      id="site-description"
+                      placeholder="A short description of this site…"
+                      value={description}
+                      onChange={e => setDescription(e.target.value)}
+                      rows={3}
+                      className="resize-none"
+                    />
+                  </div>
+                  {error && <p className="text-sm text-destructive">{error}</p>}
+                  <DialogFooter className="pt-2">
+                    <Button type="submit" disabled={saving}>
+                      {saving ? "Creating…" : "Create site"}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
           </ScrollArea>
         )}
 
@@ -345,11 +355,9 @@ export function DocsLayout() {
             <span className="flex-1 truncate text-sm font-medium">
               {userName ?? "—"}
             </span>
-            {currentProject && (
-              <Badge variant="secondary" className="shrink-0 text-[10px] capitalize">
-                {currentProject.role}
-              </Badge>
-            )}
+            <Badge variant="secondary" className={cn("shrink-0 text-[10px] capitalize", !currentProject && "invisible")}>
+              {currentProject?.role ?? "owner"}
+            </Badge>
           </div>
           <Button variant="ghost" size="sm" className="w-full justify-start gap-2" onClick={() => navigate("/settings")}>
             <Settings className="h-4 w-4" />

@@ -68,5 +68,5 @@ export function Turnstile({ onVerify, onExpire }: TurnstileProps) {
     };
   }, []);
 
-  return <div ref={containerRef} />;
+  return <div className="flex justify-center"><div ref={containerRef} /></div>;
 }

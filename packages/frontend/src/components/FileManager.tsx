@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useLocation, useOutletContext } from "react-router-dom";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
-import { Folder, FileText, Plus, FolderPlus, Search, X, Download } from "lucide-react";
+import { Folder, FileText, Plus, FolderPlus, Search, X, Download, Upload, Image, FileCode, FileArchive, File, Trash2, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -27,6 +27,28 @@ interface DocItem {
   updated_at: string;
   author_name?: string;
   author_role?: Role | null;
+}
+
+interface FileItem {
+  id: string;
+  name: string;
+  mime_type: string;
+  size: number;
+  folder_id: string | null;
+  created_at: string;
+}
+
+function FileIcon({ mimeType, className }: { mimeType: string; className?: string }) {
+  if (mimeType.startsWith("image/")) return <Image className={className} />;
+  if (mimeType === "application/json" || mimeType.startsWith("text/")) return <FileCode className={className} />;
+  if (mimeType.includes("zip") || mimeType.includes("tar") || mimeType.includes("gzip") || mimeType.includes("archive")) return <FileArchive className={className} />;
+  return <File className={className} />;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 interface BreadcrumbEntry {
@@ -80,6 +102,7 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
 
   const [folders, setFolders] = useState<FolderItem[]>([]);
   const [docs, setDocs] = useState<DocItem[]>([]);
+  const [files, setFiles] = useState<FileItem[]>([]);
   const initialPath: BreadcrumbEntry[] = location.state?.restorePath ?? [{ id: null, name: projectName }];
   const [path, setPath] = useState<BreadcrumbEntry[]>(initialPath);
   const currentFolderId = path[path.length - 1].id;
@@ -91,6 +114,11 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
   }, [location.state]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
+  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
+  const [renameTarget, setRenameTarget] = useState<{ type: "folder" | "doc" | "file"; id: string; currentName: string } | null>(null);
+  const [renameName, setRenameName] = useState("");
+  const [renaming, setRenaming] = useState(false);
   const [folderCounts, setFolderCounts] = useState<Map<string, { files: number; folders: number }>>(new Map());
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -101,9 +129,13 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [creatingDoc, setCreatingDoc] = useState(false);
 
-  // drag state
-  const draggedItem = useRef<{ type: "doc" | "folder"; id: string } | null>(null);
+  // internal drag-to-reorder state
+  const draggedItem = useRef<{ type: "doc" | "folder" | "file"; id: string } | null>(null);
   const [dropTarget, setDropTarget] = useState<string | "root" | null>(null);
+
+  // external file drop state
+  const [externalDragOver, setExternalDragOver] = useState(false);
+  const [uploadingCount, setUploadingCount] = useState(0);
 
   useEffect(() => {
     loadContents();
@@ -169,20 +201,25 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
     const folderParam = currentFolderId ? `&parentId=${currentFolderId}` : "";
     const folderIdParam = currentFolderId ? `&folderId=${currentFolderId}` : "&folderId=";
 
-    const [foldersRes, docsRes] = await Promise.all([
+    const [foldersRes, docsRes, filesRes] = await Promise.all([
       fetch(`/api/folders?projectId=${projectId}&type=docs${folderParam}`, {
         headers: { Authorization: `Bearer ${token}` },
       }),
       fetch(`/api/docs?projectId=${projectId}${folderIdParam}`, {
         headers: { Authorization: `Bearer ${token}` },
       }),
+      fetch(`/api/files?projectId=${projectId}${folderIdParam}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
     ]);
 
     const foldersJson = await foldersRes.json() as { ok: boolean; data?: FolderItem[] };
     const docsJson = await docsRes.json() as { ok: boolean; data?: DocItem[] };
+    const filesJson = await filesRes.json() as { ok: boolean; data?: FileItem[] };
 
     if (foldersJson.ok && foldersJson.data) setFolders(foldersJson.data);
     if (docsJson.ok && docsJson.data) setDocs(docsJson.data);
+    if (filesJson.ok && filesJson.data) setFiles(filesJson.data);
   }
 
   function enterFolder(folder: FolderItem) {
@@ -277,6 +314,138 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
     URL.revokeObjectURL(url);
   }
 
+  function openFile(file: FileItem) {
+    navigate(`/projects/${projectId}/files/${file.id}`);
+  }
+
+  async function downloadFile(file: FileItem) {
+    const token = getToken();
+    const res = await fetch(`/api/files/${file.id}/content`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = file.name;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function moveFile(fileId: string, targetFolderId: string | null) {
+    const token = getToken();
+    await fetch(`/api/files/${fileId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ folderId: targetFolderId }),
+    });
+    await loadContents();
+  }
+
+  async function handleDeleteSelected() {
+    if (deleting) return;
+    setDeleting(true);
+    const token = getToken();
+    try {
+      await Promise.all([
+        ...[...selectedDocs].map(id =>
+          fetch(`/api/docs/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } })
+        ),
+        ...[...selectedFiles].map(id =>
+          fetch(`/api/files/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } })
+        ),
+      ]);
+      setDocs(prev => prev.filter(d => !selectedDocs.has(d.id)));
+      setFiles(prev => prev.filter(f => !selectedFiles.has(f.id)));
+      setSelectedDocs(new Set());
+      setSelectedFiles(new Set());
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  async function handleRename(e: React.FormEvent) {
+    e.preventDefault();
+    if (!renameTarget || !renameName.trim() || renaming) return;
+    setRenaming(true);
+    const token = getToken();
+    try {
+      if (renameTarget.type === "folder") {
+        await fetch(`/api/folders/${renameTarget.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ name: renameName.trim() }),
+        });
+        setFolders(prev => prev.map(f => f.id === renameTarget.id ? { ...f, name: renameName.trim() } : f));
+      } else if (renameTarget.type === "doc") {
+        await fetch(`/api/docs/${renameTarget.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ title: renameName.trim() }),
+        });
+        setDocs(prev => prev.map(d => d.id === renameTarget.id ? { ...d, title: renameName.trim() } : d));
+      } else {
+        await fetch(`/api/files/${renameTarget.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ name: renameName.trim() }),
+        });
+        setFiles(prev => prev.map(f => f.id === renameTarget.id ? { ...f, name: renameName.trim() } : f));
+      }
+      setRenameTarget(null);
+    } finally {
+      setRenaming(false);
+    }
+  }
+
+  const uploadFileAndCreateDoc = useCallback(async (file: File) => {
+    const token = getToken();
+    if (!token) return;
+
+    setUploadingCount(c => c + 1);
+    try {
+      // .md files → import content as a new document
+      if (file.name.endsWith(".md")) {
+        const content = await file.text();
+        const title = file.name.slice(0, -3) || "Untitled";
+        const docRes = await fetch("/api/docs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ title, content, projectId, folderId: currentFolderId }),
+        });
+        const docJson = await docRes.json() as { ok: boolean; data?: DocItem & { id: string } };
+        if (docJson.ok && docJson.data) {
+          onDocCreated(docJson.data);
+          setDocs(prev => [...prev, docJson.data!].sort((a, b) => a.title.localeCompare(b.title)));
+        }
+        return;
+      }
+
+      // Everything else → upload as a native file entry
+      const form = new FormData();
+      form.append("file", file);
+      form.append("projectId", projectId);
+      if (currentFolderId) form.append("folderId", currentFolderId);
+      const uploadRes = await fetch("/api/files", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+      const uploadJson = await uploadRes.json() as { ok: boolean; data?: FileItem };
+      if (uploadJson.ok && uploadJson.data) {
+        setFiles(prev => [...prev, uploadJson.data!].sort((a, b) => a.name.localeCompare(b.name)));
+      }
+    } finally {
+      setUploadingCount(c => c - 1);
+    }
+  }, [projectId, currentFolderId, onDocCreated]);
+
+  const handleExternalDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setExternalDragOver(false);
+    if (draggedItem.current) return; // internal drag, not our concern
+    Array.from(e.dataTransfer.files).forEach(uploadFileAndCreateDoc);
+  }, [uploadFileAndCreateDoc]);
+
   function onDragStart(type: "doc" | "folder", id: string) {
     draggedItem.current = { type, id };
   }
@@ -300,10 +469,10 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
     setDropTarget(null);
     const item = draggedItem.current;
     if (!item) return;
-    if (item.type === "doc") {
-      await moveDoc(item.id, targetFolderId);
-    } else {
-      if (item.id === targetFolderId) return; // can't move folder into itself
+    if (item.type === "doc") await moveDoc(item.id, targetFolderId);
+    else if (item.type === "file") await moveFile(item.id, targetFolderId);
+    else {
+      if (item.id === targetFolderId) return;
       await moveFolder(item.id, targetFolderId);
     }
   }
@@ -314,7 +483,7 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
     { label: "Last updated", defaultSize: 25, minSize: 12 },
   ];
 
-  function renderTable(folderRows: FolderItem[], docRows: DocItem[]) {
+  function renderTable(folderRows: FolderItem[], docRows: DocItem[], fileRows: FileItem[] = []) {
     return (
       <ResizableTable columns={FILE_COLUMNS} storageKey="file-columns">
         <>
@@ -339,13 +508,14 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
                     const item = draggedItem.current;
                     if (!item || item.id === folder.id) return;
                     if (item.type === "doc") await moveDoc(item.id, folder.id);
+                    else if (item.type === "file") await moveFile(item.id, folder.id);
                     else await moveFolder(item.id, folder.id);
                   }}
                   className={`cursor-pointer ${isDropTarget ? "bg-primary/10 ring-1 ring-inset ring-primary/40" : ""}`}
                   cells={[
                     {
                       content: (
-                        <>
+                        <div className="group flex items-center w-full min-w-0">
                           <Folder className={`h-4 w-4 shrink-0 mr-2 ${isDropTarget ? "text-primary" : "text-primary/70"}`} />
                           <span className="text-sm font-medium truncate">{folder.name}</span>
                           {folderCounts.has(folder.id) && (() => {
@@ -359,7 +529,14 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
                               </Badge>
                             ) : null;
                           })()}
-                        </>
+                          <button
+                            onClick={e => { e.stopPropagation(); setRenameTarget({ type: "folder", id: folder.id, currentName: folder.name }); setRenameName(folder.name); }}
+                            className="ml-1.5 shrink-0 opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-opacity"
+                            title="Rename"
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </button>
+                        </div>
                       ),
                       onClick: () => enterFolder(folder),
                     },
@@ -394,10 +571,17 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
                   cells={[
                     {
                       content: (
-                        <>
+                        <div className="group flex items-center w-full min-w-0">
                           <FileText className="h-4 w-4 shrink-0 mr-2 text-muted-foreground/60" />
                           <span className="text-sm truncate">{doc.title || "Untitled"}</span>
-                        </>
+                          <button
+                            onClick={e => { e.stopPropagation(); setRenameTarget({ type: "doc", id: doc.id, currentName: doc.title || "Untitled" }); setRenameName(doc.title || "Untitled"); }}
+                            className="ml-1.5 shrink-0 opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-opacity"
+                            title="Rename"
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </button>
+                        </div>
                       ),
                       className: "px-3 cursor-pointer",
                       onClick: navToDoc,
@@ -429,13 +613,85 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
                 />
               );
           })}
+          {fileRows.map(file => (
+            <ResizableTableRow
+              key={file.id}
+              columns={FILE_COLUMNS}
+              draggable
+              onDragStart={() => onDragStart("file", file.id)}
+              onDragEnd={onDragEnd}
+              checkboxCell={
+                <Checkbox
+                  checked={selectedFiles.has(file.id)}
+                  onCheckedChange={checked => {
+                    setSelectedFiles(prev => {
+                      const next = new Set(prev);
+                      if (checked) next.add(file.id);
+                      else next.delete(file.id);
+                      return next;
+                    });
+                  }}
+                />
+              }
+              cells={[
+                {
+                  content: (
+                    <div className="group flex items-center w-full min-w-0">
+                      <FileIcon mimeType={file.mime_type} className="h-4 w-4 shrink-0 mr-2 text-muted-foreground/60" />
+                      <span className="text-sm truncate">{file.name}</span>
+                      <button
+                        onClick={e => { e.stopPropagation(); setRenameTarget({ type: "file", id: file.id, currentName: file.name }); setRenameName(file.name); }}
+                        className="ml-1.5 shrink-0 opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-opacity"
+                        title="Rename"
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ),
+                  className: "px-3 cursor-pointer",
+                  onClick: () => openFile(file),
+                },
+                {
+                  content: <span className="text-sm text-muted-foreground">{formatBytes(file.size)}</span>,
+                },
+                {
+                  content: (
+                    <div className="flex items-center justify-between gap-2 w-full">
+                      <span className="text-sm text-muted-foreground truncate">{formatRelativeTime(file.created_at)}</span>
+                      <button
+                        onClick={e => { e.stopPropagation(); downloadFile(file); }}
+                        className="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
+                        title="Download"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ),
+                },
+              ]}
+            />
+          ))}
         </>
       </ResizableTable>
     );
   }
 
   return (
-    <div className="flex flex-col">
+    <div
+      className="relative flex flex-col"
+      onDragEnter={e => { if (!draggedItem.current && e.dataTransfer.types.includes("Files")) setExternalDragOver(true); }}
+      onDragOver={e => { if (!draggedItem.current && e.dataTransfer.types.includes("Files")) { e.preventDefault(); setExternalDragOver(true); } }}
+      onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setExternalDragOver(false); }}
+      onDrop={handleExternalDrop}
+    >
+      {(externalDragOver || uploadingCount > 0) && (
+        <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 rounded-lg bg-background/80 backdrop-blur-sm ring-2 ring-inset ring-primary/40">
+          <Upload className="h-8 w-8 text-primary/60" />
+          <p className="text-sm font-medium text-muted-foreground">
+            {uploadingCount > 0 ? `Uploading ${uploadingCount} ${uploadingCount === 1 ? "file" : "files"}…` : "Drop to upload"}
+          </p>
+        </div>
+      )}
 
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-6 py-3">
@@ -464,6 +720,12 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
           <Plus className="h-3.5 w-3.5" />
           {creatingDoc ? "Creating…" : "New document"}
         </Button>
+        {(selectedDocs.size > 0 || selectedFiles.size > 0) && (
+          <Button size="sm" variant="destructive" className="gap-1.5" onClick={handleDeleteSelected} disabled={deleting}>
+            <Trash2 className="h-3.5 w-3.5" />
+            {deleting ? "Deleting…" : `Delete (${selectedDocs.size + selectedFiles.size})`}
+          </Button>
+        )}
       </div>
 
       {/* Table */}
@@ -475,12 +737,12 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
               <p className="text-sm font-medium text-muted-foreground">No files found</p>
             </div>
           ) : renderTable([], searchResults)
-        ) : folders.length === 0 && docs.length === 0 ? (
+        ) : folders.length === 0 && docs.length === 0 && files.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <Folder className="mb-3 h-10 w-10 text-muted-foreground/30" />
             <p className="text-sm font-medium text-muted-foreground">This folder is empty</p>
           </div>
-        ) : renderTable(folders, docs)}
+        ) : renderTable(folders, docs, files)}
       </div>
 
       {/* New folder dialog */}
@@ -503,6 +765,27 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Rename dialog */}
+      <Dialog open={!!renameTarget} onOpenChange={open => { if (!open) setRenameTarget(null); }}>
+        <DialogContent className="sm:max-w-xs">
+          <DialogHeader>
+            <DialogTitle>Rename</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleRename} className="flex flex-col gap-3">
+            <Input
+              value={renameName}
+              onChange={e => setRenameName(e.target.value)}
+              autoFocus
+              required
+            />
+            <Button type="submit" disabled={renaming || !renameName.trim()}>
+              {renaming ? "Renaming…" : "Rename"}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }

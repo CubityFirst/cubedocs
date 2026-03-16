@@ -6,6 +6,7 @@ import { handleFolders } from "./routes/folders";
 import { handleMembers } from "./routes/members";
 import { handlePublic } from "./routes/public";
 import { handlePasswords } from "./routes/passwords";
+import { handleFiles } from "./routes/files";
 
 export interface Env {
   DB: D1Database;
@@ -87,6 +88,10 @@ export default {
         const user = await authenticate(request, env);
         if (!user) return addCorsHeaders(errorResponse(Errors.UNAUTHORIZED));
         response = await handlePasswords(request, env, user, url);
+      } else if (url.pathname.startsWith("/files")) {
+        const user = await authenticate(request, env);
+        if (!user) return addCorsHeaders(errorResponse(Errors.UNAUTHORIZED));
+        response = await handleFiles(request, env, user, url);
       } else {
         response = errorResponse(Errors.NOT_FOUND);
       }

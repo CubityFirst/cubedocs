@@ -179,6 +179,7 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
   const currentFolderId = path[path.length - 1].id;
 
   const [selectedEntries, setSelectedEntries] = useState<Set<string>>(new Set());
+  const [deletingSelected, setDeletingSelected] = useState(false);
   const [folderCounts, setFolderCounts] = useState<Map<string, { files: number; folders: number }>>(new Map());
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -402,6 +403,23 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
       }
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleDeleteSelected() {
+    if (deletingSelected || selectedEntries.size === 0) return;
+    setDeletingSelected(true);
+    const token = getToken();
+    try {
+      await Promise.all(
+        [...selectedEntries].map(id =>
+          fetch(`/api/passwords/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } })
+        )
+      );
+      setEntries(prev => prev.filter(e => !selectedEntries.has(e.id)));
+      setSelectedEntries(new Set());
+    } finally {
+      setDeletingSelected(false);
     }
   }
 
@@ -724,6 +742,12 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
           <Plus className="h-3.5 w-3.5" />
           New entry
         </Button>
+        {selectedEntries.size > 0 && (
+          <Button size="sm" variant="destructive" className="gap-1.5" onClick={handleDeleteSelected} disabled={deletingSelected}>
+            <Trash2 className="h-3.5 w-3.5" />
+            {deletingSelected ? "Deleting…" : `Delete (${selectedEntries.size})`}
+          </Button>
+        )}
       </div>
 
       {/* Table */}

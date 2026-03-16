@@ -94,5 +94,26 @@ export async function handlePublic(
     });
   }
 
+  // /public/files/:id/content — serve a file from a published project (images only)
+  if (parts[0] === "files" && parts[1] && parts[2] === "content") {
+    const fileId = parts[1];
+    const meta = await env.DB.prepare(
+      "SELECT f.mime_type, f.name, p.published_at FROM files f JOIN projects p ON p.id = f.project_id WHERE f.id = ?",
+    ).bind(fileId).first<{ mime_type: string; name: string; published_at: string | null }>();
+    if (!meta || !meta.published_at) return errorResponse(Errors.NOT_FOUND);
+
+    const obj = await env.ASSETS.get(`files/${fileId}`);
+    if (!obj) return errorResponse(Errors.NOT_FOUND);
+
+    return new Response(await obj.arrayBuffer(), {
+      status: 200,
+      headers: {
+        "Content-Type": meta.mime_type || "application/octet-stream",
+        "Content-Disposition": `inline; filename="${meta.name}"`,
+        "Cache-Control": "public, max-age=3600",
+      },
+    });
+  }
+
   return errorResponse(Errors.NOT_FOUND);
 }

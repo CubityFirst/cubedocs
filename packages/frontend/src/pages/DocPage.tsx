@@ -5,6 +5,7 @@ import remarkGfm from "remark-gfm";
 import { remarkCallouts } from "@/lib/remark-callouts";
 import { Callout, type CalloutType } from "@/components/Callout";
 import { MarkdownCode } from "@/components/CodeBlock";
+import { AuthenticatedImage } from "@/components/AuthenticatedImage";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -80,6 +81,21 @@ function timeAgo(iso: string): string {
 }
 
 
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</p>
+      {children}
+    </div>
+  );
+}
+
+function Code({ children }: { children: string }) {
+  return (
+    <pre className="rounded-md bg-muted px-3 py-2 font-mono text-xs leading-relaxed whitespace-pre">{children}</pre>
+  );
+}
+
 const remarkPlugins = [remarkGfm, remarkCallouts];
 
 const markdownComponents = {
@@ -106,6 +122,7 @@ const markdownComponents = {
   h5: makeHeading("h5"),
   h6: makeHeading("h6"),
   code: MarkdownCode,
+  img: AuthenticatedImage,
 };
 
 interface Doc {
@@ -150,6 +167,7 @@ export function DocPage() {
   const [changelogText, setChangelogText] = useState("");
   const [showBlame, setShowBlame] = useState(false);
   const [editorScrollTop, setEditorScrollTop] = useState(0);
+  const [markdownHelpOpen, setMarkdownHelpOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleEditorActivity = useCallback((e: React.MouseEvent<HTMLTextAreaElement> | React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -157,6 +175,8 @@ export function DocPage() {
     const beforeCursor = ta.value.slice(0, ta.selectionStart ?? 0);
     setActiveLine(beforeCursor.split("\n").length - 1);
   }, []);
+
+
 
   useEffect(() => {
     if (!docId) return;
@@ -389,8 +409,15 @@ export function DocPage() {
         {/* Split editor / preview */}
         <div className="flex flex-1 overflow-hidden">
           <div className="flex w-1/2 flex-col border-r border-border">
-            <div className="border-b border-border px-4 py-1.5 flex items-center">
+            <div className="border-b border-border px-4 py-1.5 flex items-center justify-between">
               <span className="text-xs font-medium text-muted-foreground">Markdown</span>
+              <button
+                onClick={() => setMarkdownHelpOpen(true)}
+                title="Markdown help"
+                className="flex h-4 w-4 items-center justify-center rounded-full border border-muted-foreground/30 text-[10px] font-medium text-muted-foreground/40 transition-colors hover:border-muted-foreground hover:text-muted-foreground"
+              >
+                ?
+              </button>
             </div>
             <div className="relative flex-1 overflow-hidden">
               <Textarea
@@ -472,6 +499,51 @@ export function DocPage() {
             )}
           </div>
         </div>
+
+        <Dialog open={markdownHelpOpen} onOpenChange={setMarkdownHelpOpen}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Markdown reference</DialogTitle>
+              <DialogDescription>Supported syntax in this editor.</DialogDescription>
+            </DialogHeader>
+            <div className="overflow-y-auto max-h-[60vh] mt-3 pr-4">
+              <div className="flex flex-col gap-5 pb-2 text-sm">
+                <Section title="Headings">
+                  <Code>{`# H1\n## H2\n### H3`}</Code>
+                </Section>
+                <Section title="Emphasis">
+                  <Code>{`**bold**\n*italic*\n~~strikethrough~~`}</Code>
+                </Section>
+                <Section title="Links & images">
+                  <Code>{`[link text](https://example.com)\n![alt text](https://example.com/img.png)`}</Code>
+                </Section>
+                <Section title="Lists">
+                  <Code>{`- unordered item\n- another item\n\n1. ordered item\n2. another item`}</Code>
+                </Section>
+                <Section title="Task lists">
+                  <Code>{`- [x] done\n- [ ] not done`}</Code>
+                </Section>
+                <Section title="Tables">
+                  <Code>{`| Col A | Col B |\n|-------|-------|\n| one   | two   |`}</Code>
+                </Section>
+                <Section title="Code">
+                  <Code>{`\`inline code\`\n\n\`\`\`typescript\nconst x = 42;\n\`\`\``}</Code>
+                  <p className="text-xs text-muted-foreground mt-1">Supported languages: TypeScript, JavaScript, Python, Rust, Go, Java, Bash, SQL, JSON, and more.</p>
+                </Section>
+                <Section title="Blockquote">
+                  <Code>{`> This is a blockquote.`}</Code>
+                </Section>
+                <Section title="Callouts">
+                  <Code>{`> [!note]\n> This is a note.\n\n> [!warning] Watch out\n> Something to be careful about.\n\n> [!tip]+ Foldable tip\n> This starts open.\n\n> [!danger]- Foldable danger\n> This starts closed.`}</Code>
+                  <p className="text-xs text-muted-foreground mt-1">Types: <span className="font-mono">note</span>, <span className="font-mono">info</span>, <span className="font-mono">tip</span>, <span className="font-mono">success</span>, <span className="font-mono">warning</span>, <span className="font-mono">danger</span>, <span className="font-mono">bug</span>, <span className="font-mono">question</span>, <span className="font-mono">quote</span>, <span className="font-mono">example</span>, <span className="font-mono">abstract</span>, <span className="font-mono">todo</span>, <span className="font-mono">failure</span></p>
+                </Section>
+                <Section title="Horizontal rule">
+                  <Code>{`---`}</Code>
+                </Section>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         <Dialog open={changelogDialogOpen} onOpenChange={open => { if (!saving) setChangelogDialogOpen(open); }}>
           <DialogContent className="sm:max-w-md">

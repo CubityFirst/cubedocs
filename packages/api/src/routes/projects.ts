@@ -26,7 +26,7 @@ export async function handleProjects(
 
   // POST /projects
   if (!projectId && request.method === "POST") {
-    const body = await request.json<{ name: string }>();
+    const body = await request.json<{ name: string; description?: string }>();
     if (!body.name) return errorResponse(Errors.BAD_REQUEST);
 
     // Look up owner's name from auth worker
@@ -44,8 +44,8 @@ export async function handleProjects(
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     await env.DB.prepare(
-      "INSERT INTO projects (id, name, owner_id, created_at) VALUES (?, ?, ?, ?)",
-    ).bind(id, body.name, user.userId, now).run();
+      "INSERT INTO projects (id, name, description, owner_id, created_at) VALUES (?, ?, ?, ?, ?)",
+    ).bind(id, body.name, body.description ?? null, user.userId, now).run();
 
     await env.DB.prepare(
       "INSERT INTO project_members (id, project_id, user_id, email, name, role, invited_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
