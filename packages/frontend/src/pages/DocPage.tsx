@@ -3,6 +3,7 @@ import { useParams, useLocation, useNavigate, useOutletContext } from "react-rou
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { remarkCallouts } from "@/lib/remark-callouts";
+import { remarkImageAttrs } from "@/lib/remark-image-attrs";
 import { Callout, type CalloutType } from "@/components/Callout";
 import { MarkdownCode } from "@/components/CodeBlock";
 import { AuthenticatedImage } from "@/components/AuthenticatedImage";
@@ -16,7 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { HistorySheet, type RevisionMeta } from "@/components/HistorySheet";
 import { HistoryBanner } from "@/components/HistoryBanner";
-import { Pencil, X, Save, Settings, Globe, Lock, Link, History, LayoutList } from "lucide-react";
+import { Pencil, X, Save, Settings, Globe, Lock, Link, History } from "lucide-react";
 import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
 import { getToken } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
@@ -96,7 +97,7 @@ function Code({ children }: { children: string }) {
   );
 }
 
-const remarkPlugins = [remarkGfm, remarkCallouts];
+const remarkPlugins = [remarkGfm, remarkCallouts, remarkImageAttrs];
 
 const markdownComponents = {
   blockquote({ children, node, ...props }: React.ComponentPropsWithoutRef<"blockquote"> & { node?: { properties?: Record<string, unknown> } }) {
@@ -165,8 +166,7 @@ export function DocPage() {
   const [reverting, setReverting] = useState(false);
   const [changelogDialogOpen, setChangelogDialogOpen] = useState(false);
   const [changelogText, setChangelogText] = useState("");
-  const [showBlame, setShowBlame] = useState(false);
-  const [editorScrollTop, setEditorScrollTop] = useState(0);
+const [editorScrollTop, setEditorScrollTop] = useState(0);
   const [markdownHelpOpen, setMarkdownHelpOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -455,48 +455,19 @@ export function DocPage() {
           </div>
 
           <div className="flex w-1/2 flex-col overflow-auto">
-            <div className="border-b border-border px-4 py-1.5 flex items-center justify-between">
+            <div className="border-b border-border px-4 py-1.5">
               <span className="text-xs font-medium text-muted-foreground">Preview</span>
-              <button
-                onClick={() => setShowBlame(b => !b)}
-                title="Toggle blame view"
-                className={`rounded p-0.5 transition-colors ${showBlame ? "text-foreground" : "text-muted-foreground/40 hover:text-muted-foreground"}`}
-              >
-                <LayoutList className="h-3.5 w-3.5" />
-              </button>
             </div>
-            {showBlame ? (
-              <div className="flex-1 overflow-auto px-4 py-4">
-                {draft.split("\n").map((line, i) => {
-                  const entry = doc.blame?.[i] ?? null;
-                  const parts: string[] = [];
-                  if (entry?.c) parts.push(`"${truncate(entry.c, 32)}"`);
-                  if (entry) { parts.push(entry.n); parts.push(timeAgo(entry.t)); }
-                  const blameText = parts.length ? parts.join(" · ") : null;
-                  return (
-                    <div key={i} className="flex items-baseline leading-relaxed min-h-[1.5rem]">
-                      <span className="flex-1 whitespace-pre font-mono text-sm">{line}</span>
-                      {blameText && (
-                        <span className="ml-16 shrink-0 font-mono text-xs text-muted-foreground/35 whitespace-nowrap select-none">
-                          {blameText}
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="flex-1 overflow-auto px-8 py-6">
-                {titleDraft && <h1 className="mb-4 text-2xl font-bold">{titleDraft}</h1>}
-                {draft.trim() ? (
-                  <article className="prose prose-neutral dark:prose-invert max-w-none">
-                    <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>{draft}</ReactMarkdown>
-                  </article>
-                ) : (
-                  <p className="text-sm text-muted-foreground/50">Nothing to preview yet.</p>
-                )}
-              </div>
-            )}
+            <div className="flex-1 overflow-auto px-8 py-6">
+              {titleDraft && <h1 className="mb-4 text-2xl font-bold">{titleDraft}</h1>}
+              {draft.trim() ? (
+                <article className="prose prose-neutral dark:prose-invert max-w-none">
+                  <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>{draft}</ReactMarkdown>
+                </article>
+              ) : (
+                <p className="text-sm text-muted-foreground/50">Nothing to preview yet.</p>
+              )}
+            </div>
           </div>
         </div>
 

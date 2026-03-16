@@ -3,12 +3,14 @@ import { useParams, useNavigate, NavLink } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { remarkCallouts } from "@/lib/remark-callouts";
+import { remarkImageAttrs } from "@/lib/remark-image-attrs";
 import { Callout, type CalloutType } from "@/components/Callout";
 import { MarkdownCode } from "@/components/CodeBlock";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
-import { BookOpen, FileText, Folder, ChevronRight, Search, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { BookOpen, FileText, Folder, ChevronRight, Search, X, Image, FileCode, FileArchive, File, Download } from "lucide-react";
 
 function toId(text: string): string {
   return text.toLowerCase().replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-");
@@ -43,7 +45,7 @@ function extractHeadings(content: string): Heading[] {
   return headings;
 }
 
-const remarkPlugins = [remarkGfm, remarkCallouts];
+const remarkPlugins = [remarkGfm, remarkCallouts, remarkImageAttrs];
 
 function PublicImage({ src, alt, ...props }: React.ComponentPropsWithoutRef<"img">) {
   const publicSrc = src?.startsWith("/api/files/")
@@ -91,19 +93,42 @@ interface NavFolder {
   parent_id: string | null;
 }
 
+interface NavFile {
+  id: string;
+  name: string;
+  mime_type: string;
+  size: number;
+  folder_id: string | null;
+}
+
 interface PublicData {
   doc: { id: string; title: string; content: string; showLastUpdated: boolean; updatedAt: string };
   sitePublished: boolean;
   project: { id: string; name: string };
   docs: NavDoc[] | null;
   folders: NavFolder[] | null;
+  files: NavFile[] | null;
 }
 
-function folderHasDocs(folderId: string, folders: NavFolder[], docs: NavDoc[]): boolean {
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function FileTypeIcon({ mimeType, className }: { mimeType: string; className?: string }) {
+  if (mimeType.startsWith("image/")) return <Image className={className} />;
+  if (mimeType === "application/json" || mimeType.startsWith("text/")) return <FileCode className={className} />;
+  if (mimeType.includes("zip") || mimeType.includes("tar") || mimeType.includes("gzip") || mimeType.includes("archive")) return <FileArchive className={className} />;
+  return <File className={className} />;
+}
+
+function folderHasItems(folderId: string, folders: NavFolder[], docs: NavDoc[], files: NavFile[]): boolean {
   if (docs.some(d => d.folder_id === folderId)) return true;
+  if (files.some(f => f.folder_id === folderId)) return true;
   return folders
     .filter(f => f.parent_id === folderId)
-    .some(child => folderHasDocs(child.id, folders, docs));
+    .some(child => folderHasItems(child.id, folders, docs, files));
 }
 
 // When a folder or doc is the last child, we erase the parent's border-l below the
@@ -118,15 +143,19 @@ function FolderNode({
   projectId,
   folders,
   docs,
+  files,
   depth,
   isLast,
+  onFileClick,
 }: {
   folder: NavFolder;
   projectId: string;
   folders: NavFolder[];
   docs: NavDoc[];
+  files: NavFile[];
   depth: number;
   isLast: boolean;
+  onFileClick: (file: NavFile) => void;
 }) {
   const [open, setOpen] = useState(true);
 
@@ -145,7 +174,7 @@ function FolderNode({
       </button>
       {open && (
         <div className="ml-3 border-l border-border">
-          <NavTree projectId={projectId} folders={folders} docs={docs} parentId={folder.id} depth={depth + 1} />
+          <NavTree projectId={projectId} folders={folders} docs={docs} files={files} parentId={folder.id} depth={depth + 1} onFileClick={onFileClick} />
         </div>
       )}
     </div>
@@ -156,25 +185,30 @@ function NavTree({
   projectId,
   folders,
   docs,
+  files,
   parentId = null,
   depth = 0,
+  onFileClick,
 }: {
   projectId: string;
   folders: NavFolder[];
   docs: NavDoc[];
+  files: NavFile[];
   parentId?: string | null;
   depth?: number;
+  onFileClick: (file: NavFile) => void;
 }) {
   const childFolders = folders
     .filter(f => f.parent_id === parentId)
-    .filter(f => folderHasDocs(f.id, folders, docs));
+    .filter(f => folderHasItems(f.id, folders, docs, files));
   const childDocs = docs.filter(d => d.folder_id === parentId);
-  const hasDocs = childDocs.length > 0;
+  const childFiles = files.filter(f => f.folder_id === parentId);
+  const hasLeafItems = childDocs.length > 0 || childFiles.length > 0;
 
   return (
     <>
       {childFolders.map((folder, i) => {
-        const isLast = !hasDocs && i === childFolders.length - 1;
+        const isLast = !hasLeafItems && i === childFolders.length - 1;
         return (
           <FolderNode
             key={folder.id}
@@ -182,13 +216,15 @@ function NavTree({
             projectId={projectId}
             folders={folders}
             docs={docs}
+            files={files}
             depth={depth}
             isLast={isLast}
+            onFileClick={onFileClick}
           />
         );
       })}
       {childDocs.map((doc, i) => {
-        const isLast = i === childDocs.length - 1;
+        const isLast = childFiles.length === 0 && i === childDocs.length - 1;
         return (
           <NavLink
             key={doc.id}
@@ -207,7 +243,84 @@ function NavTree({
           </NavLink>
         );
       })}
+      {childFiles.map((file, i) => {
+        const isLast = i === childFiles.length - 1;
+        return (
+          <button
+            key={file.id}
+            onClick={() => onFileClick(file)}
+            className={`relative w-full flex items-center gap-2 rounded-md py-1.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground pr-2 text-foreground/80 ${
+              depth > 0 ? "pl-3" : "pl-2"
+            } ${isLast && depth > 0 ? DOC_ERASE : ""}`}
+          >
+            {depth > 0 && (
+              <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 h-px w-3 bg-border" />
+            )}
+            <FileTypeIcon mimeType={file.mime_type} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <span className="truncate">{file.name}</span>
+          </button>
+        );
+      })}
     </>
+  );
+}
+
+function PublicFileView({ file }: { file: NavFile }) {
+  const [downloading, setDownloading] = useState(false);
+
+  async function handleDownload() {
+    setDownloading(true);
+    try {
+      const res = await fetch(`/api/public/files/${file.id}/content`);
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = file.name;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  return (
+    <div className="mx-auto max-w-2xl px-6 py-10">
+      <div className="flex items-center gap-4">
+        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border border-border bg-muted">
+          <FileTypeIcon mimeType={file.mime_type} className="h-7 w-7 text-muted-foreground" />
+        </div>
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold truncate">{file.name}</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">{file.mime_type}</p>
+        </div>
+      </div>
+
+      <Separator className="my-6" />
+
+      <dl className="grid grid-cols-[auto_1fr] gap-x-8 gap-y-3 text-sm">
+        <dt className="text-muted-foreground">Size</dt>
+        <dd>{formatBytes(file.size)}</dd>
+      </dl>
+
+      {file.mime_type.startsWith("image/") && (
+        <div className="mt-8 overflow-hidden rounded-xl border border-border bg-muted/30">
+          <img
+            src={`/api/public/files/${file.id}/content`}
+            alt={file.name}
+            className="max-h-[60vh] w-full object-contain"
+          />
+        </div>
+      )}
+
+      <div className="mt-8">
+        <Button onClick={handleDownload} disabled={downloading} className="gap-2">
+          <Download className="h-4 w-4" />
+          {downloading ? "Downloading…" : "Download"}
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -218,6 +331,7 @@ export function PublicDocPage() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedFile, setSelectedFile] = useState<NavFile | null>(null);
 
   useEffect(() => {
     if (!projectId) return;
@@ -240,6 +354,7 @@ export function PublicDocPage() {
 
     setLoading(true);
     setNotFound(false);
+    setSelectedFile(null);
     fetch(`/api/public/docs/${projectId}/${docId}`)
       .then(r => {
         if (r.status === 404) { setNotFound(true); return null; }
@@ -273,7 +388,7 @@ export function PublicDocPage() {
   }
 
   const headings = extractHeadings(data.doc.content);
-  const showNav = data.sitePublished && data.docs && data.docs.length > 0;
+  const showNav = data.sitePublished && data.docs && (data.docs.length > 0 || (data.files && data.files.length > 0));
 
   const filteredDocs = searchQuery.trim()
     ? (data.docs ?? []).filter(d => d.title.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -334,6 +449,8 @@ export function PublicDocPage() {
                   projectId={data.project.id}
                   folders={data.folders ?? []}
                   docs={data.docs!}
+                  files={data.files ?? []}
+                  onFileClick={setSelectedFile}
                 />
               )}
             </nav>
@@ -350,55 +467,59 @@ export function PublicDocPage() {
           </header>
         )}
         <ScrollArea className="flex-1">
-          <div className="flex min-h-full">
-            {/* Article */}
-            <div className="flex-1 min-w-0 px-6 py-10">
-              <div className="mx-auto max-w-3xl">
-                <article className="prose prose-neutral dark:prose-invert max-w-none">
-                  <h1>{data.doc.title}</h1>
-                  {data.doc.showLastUpdated && (
-                    <p className="not-prose -mt-2 mb-6 text-sm text-muted-foreground">
-                      Last updated {new Date(data.doc.updatedAt).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}
-                    </p>
-                  )}
-                  {data.doc.content.trim() ? (
-                    <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>
-                      {data.doc.content}
-                    </ReactMarkdown>
-                  ) : (
-                    <p className="not-prose text-sm italic text-muted-foreground/60">
-                      This page has no content yet.
-                    </p>
-                  )}
-                </article>
-              </div>
-            </div>
-
-            {/* Outline */}
-            {headings.length > 0 && (
-              <aside className="hidden xl:block w-56 shrink-0 py-10 pr-6">
-                <div className="sticky top-6">
-                  <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Outline
-                  </p>
-                  <ScrollArea className="max-h-[calc(100vh-8rem)]">
-                    <nav className="flex flex-col gap-0.5">
-                      {headings.map((h, i) => (
-                        <button
-                          key={i}
-                          onClick={() => document.getElementById(h.id)?.scrollIntoView({ behavior: "smooth" })}
-                          style={{ paddingLeft: `${(h.level - 1) * 0.75}rem` }}
-                          className="truncate rounded px-2 py-1 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                        >
-                          {h.text}
-                        </button>
-                      ))}
-                    </nav>
-                  </ScrollArea>
+          {selectedFile ? (
+            <PublicFileView file={selectedFile} />
+          ) : (
+            <div className="flex min-h-full">
+              {/* Article */}
+              <div className="flex-1 min-w-0 px-6 py-10">
+                <div className="mx-auto max-w-3xl">
+                  <article className="prose prose-neutral dark:prose-invert max-w-none">
+                    <h1>{data.doc.title}</h1>
+                    {data.doc.showLastUpdated && (
+                      <p className="not-prose -mt-2 mb-6 text-sm text-muted-foreground">
+                        Last updated {new Date(data.doc.updatedAt).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}
+                      </p>
+                    )}
+                    {data.doc.content.trim() ? (
+                      <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>
+                        {data.doc.content}
+                      </ReactMarkdown>
+                    ) : (
+                      <p className="not-prose text-sm italic text-muted-foreground/60">
+                        This page has no content yet.
+                      </p>
+                    )}
+                  </article>
                 </div>
-              </aside>
-            )}
-          </div>
+              </div>
+
+              {/* Outline */}
+              {headings.length > 0 && (
+                <aside className="hidden xl:block w-56 shrink-0 py-10 pr-6">
+                  <div className="sticky top-6">
+                    <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Outline
+                    </p>
+                    <ScrollArea className="max-h-[calc(100vh-8rem)]">
+                      <nav className="flex flex-col gap-0.5">
+                        {headings.map((h, i) => (
+                          <button
+                            key={i}
+                            onClick={() => document.getElementById(h.id)?.scrollIntoView({ behavior: "smooth" })}
+                            style={{ paddingLeft: `${(h.level - 1) * 0.75}rem` }}
+                            className="truncate rounded px-2 py-1 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                          >
+                            {h.text}
+                          </button>
+                        ))}
+                      </nav>
+                    </ScrollArea>
+                  </div>
+                </aside>
+              )}
+            </div>
+          )}
         </ScrollArea>
       </div>
     </div>

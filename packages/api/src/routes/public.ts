@@ -21,6 +21,14 @@ interface PublicFolder {
   parent_id: string | null;
 }
 
+interface PublicFile {
+  id: string;
+  name: string;
+  mime_type: string;
+  size: number;
+  folder_id: string | null;
+}
+
 export async function handlePublic(
   request: Request,
   env: Env,
@@ -46,7 +54,11 @@ export async function handlePublic(
       "SELECT id, name, parent_id FROM folders WHERE project_id = ? ORDER BY name ASC",
     ).bind(project.id).all<PublicFolder>();
 
-    return okResponse({ ...project, docs: docs.results, folders: folders.results });
+    const files = await env.DB.prepare(
+      "SELECT id, name, mime_type, size, folder_id FROM files WHERE project_id = ? ORDER BY name ASC",
+    ).bind(project.id).all<PublicFile>();
+
+    return okResponse({ ...project, docs: docs.results, folders: folders.results, files: files.results });
   }
 
   // /public/docs/:projectId/:docId
@@ -73,6 +85,7 @@ export async function handlePublic(
 
     let docs: Pick<PublicDoc, "id" | "title" | "folder_id">[] | null = null;
     let folders: PublicFolder[] | null = null;
+    let files: PublicFile[] | null = null;
     if (sitePublished) {
       const docsResult = await env.DB.prepare(
         "SELECT id, title, folder_id FROM docs WHERE project_id = ? ORDER BY created_at ASC",
@@ -83,6 +96,11 @@ export async function handlePublic(
         "SELECT id, name, parent_id FROM folders WHERE project_id = ? ORDER BY name ASC",
       ).bind(projectId).all<PublicFolder>();
       folders = foldersResult.results;
+
+      const filesResult = await env.DB.prepare(
+        "SELECT id, name, mime_type, size, folder_id FROM files WHERE project_id = ? ORDER BY name ASC",
+      ).bind(projectId).all<PublicFile>();
+      files = filesResult.results;
     }
 
     return okResponse({
@@ -91,6 +109,7 @@ export async function handlePublic(
       project: { id: project.id, name: project.name },
       docs,
       folders,
+      files,
     });
   }
 
