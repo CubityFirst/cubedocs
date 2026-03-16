@@ -147,6 +147,8 @@ function FolderNode({
   depth,
   isLast,
   onFileClick,
+  onDocClick,
+  selectedFileId,
 }: {
   folder: NavFolder;
   projectId: string;
@@ -156,6 +158,8 @@ function FolderNode({
   depth: number;
   isLast: boolean;
   onFileClick: (file: NavFile) => void;
+  onDocClick: () => void;
+  selectedFileId: string | null;
 }) {
   const [open, setOpen] = useState(true);
 
@@ -174,7 +178,7 @@ function FolderNode({
       </button>
       {open && (
         <div className="ml-3 border-l border-border">
-          <NavTree projectId={projectId} folders={folders} docs={docs} files={files} parentId={folder.id} depth={depth + 1} onFileClick={onFileClick} />
+          <NavTree projectId={projectId} folders={folders} docs={docs} files={files} parentId={folder.id} depth={depth + 1} onFileClick={onFileClick} onDocClick={onDocClick} selectedFileId={selectedFileId} />
         </div>
       )}
     </div>
@@ -189,6 +193,8 @@ function NavTree({
   parentId = null,
   depth = 0,
   onFileClick,
+  onDocClick,
+  selectedFileId,
 }: {
   projectId: string;
   folders: NavFolder[];
@@ -197,6 +203,8 @@ function NavTree({
   parentId?: string | null;
   depth?: number;
   onFileClick: (file: NavFile) => void;
+  onDocClick: () => void;
+  selectedFileId: string | null;
 }) {
   const childFolders = folders
     .filter(f => f.parent_id === parentId)
@@ -220,6 +228,8 @@ function NavTree({
             depth={depth}
             isLast={isLast}
             onFileClick={onFileClick}
+            onDocClick={onDocClick}
+            selectedFileId={selectedFileId}
           />
         );
       })}
@@ -229,10 +239,11 @@ function NavTree({
           <NavLink
             key={doc.id}
             to={`/s/${projectId}/${doc.id}`}
+            onClick={onDocClick}
             className={({ isActive }) =>
               `relative flex items-center gap-2 rounded-md py-1.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground pr-2 ${
                 depth > 0 ? "pl-3" : "pl-2"
-              } ${isActive ? "bg-accent text-accent-foreground font-medium" : "text-foreground/80"} ${isLast && depth > 0 ? DOC_ERASE : ""}`
+              } ${isActive && !selectedFileId ? "bg-accent text-accent-foreground font-medium" : "text-foreground/80"} ${isLast && depth > 0 ? DOC_ERASE : ""}`
             }
           >
             {depth > 0 && (
@@ -249,9 +260,9 @@ function NavTree({
           <button
             key={file.id}
             onClick={() => onFileClick(file)}
-            className={`relative w-full flex items-center gap-2 rounded-md py-1.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground pr-2 text-foreground/80 ${
+            className={`relative w-full flex items-center gap-2 rounded-md py-1.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground pr-2 ${
               depth > 0 ? "pl-3" : "pl-2"
-            } ${isLast && depth > 0 ? DOC_ERASE : ""}`}
+            } ${selectedFileId === file.id ? "bg-accent text-accent-foreground font-medium" : "text-foreground/80"} ${isLast && depth > 0 ? DOC_ERASE : ""}`}
           >
             {depth > 0 && (
               <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 h-px w-3 bg-border" />
@@ -352,7 +363,7 @@ export function PublicDocPage() {
       return;
     }
 
-    setLoading(true);
+    if (!data) setLoading(true);
     setNotFound(false);
     setSelectedFile(null);
     fetch(`/api/public/docs/${projectId}/${docId}`)
@@ -433,6 +444,7 @@ export function PublicDocPage() {
                     <NavLink
                       key={doc.id}
                       to={`/s/${data.project.id}/${doc.id}`}
+                      onClick={() => setSelectedFile(null)}
                       className={({ isActive }) =>
                         `flex items-center gap-2 rounded-md py-1.5 pl-2 pr-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground ${
                           isActive ? "bg-accent text-accent-foreground font-medium" : "text-foreground/80"
@@ -451,6 +463,8 @@ export function PublicDocPage() {
                   docs={data.docs!}
                   files={data.files ?? []}
                   onFileClick={setSelectedFile}
+                  onDocClick={() => setSelectedFile(null)}
+                  selectedFileId={selectedFile?.id ?? null}
                 />
               )}
             </nav>
