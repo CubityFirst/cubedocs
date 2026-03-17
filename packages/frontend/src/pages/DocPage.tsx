@@ -597,18 +597,7 @@ const [editorScrollTop, setEditorScrollTop] = useState(0);
               <Button variant="ghost" onClick={() => setChangelogDialogOpen(false)} disabled={saving}>
                 Cancel
               </Button>
-              {changelogMode !== "enforced" && (
-                <Button
-                  variant="outline"
-                  disabled={saving}
-                  onClick={() => {
-                    setChangelogDialogOpen(false);
-                    handleSave();
-                  }}
-                >
-                  Skip
-                </Button>
-              )}
+
               <Button
                 disabled={saving || (changelogMode === "enforced" && !changelogText.trim())}
                 onClick={() => {

@@ -315,7 +315,7 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
   }
 
   function openFile(file: FileItem) {
-    navigate(`/projects/${projectId}/files/${file.id}`);
+    navigate(`/projects/${projectId}/files/${file.id}`, { state: { folderPath: path } });
   }
 
   async function downloadFile(file: FileItem) {

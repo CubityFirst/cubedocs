@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
-import { useParams, useOutletContext } from "react-router-dom";
+import { useParams, useOutletContext, useLocation, useNavigate } from "react-router-dom";
 import { Image, FileCode, FileArchive, FileText, File, Download, Link, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { AuthenticatedImage } from "@/components/AuthenticatedImage";
 import { getToken } from "@/lib/auth";
-import type { DocsLayoutContext } from "@/layouts/DocsLayout";
+import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
 
 interface FileRecord {
   id: string;
@@ -40,8 +40,10 @@ function formatDate(iso: string): string {
 }
 
 export function FilePage() {
-  const { fileId } = useParams<{ fileId: string }>();
+  const { projectId, fileId } = useParams<{ projectId: string; fileId: string }>();
   const { setBreadcrumbs } = useOutletContext<DocsLayoutContext>();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [file, setFile] = useState<FileRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
@@ -55,12 +57,17 @@ export function FilePage() {
       .then((json: { ok: boolean; data?: FileRecord }) => {
         if (json.ok && json.data) {
           setFile(json.data);
-          setBreadcrumbs([{ id: fileId, name: json.data.name }]);
+          const rawPath: { id: string | null; name: string }[] = location.state?.folderPath ?? [];
+          const folderCrumbs: BreadcrumbItem[] = rawPath.map((crumb, i) => ({
+            id: crumb.id,
+            name: crumb.name,
+            onClick: () => navigate(`/projects/${projectId}`, { state: { restorePath: rawPath.slice(0, i + 1) } }),
+          }));
+          setBreadcrumbs([...folderCrumbs, { id: fileId ?? null, name: json.data.name }]);
         }
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-    return () => setBreadcrumbs([]);
   }, [fileId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleDownload() {

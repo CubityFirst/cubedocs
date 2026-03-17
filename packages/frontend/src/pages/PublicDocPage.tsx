@@ -10,7 +10,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { BookOpen, FileText, Folder, ChevronRight, Search, X, Image, FileCode, FileArchive, File, Download } from "lucide-react";
+import { getToken } from "@/lib/auth";
+import { BookOpen, FileText, Folder, ChevronLeft, ChevronRight, Search, X, Image, FileCode, FileArchive, File, Download } from "lucide-react";
 
 function toId(text: string): string {
   return text.toLowerCase().replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-");
@@ -343,6 +344,11 @@ export function PublicDocPage() {
   const [notFound, setNotFound] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFile, setSelectedFile] = useState<NavFile | null>(null);
+  const [hasToken, setHasToken] = useState(false);
+
+  useEffect(() => {
+    setHasToken(!!getToken());
+  }, []);
 
   useEffect(() => {
     if (!projectId) return;
@@ -411,6 +417,15 @@ export function PublicDocPage() {
       {showNav && (
         <aside className="flex w-64 shrink-0 flex-col border-r border-border">
           <div className="flex h-14 items-center gap-2 px-4">
+            {hasToken && (
+              <button
+                onClick={() => navigate(`/projects/${projectId}`)}
+                className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                title="Back to project"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+            )}
             <BookOpen className="h-5 w-5 text-primary" />
             <span className="font-semibold tracking-tight">{data.project.name}</span>
           </div>
