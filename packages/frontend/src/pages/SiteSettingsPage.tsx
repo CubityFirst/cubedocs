@@ -621,7 +621,7 @@ export function SiteSettingsPage() {
                 <div className="flex flex-col gap-0.5">
                   <p className="text-sm font-medium flex items-center gap-2">AI Features <PremiumBadge /></p>
                   <p className="text-xs text-muted-foreground">
-                    Enable AI-powered writing assistance and document summarization.
+                    Enable AI-powered document summarization.
                   </p>
                 </div>
                 <Switch
