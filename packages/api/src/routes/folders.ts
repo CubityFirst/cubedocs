@@ -2,13 +2,14 @@ import { okResponse, errorResponse, Errors, ROLE_RANK, type Session, type Folder
 import type { Env } from "../index";
 
 async function getCallerRole(db: D1Database, projectId: string, userId: string): Promise<Role | null> {
-  const project = await db.prepare("SELECT owner_id FROM projects WHERE id = ?")
-    .bind(projectId).first<{ owner_id: string }>();
-  if (!project) return null;
-  if (project.owner_id === userId) return "owner";
-  const row = await db.prepare("SELECT role FROM project_members WHERE project_id = ? AND user_id = ?")
-    .bind(projectId, userId).first<{ role: Role }>();
-  return row?.role ?? null;
+  const row = await db.prepare(`
+    SELECT pm.role
+    FROM projects p
+    LEFT JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = ?
+    WHERE p.id = ?
+  `).bind(userId, projectId).first<{ role: Role | null }>();
+  if (row === null) return null;
+  return row.role ?? null;
 }
 
 export async function handleFolders(

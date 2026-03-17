@@ -18,13 +18,14 @@ interface PasswordRow {
 }
 
 async function getCallerRole(db: D1Database, projectId: string, userId: string): Promise<Role | null> {
-  const project = await db.prepare("SELECT owner_id FROM projects WHERE id = ?")
-    .bind(projectId).first<{ owner_id: string }>();
-  if (!project) return null;
-  if (project.owner_id === userId) return "owner";
-  const row = await db.prepare("SELECT role FROM project_members WHERE project_id = ? AND user_id = ?")
-    .bind(projectId, userId).first<{ role: Role }>();
-  return row?.role ?? null;
+  const row = await db.prepare(`
+    SELECT pm.role
+    FROM projects p
+    LEFT JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = ?
+    WHERE p.id = ?
+  `).bind(userId, projectId).first<{ role: Role | null }>();
+  if (row === null) return null;
+  return row.role ?? null;
 }
 
 async function deriveKey(secret: string, projectId: string): Promise<CryptoKey> {
@@ -193,11 +194,11 @@ export async function handlePasswords(
 
   // PUT /passwords/:id — editor or above
   if (passwordId && request.method === "PUT") {
-    const meta = await env.DB.prepare("SELECT project_id FROM passwords WHERE id = ?")
-      .bind(passwordId).first<{ project_id: string }>();
-    if (!meta) return errorResponse(Errors.NOT_FOUND);
+    const existing = await env.DB.prepare("SELECT * FROM passwords WHERE id = ?")
+      .bind(passwordId).first<PasswordRow>();
+    if (!existing) return errorResponse(Errors.NOT_FOUND);
 
-    const role = await getCallerRole(env.DB, meta.project_id, user.userId);
+    const role = await getCallerRole(env.DB, existing.project_id, user.userId);
     if (role === null) return errorResponse(Errors.FORBIDDEN);
     if (ROLE_RANK[role] < ROLE_RANK["editor"]) return errorResponse(Errors.FORBIDDEN);
 
@@ -212,37 +213,55 @@ export async function handlePasswords(
     }>>();
 
     const now = new Date().toISOString();
-    const key = await deriveKey(env.JWT_SECRET, meta.project_id);
+    const key = await deriveKey(env.JWT_SECRET, existing.project_id);
     const set: string[] = ["updated_at = ?"];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const vals: any[] = [now];
+
+    let newPasswordEnc = existing.password_enc;
+    let newTotpEnc = existing.totp_enc;
+    let newNotesEnc = existing.notes_enc;
 
     if (body.title !== undefined) { set.push("title = ?"); vals.push(body.title); }
     if (body.username !== undefined) { set.push("username = ?"); vals.push(body.username); }
     if (body.url !== undefined) { set.push("url = ?"); vals.push(body.url); }
     if (body.folderId !== undefined) { set.push("folder_id = ?"); vals.push(body.folderId); }
     if (body.password !== undefined) {
-      set.push("password_enc = ?"); vals.push(await encryptField(key, body.password));
+      newPasswordEnc = await encryptField(key, body.password);
+      set.push("password_enc = ?"); vals.push(newPasswordEnc);
       set.push("last_change_date = ?"); vals.push(now);
     }
     if (body.totp !== undefined) {
-      set.push("totp_enc = ?"); vals.push(body.totp ? await encryptField(key, body.totp) : null);
+      newTotpEnc = body.totp ? await encryptField(key, body.totp) : null;
+      set.push("totp_enc = ?"); vals.push(newTotpEnc);
     }
     if (body.notes !== undefined) {
-      set.push("notes_enc = ?"); vals.push(body.notes ? await encryptField(key, body.notes) : null);
+      newNotesEnc = body.notes ? await encryptField(key, body.notes) : null;
+      set.push("notes_enc = ?"); vals.push(newNotesEnc);
     }
 
     vals.push(passwordId);
     await env.DB.prepare(`UPDATE passwords SET ${set.join(", ")} WHERE id = ?`).bind(...vals).run();
 
-    const updated = await env.DB.prepare("SELECT * FROM passwords WHERE id = ?").bind(passwordId).first<PasswordRow>();
-    if (!updated) return errorResponse(Errors.NOT_FOUND);
+    // Build updated row optimistically — no second DB read needed
+    const updated: PasswordRow = {
+      ...existing,
+      updated_at: now,
+      title: body.title ?? existing.title,
+      username: body.username !== undefined ? body.username : existing.username,
+      url: body.url !== undefined ? body.url : existing.url,
+      folder_id: body.folderId !== undefined ? body.folderId : existing.folder_id,
+      last_change_date: body.password !== undefined ? now : existing.last_change_date,
+      password_enc: newPasswordEnc,
+      totp_enc: newTotpEnc,
+      notes_enc: newNotesEnc,
+    };
 
     const isCredentialChange = body.title !== undefined || body.username !== undefined ||
       body.password !== undefined || body.totp !== undefined || body.url !== undefined || body.notes !== undefined;
     if (isCredentialChange) {
       const nameRow = await env.DB.prepare("SELECT name FROM project_members WHERE project_id = ? AND user_id = ?")
-        .bind(meta.project_id, user.userId).first<{ name: string }>();
+        .bind(existing.project_id, user.userId).first<{ name: string }>();
       const editorName = nameRow?.name ?? user.userId;
       const snap = JSON.stringify({
         title: updated.title,
@@ -254,7 +273,7 @@ export async function handlePasswords(
       });
       await env.DB.prepare(
         "INSERT INTO asset_revisions (id, asset_type, asset_id, project_id, editor_id, editor_name, created_at, data) VALUES (?, 'password', ?, ?, ?, ?, ?, ?)",
-      ).bind(crypto.randomUUID(), passwordId, meta.project_id, user.userId, editorName, now, snap).run();
+      ).bind(crypto.randomUUID(), passwordId, existing.project_id, user.userId, editorName, now, snap).run();
     }
 
     const password = await decryptField(key, updated.password_enc);

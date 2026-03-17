@@ -1,4 +1,4 @@
-import { errorResponse, Errors } from "./lib";
+import { errorResponse, Errors, Session } from "./lib";
 import { authenticate } from "./auth";
 import { handleProjects } from "./routes/projects";
 import { handleDocs } from "./routes/docs";
@@ -33,35 +33,35 @@ export default {
 
       // GET /me — returns authenticated user's name and email
       if (url.pathname === "/me" && request.method === "GET") {
-        const user = await authenticate(request, env);
-        if (!user) return addCorsHeaders(errorResponse(Errors.UNAUTHORIZED));
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
         const lookupRes = await env.AUTH.fetch("https://auth/lookup-by-id", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId: user.userId }),
+          body: JSON.stringify({ userId: session.userId }),
         });
         if (!lookupRes.ok) return addCorsHeaders(errorResponse(Errors.INTERNAL));
         const data = await lookupRes.json<{ ok: boolean; data?: { name: string; email: string } }>();
         if (!data.ok || !data.data) return addCorsHeaders(errorResponse(Errors.INTERNAL));
-        return addCorsHeaders(Response.json({ ok: true, data: { name: data.data.name, email: data.data.email, userId: user.userId } }));
+        return addCorsHeaders(Response.json({ ok: true, data: { name: data.data.name, email: data.data.email, userId: session.userId } }));
       }
 
       // PATCH /me — update authenticated user's name
       if (url.pathname === "/me" && request.method === "PATCH") {
-        const user = await authenticate(request, env);
-        if (!user) return addCorsHeaders(errorResponse(Errors.UNAUTHORIZED));
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
         const body = await request.json<{ name?: string }>();
         if (!body.name?.trim()) return addCorsHeaders(errorResponse(Errors.BAD_REQUEST));
         const updateRes = await env.AUTH.fetch("https://auth/update-name", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId: user.userId, name: body.name.trim() }),
+          body: JSON.stringify({ userId: session.userId, name: body.name.trim() }),
         });
         if (!updateRes.ok) return addCorsHeaders(errorResponse(Errors.INTERNAL));
         const trimmedName = body.name.trim();
         // Keep project_members names in sync
         await env.DB.prepare("UPDATE project_members SET name = ? WHERE user_id = ?")
-          .bind(trimmedName, user.userId).run();
+          .bind(trimmedName, session.userId).run();
         return addCorsHeaders(Response.json({ ok: true, data: { name: trimmedName } }));
       }
 
@@ -69,29 +69,29 @@ export default {
       if (url.pathname.startsWith("/public")) {
         response = await handlePublic(request, env, url);
       } else if (/^\/projects\/[^/]+\/members/.test(url.pathname)) {
-        const user = await authenticate(request, env);
-        if (!user) return addCorsHeaders(errorResponse(Errors.UNAUTHORIZED));
-        response = await handleMembers(request, env, user, url);
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        response = await handleMembers(request, env, session, url);
       } else if (url.pathname.startsWith("/projects")) {
-        const user = await authenticate(request, env);
-        if (!user) return addCorsHeaders(errorResponse(Errors.UNAUTHORIZED));
-        response = await handleProjects(request, env, user, url);
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        response = await handleProjects(request, env, session, url);
       } else if (url.pathname.startsWith("/docs")) {
-        const user = await authenticate(request, env);
-        if (!user) return addCorsHeaders(errorResponse(Errors.UNAUTHORIZED));
-        response = await handleDocs(request, env, user, url);
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        response = await handleDocs(request, env, session, url);
       } else if (url.pathname.startsWith("/folders")) {
-        const user = await authenticate(request, env);
-        if (!user) return addCorsHeaders(errorResponse(Errors.UNAUTHORIZED));
-        response = await handleFolders(request, env, user, url);
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        response = await handleFolders(request, env, session, url);
       } else if (url.pathname.startsWith("/passwords")) {
-        const user = await authenticate(request, env);
-        if (!user) return addCorsHeaders(errorResponse(Errors.UNAUTHORIZED));
-        response = await handlePasswords(request, env, user, url);
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        response = await handlePasswords(request, env, session, url);
       } else if (url.pathname.startsWith("/files")) {
-        const user = await authenticate(request, env);
-        if (!user) return addCorsHeaders(errorResponse(Errors.UNAUTHORIZED));
-        response = await handleFiles(request, env, user, url);
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        response = await handleFiles(request, env, session, url);
       } else {
         response = errorResponse(Errors.NOT_FOUND);
       }
@@ -103,6 +103,12 @@ export default {
     return addCorsHeaders(response);
   },
 };
+
+async function getSession(request: Request, env: Env): Promise<Session | Response> {
+  const user = await authenticate(request, env);
+  if (!user) return addCorsHeaders(errorResponse(Errors.UNAUTHORIZED));
+  return user;
+}
 
 function corsHeaders(): HeadersInit {
   return {
