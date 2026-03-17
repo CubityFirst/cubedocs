@@ -31,6 +31,33 @@ export default {
         return env.AUTH.fetch(new Request(`https://auth${url.pathname}`, request));
       }
 
+      // TOTP management routes — authenticated, proxied to auth worker with userId injected
+      if (url.pathname.startsWith("/me/totp")) {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        const totpPath = url.pathname.replace("/me/totp", "/totp");
+        const body = request.method !== "GET" ? await request.json<Record<string, unknown>>() : {};
+        const authRes = await env.AUTH.fetch(`https://auth${totpPath}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...body, userId: session.userId }),
+        });
+        return addCorsHeaders(authRes);
+      }
+
+      // PATCH /me/password — change password
+      if (url.pathname === "/me/password" && request.method === "PATCH") {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        const body = await request.json<Record<string, unknown>>();
+        const authRes = await env.AUTH.fetch("https://auth/change-password", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...body, userId: session.userId }),
+        });
+        return addCorsHeaders(authRes);
+      }
+
       // GET /me — returns authenticated user's name and email
       if (url.pathname === "/me" && request.method === "GET") {
         const session = await getSession(request, env);

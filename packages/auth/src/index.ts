@@ -5,6 +5,11 @@ import { handleVerify } from "./routes/verify";
 import { handleLookup } from "./routes/lookup";
 import { handleLookupById } from "./routes/lookup-by-id";
 import { handleUpdateName } from "./routes/update-name";
+import { handleTotpSetup } from "./routes/totp-setup";
+import { handleTotpEnable } from "./routes/totp-enable";
+import { handleTotpDisable } from "./routes/totp-disable";
+import { handleTotpStatus } from "./routes/totp-status";
+import { handleChangePassword } from "./routes/change-password";
 
 export interface Env {
   DB: D1Database;
@@ -37,6 +42,16 @@ export default {
         response = await handleLookupById(request, env);
       } else if (url.pathname === "/update-name" && request.method === "POST") {
         response = await handleUpdateName(request, env);
+      } else if (url.pathname === "/totp/setup" && request.method === "POST") {
+        response = await handleTotpSetup(request, env);
+      } else if (url.pathname === "/totp/enable" && request.method === "POST") {
+        response = await handleTotpEnable(request, env);
+      } else if (url.pathname === "/totp/disable" && request.method === "POST") {
+        response = await handleTotpDisable(request, env);
+      } else if (url.pathname === "/totp/status" && request.method === "POST") {
+        response = await handleTotpStatus(request, env);
+      } else if (url.pathname === "/change-password" && request.method === "POST") {
+        response = await handleChangePassword(request, env);
       } else {
         response = errorResponse(Errors.NOT_FOUND);
       }

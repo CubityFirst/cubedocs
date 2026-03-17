@@ -2,10 +2,11 @@ import { okResponse, errorResponse, Errors } from "../lib";
 import { verifyPassword } from "../password";
 import { signJwt } from "../jwt";
 import { verifyTurnstile } from "../turnstile";
+import { verifyTOTP } from "../totp";
 import type { Env } from "../index";
 
 export async function handleLogin(request: Request, env: Env): Promise<Response> {
-  const body = await request.json<{ email: string; password: string; turnstileToken: string }>();
+  const body = await request.json<{ email: string; password: string; turnstileToken: string; totpCode?: string }>();
 
   if (!body.email || !body.password) return errorResponse(Errors.BAD_REQUEST);
 
@@ -13,9 +14,9 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
   if (!turnstileValid) return errorResponse(Errors.BAD_REQUEST);
 
   const row = await env.DB.prepare(
-    "SELECT id, email, name, password_hash, created_at, moderation FROM users WHERE email = ?",
+    "SELECT id, email, name, password_hash, created_at, moderation, totp_secret FROM users WHERE email = ?",
   ).bind(body.email.toLowerCase()).first<{
-    id: string; email: string; name: string; password_hash: string; created_at: string; moderation: number;
+    id: string; email: string; name: string; password_hash: string; created_at: string; moderation: number; totp_secret: string | null;
   }>();
 
   if (!row) return errorResponse(Errors.UNAUTHORIZED);
@@ -25,6 +26,16 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
 
   const moderationResponse = checkModeration(row.moderation);
   if (moderationResponse) return moderationResponse;
+
+  if (row.totp_secret) {
+    if (!body.totpCode) {
+      return Response.json({ ok: false, error: "totp_required" }, { status: 200 });
+    }
+    const totpValid = await verifyTOTP(row.totp_secret, body.totpCode);
+    if (!totpValid) {
+      return Response.json({ ok: false, error: "invalid_totp" }, { status: 401 });
+    }
+  }
 
   const token = await signJwt(
     { userId: row.id, email: row.email, expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 },

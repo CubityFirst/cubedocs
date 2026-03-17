@@ -25,6 +25,9 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const [totpRequired, setTotpRequired] = useState(false);
+  const [totpCode, setTotpCode] = useState("");
+
   const handleTurnstileVerify = useCallback((token: string) => setTurnstileToken(token), []);
   const handleTurnstileExpire = useCallback(() => setTurnstileToken(null), []);;
 
@@ -46,12 +49,22 @@ export function LoginPage() {
       const res = await fetch("/api/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, turnstileToken }),
+        body: JSON.stringify({
+          email,
+          password,
+          turnstileToken,
+          ...(totpRequired ? { totpCode } : {}),
+        }),
       });
       const json = await res.json() as { ok: boolean; data?: { token: string }; error?: string; until?: number };
       if (json.ok && json.data) {
         setToken(json.data.token);
         navigate(from, { replace: true });
+      } else if (json.error === "totp_required") {
+        setTotpRequired(true);
+      } else if (json.error === "invalid_totp") {
+        setError("Invalid authenticator code. Please try again.");
+        setTotpCode("");
       } else if (res.status === 403) {
         setError(moderationMessage(json.error, json.until));
       } else {
@@ -62,6 +75,46 @@ export function LoginPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (totpRequired) {
+    return (
+      <AuthForm
+        title="CubeDocs"
+        subtitle="Two-factor authentication"
+        submitLabel="Verify"
+        loading={loading}
+        error={error}
+        onSubmit={handleSubmit}
+        footer={
+          <button
+            type="button"
+            className="text-primary underline-offset-4 hover:underline text-sm"
+            onClick={() => { setTotpRequired(false); setTotpCode(""); setError(null); }}
+          >
+            Back to sign in
+          </button>
+        }
+      >
+        <div className="space-y-2">
+          <Label htmlFor="totp-code">Authenticator code</Label>
+          <Input
+            id="totp-code"
+            type="text"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            placeholder="000000"
+            maxLength={6}
+            value={totpCode}
+            onChange={e => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            autoFocus
+            required
+          />
+          <p className="text-xs text-muted-foreground">Enter the 6-digit code from your authenticator app.</p>
+        </div>
+        <Turnstile onVerify={handleTurnstileVerify} onExpire={handleTurnstileExpire} />
+      </AuthForm>
+    );
   }
 
   return (
