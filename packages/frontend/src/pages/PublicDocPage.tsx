@@ -11,7 +11,8 @@ import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { getToken } from "@/lib/auth";
-import { BookOpen, FileText, Folder, ChevronLeft, ChevronRight, Search, X, Image, FileCode, FileArchive, File, Download } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { BookOpen, FileText, Folder, ChevronLeft, ChevronRight, Search, X, Image, FileCode, FileArchive, File, Download, ImageOff } from "lucide-react";
 
 function toId(text: string): string {
   return text.toLowerCase().replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-");
@@ -50,13 +51,24 @@ const remarkPlugins = [remarkGfm, remarkCallouts, remarkImageAttrs];
 
 function makePublicImage(projectId: string) {
   return function PublicImage({ src, alt, ...props }: React.ComponentPropsWithoutRef<"img">) {
+    const [failed, setFailed] = useState(false);
     let publicSrc = src;
     if (src?.startsWith("/api/files/")) {
       publicSrc = src.replace("/api/files/", "/api/public/files/") + `?projectId=${projectId}`;
     } else if (src?.startsWith("/api/public/files/") && !src.includes("projectId=")) {
       publicSrc = src + `?projectId=${projectId}`;
     }
-    return <img src={publicSrc} alt={alt} {...props} />;
+    if (failed) {
+      return (
+        <a href="https://docs.cubityfir.st/s/e6d11927-cc6b-48d1-8577-af8b08019d61/258a2eb4-edac-4c86-91aa-afdc46c29c00" target="_blank" rel="noopener noreferrer" aria-label="Image unavailable — learn more">
+          <Badge variant="destructive" className="inline-flex items-center gap-1.5 font-normal cursor-pointer" title={alt}>
+            <ImageOff className="h-3.5 w-3.5 shrink-0" />
+            There was meant to be an image here, but it either doesn&apos;t exist, or you do not have permission to view it. Click here to find out more.
+          </Badge>
+        </a>
+      );
+    }
+    return <img src={publicSrc} alt={alt} onError={() => setFailed(true)} {...props} />;
   };
 }
 
