@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { getToken } from "@/lib/auth";
 
-export function AuthenticatedImage({ src, alt, ...props }: React.ComponentPropsWithoutRef<"img">) {
+export function AuthenticatedImage({ src, alt, projectId, ...props }: React.ComponentPropsWithoutRef<"img"> & { projectId?: string }) {
   const [resolvedSrc, setResolvedSrc] = useState<string | null>(null);
 
   useEffect(() => {
@@ -11,7 +11,8 @@ export function AuthenticatedImage({ src, alt, ...props }: React.ComponentPropsW
     }
     let blobUrl: string | null = null;
     let cancelled = false;
-    fetch(src, { headers: { Authorization: `Bearer ${getToken()}` } })
+    const fetchSrc = projectId ? `${src}?projectId=${projectId}` : src;
+    fetch(fetchSrc, { headers: { Authorization: `Bearer ${getToken()}` } })
       .then(r => r.ok ? r.blob() : null)
       .then(blob => {
         if (blob && !cancelled) {
@@ -24,7 +25,7 @@ export function AuthenticatedImage({ src, alt, ...props }: React.ComponentPropsW
       cancelled = true;
       if (blobUrl) URL.revokeObjectURL(blobUrl);
     };
-  }, [src]);
+  }, [src, projectId]);
 
   if (!resolvedSrc) return null;
   return <img src={resolvedSrc} alt={alt} {...props} />;

@@ -116,9 +116,11 @@ export async function handlePublic(
   // /public/files/:id/content — serve a file from a published project (images only)
   if (parts[0] === "files" && parts[1] && parts[2] === "content") {
     const fileId = parts[1];
+    const contextProjectId = url.searchParams.get("projectId");
     const meta = await env.DB.prepare(
-      "SELECT f.mime_type, f.name, p.published_at FROM files f JOIN projects p ON p.id = f.project_id WHERE f.id = ?",
-    ).bind(fileId).first<{ mime_type: string; name: string; published_at: string | null }>();
+      "SELECT f.mime_type, f.name, p.published_at FROM files f JOIN projects p ON p.id = f.project_id WHERE f.id = ?" +
+        (contextProjectId ? " AND f.project_id = ?" : ""),
+    ).bind(...(contextProjectId ? [fileId, contextProjectId] : [fileId])).first<{ mime_type: string; name: string; published_at: string | null }>();
     if (!meta || !meta.published_at) return errorResponse(Errors.NOT_FOUND);
 
     const obj = await env.ASSETS.get(`files/${fileId}`);

@@ -32,8 +32,11 @@ export async function handleFiles(
 
   // GET /files/:id/content — serve raw file (authenticated, project members only)
   if (fileId && subResource === "content" && request.method === "GET") {
-    const meta = await env.DB.prepare("SELECT name, mime_type, project_id FROM files WHERE id = ?")
-      .bind(fileId).first<{ name: string; mime_type: string; project_id: string }>();
+    const contextProjectId = url.searchParams.get("projectId");
+    const meta = await env.DB.prepare(
+      "SELECT name, mime_type, project_id FROM files WHERE id = ?" +
+        (contextProjectId ? " AND project_id = ?" : ""),
+    ).bind(...(contextProjectId ? [fileId, contextProjectId] : [fileId])).first<{ name: string; mime_type: string; project_id: string }>();
     if (!meta) return errorResponse(Errors.NOT_FOUND);
 
     const role = await getCallerRole(env.DB, meta.project_id, user.userId);

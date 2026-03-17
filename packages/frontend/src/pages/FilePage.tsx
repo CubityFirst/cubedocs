@@ -133,6 +133,7 @@ export function FilePage() {
           <AuthenticatedImage
             src={`/api/files/${file.id}/content`}
             alt={file.name}
+            projectId={projectId}
             className="max-h-[60vh] w-full object-contain"
           />
         </div>

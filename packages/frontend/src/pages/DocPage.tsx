@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, isValidElement } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, isValidElement } from "react";
 import { useParams, useLocation, useNavigate, useOutletContext } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -134,7 +134,13 @@ function Code({ children }: { children: string }) {
 
 const remarkPlugins = [remarkGfm, remarkCallouts, remarkImageAttrs, remarkUnderline];
 
-const markdownComponents = {
+function makeAuthenticatedImage(projectId: string) {
+  return function AuthImg(props: React.ComponentPropsWithoutRef<"img">) {
+    return <AuthenticatedImage {...props} projectId={projectId} />;
+  };
+}
+
+const baseMarkdownComponents = {
   blockquote({ children, node, ...props }: React.ComponentPropsWithoutRef<"blockquote"> & { node?: { properties?: Record<string, unknown> } }) {
     const p = node?.properties;
     const calloutType = p?.["data-callout"] as CalloutType | undefined;
@@ -158,7 +164,6 @@ const markdownComponents = {
   h5: makeHeading("h5"),
   h6: makeHeading("h6"),
   code: MarkdownCode,
-  img: AuthenticatedImage,
 };
 
 interface Doc {
@@ -183,6 +188,11 @@ export function DocPage() {
   const navigate = useNavigate();
   const { updateDocTitle, setBreadcrumbs, projectPublishedAt, changelogMode } = useOutletContext<DocsLayoutContext>();
   const { toast } = useToast();
+
+  const markdownComponents = useMemo(() => ({
+    ...baseMarkdownComponents,
+    img: makeAuthenticatedImage(projectId ?? ""),
+  }), [projectId]);
 
   const [doc, setDoc] = useState<Doc | null>(null);
   const [myRole, setMyRole] = useState<string | null>(null);

@@ -1,4 +1,4 @@
-import { useState, useEffect, isValidElement } from "react";
+import { useState, useEffect, useMemo, isValidElement } from "react";
 import { useParams, useNavigate, NavLink } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -48,14 +48,19 @@ function extractHeadings(content: string): Heading[] {
 
 const remarkPlugins = [remarkGfm, remarkCallouts, remarkImageAttrs];
 
-function PublicImage({ src, alt, ...props }: React.ComponentPropsWithoutRef<"img">) {
-  const publicSrc = src?.startsWith("/api/files/")
-    ? src.replace("/api/files/", "/api/public/files/")
-    : src;
-  return <img src={publicSrc} alt={alt} {...props} />;
+function makePublicImage(projectId: string) {
+  return function PublicImage({ src, alt, ...props }: React.ComponentPropsWithoutRef<"img">) {
+    let publicSrc = src;
+    if (src?.startsWith("/api/files/")) {
+      publicSrc = src.replace("/api/files/", "/api/public/files/") + `?projectId=${projectId}`;
+    } else if (src?.startsWith("/api/public/files/") && !src.includes("projectId=")) {
+      publicSrc = src + `?projectId=${projectId}`;
+    }
+    return <img src={publicSrc} alt={alt} {...props} />;
+  };
 }
 
-const markdownComponents = {
+const baseMarkdownComponents = {
   blockquote({ children, node, ...props }: React.ComponentPropsWithoutRef<"blockquote"> & { node?: { properties?: Record<string, unknown> } }) {
     const p = node?.properties;
     const calloutType = p?.["data-callout"] as CalloutType | undefined;
@@ -79,7 +84,6 @@ const markdownComponents = {
   h5: makeHeading("h5"),
   h6: makeHeading("h6"),
   code: MarkdownCode,
-  img: PublicImage,
 };
 
 interface NavDoc {
@@ -277,13 +281,13 @@ function NavTree({
   );
 }
 
-function PublicFileView({ file }: { file: NavFile }) {
+function PublicFileView({ file, projectId }: { file: NavFile; projectId: string }) {
   const [downloading, setDownloading] = useState(false);
 
   async function handleDownload() {
     setDownloading(true);
     try {
-      const res = await fetch(`/api/public/files/${file.id}/content`);
+      const res = await fetch(`/api/public/files/${file.id}/content?projectId=${projectId}`);
       if (!res.ok) return;
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -319,7 +323,7 @@ function PublicFileView({ file }: { file: NavFile }) {
       {file.mime_type.startsWith("image/") && (
         <div className="mt-8 overflow-hidden rounded-xl border border-border bg-muted/30">
           <img
-            src={`/api/public/files/${file.id}/content`}
+            src={`/api/public/files/${file.id}/content?projectId=${projectId}`}
             alt={file.name}
             className="max-h-[60vh] w-full object-contain"
           />
@@ -345,6 +349,11 @@ export function PublicDocPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFile, setSelectedFile] = useState<NavFile | null>(null);
   const [hasToken, setHasToken] = useState(false);
+
+  const markdownComponents = useMemo(() => ({
+    ...baseMarkdownComponents,
+    img: makePublicImage(projectId ?? ""),
+  }), [projectId]);
 
   useEffect(() => {
     setHasToken(!!getToken());
@@ -497,7 +506,7 @@ export function PublicDocPage() {
         )}
         <ScrollArea className="flex-1">
           {selectedFile ? (
-            <PublicFileView file={selectedFile} />
+            <PublicFileView file={selectedFile} projectId={projectId ?? ""} />
           ) : (
             <div className="flex min-h-full">
               {/* Article */}
