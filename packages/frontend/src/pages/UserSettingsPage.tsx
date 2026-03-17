@@ -412,7 +412,23 @@ export function UserSettingsPage() {
 
             {/* TOTP subsection */}
             <div className="mt-5">
-              <h3 className="text-sm font-semibold">Authenticator app</h3>
+              <h3 className="text-sm font-semibold flex items-center gap-1.5">
+                Authenticator app
+                {!totpLoading && (
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button type="button" className="inline-flex cursor-default focus:outline-none">
+                        {totpEnabled
+                          ? <LockKeyhole className="size-3.5 text-green-500" />
+                          : <LockOpen className="size-3.5 text-red-500" />}
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent side="top" className="w-auto px-3 py-1.5 text-xs">
+                      {totpEnabled ? "Authenticator app enabled" : "Authenticator app not set up"}
+                    </PopoverContent>
+                  </Popover>
+                )}
+              </h3>
               <p className="mt-0.5 text-sm text-muted-foreground">
                 Use a TOTP authenticator app (Google Authenticator, Authy, 1Password, etc.) as a second factor.
               </p>
@@ -483,7 +499,23 @@ export function UserSettingsPage() {
 
             {/* WebAuthn subsection */}
             <div className="mt-6 pt-5 border-t">
-              <h3 className="text-sm font-semibold">Passkeys / Security keys</h3>
+              <h3 className="text-sm font-semibold flex items-center gap-1.5">
+                Passkeys / Security keys
+                {!webauthnLoading && (
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button type="button" className="inline-flex cursor-default focus:outline-none">
+                        {webauthnCredentials.length > 0
+                          ? <LockKeyhole className="size-3.5 text-green-500" />
+                          : <LockOpen className="size-3.5 text-red-500" />}
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent side="top" className="w-auto px-3 py-1.5 text-xs">
+                      {webauthnCredentials.length > 0 ? "Passkey / security key registered" : "No passkeys registered"}
+                    </PopoverContent>
+                  </Popover>
+                )}
+              </h3>
               <p className="mt-0.5 text-sm text-muted-foreground">
                 Use a hardware security key (YubiKey, etc.) or platform passkey as a second factor.
               </p>
