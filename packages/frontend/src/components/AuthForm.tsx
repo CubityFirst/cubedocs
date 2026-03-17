@@ -12,6 +12,7 @@ interface AuthFormProps {
   onSubmit: (e: React.FormEvent) => void;
   children: React.ReactNode;
   footer: React.ReactNode;
+  hideSubmit?: boolean;
 }
 
 export function AuthForm({
@@ -23,6 +24,7 @@ export function AuthForm({
   onSubmit,
   children,
   footer,
+  hideSubmit,
 }: AuthFormProps) {
   return (
     <div className="flex min-h-screen bg-background text-foreground">
@@ -42,9 +44,11 @@ export function AuthForm({
 
           <form onSubmit={onSubmit} className="space-y-4">
             {children}
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? `${submitLabel}…` : submitLabel}
-            </Button>
+            {!hideSubmit && (
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading ? `${submitLabel}…` : submitLabel}
+              </Button>
+            )}
           </form>
 
           <p className="text-center text-sm text-muted-foreground">{footer}</p>

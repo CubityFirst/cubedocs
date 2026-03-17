@@ -12,6 +12,8 @@ import { HistoryBanner } from "@/components/HistoryBanner";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ResizableTable, ResizableTableRow } from "@/components/ui/resizable-table";
 import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/hooks/use-toast";
+import { use2FA } from "@/hooks/use2FA";
 import { getToken } from "@/lib/auth";
 
 interface FolderItem {
@@ -171,6 +173,7 @@ interface Props {
 export function PasswordVaultManager({ projectId, projectName }: Props) {
   const location = useLocation();
   const { setBreadcrumbs } = useOutletContext<DocsLayoutContext>();
+  const { toast } = useToast();
 
   const [folders, setFolders] = useState<FolderItem[]>([]);
   const [entries, setEntries] = useState<PasswordEntry[]>([]);
@@ -212,6 +215,32 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
   // Drag state
   const draggedItem = useRef<{ type: "entry" | "folder"; id: string } | null>(null);
   const [dropTarget, setDropTarget] = useState<string | "root" | null>(null);
+
+  // 2FA status
+  const [twoFAStatus, setTwoFAStatus] = useState({ totpEnabled: false, webauthnEnabled: false });
+  const { runWithTwoFA, twoFADialog } = use2FA(twoFAStatus);
+
+  useEffect(() => {
+    const token = getToken();
+    if (!token) return;
+    Promise.all([
+      fetch("/api/me/totp/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({}),
+      }).then(r => r.json() as Promise<{ ok: boolean; data?: { enabled: boolean } }>),
+      fetch("/api/me/webauthn/credentials", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({}),
+      }).then(r => r.json() as Promise<{ ok: boolean; data?: { credentials: unknown[] } }>),
+    ]).then(([totpJson, webauthnJson]) => {
+      setTwoFAStatus({
+        totpEnabled: !!(totpJson.ok && totpJson.data?.enabled),
+        webauthnEnabled: !!(webauthnJson.ok && webauthnJson.data && webauthnJson.data.credentials.length > 0),
+      });
+    }).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     loadContents();
@@ -408,33 +437,46 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
 
   async function handleDeleteSelected() {
     if (deletingSelected || selectedEntries.size === 0) return;
-    setDeletingSelected(true);
-    const token = getToken();
-    try {
-      await Promise.all(
-        [...selectedEntries].map(id =>
-          fetch(`/api/passwords/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } })
-        )
-      );
-      setEntries(prev => prev.filter(e => !selectedEntries.has(e.id)));
-      setSelectedEntries(new Set());
-    } finally {
-      setDeletingSelected(false);
-    }
+    const toDelete = new Set(selectedEntries);
+    await runWithTwoFA(async () => {
+      setDeletingSelected(true);
+      try {
+        const token = getToken();
+        await Promise.all(
+          [...toDelete].map(id =>
+            fetch(`/api/passwords/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } })
+          )
+        );
+        setEntries(prev => prev.filter(e => !toDelete.has(e.id)));
+        setSelectedEntries(new Set());
+        return undefined;
+      } catch {
+        toast({ title: "Failed to delete entries", variant: "destructive" });
+        return "Failed to delete entries.";
+      } finally {
+        setDeletingSelected(false);
+      }
+    });
   }
 
   async function handleDelete() {
     if (!detailEntry) return;
-    const token = getToken();
-    const res = await fetch(`/api/passwords/${detailEntry.id}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
+    const entryId = detailEntry.id;
+    await runWithTwoFA(async () => {
+      const token = getToken();
+      const res = await fetch(`/api/passwords/${entryId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json() as { ok: boolean };
+      if (json.ok) {
+        setEntries(prev => prev.filter(e => e.id !== entryId));
+        setDialog(null);
+        setConfirmDelete(false);
+        return undefined;
+      }
+      return "Failed to delete entry.";
     });
-    const json = await res.json() as { ok: boolean };
-    if (json.ok) {
-      setEntries(prev => prev.filter(e => e.id !== detailEntry.id));
-      setDialog(null);
-    }
   }
 
   async function openHistory() {
@@ -1084,6 +1126,8 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
         loading={loadingHistoryRevision}
         onSelect={viewHistoryRevision}
       />
+
+      {twoFADialog}
 
     </div>
   );

@@ -10,12 +10,21 @@ import { handleTotpEnable } from "./routes/totp-enable";
 import { handleTotpDisable } from "./routes/totp-disable";
 import { handleTotpStatus } from "./routes/totp-status";
 import { handleChangePassword } from "./routes/change-password";
+import { handleWebauthnRegisterStart } from "./routes/webauthn-register-start";
+import { handleWebauthnRegisterFinish } from "./routes/webauthn-register-finish";
+import { handleWebauthnAuthStart } from "./routes/webauthn-auth-start";
+import { handleWebauthnAuthFinish } from "./routes/webauthn-auth-finish";
+import { handleWebauthnCredentialsList } from "./routes/webauthn-credentials-list";
+import { handleWebauthnCredentialsDelete } from "./routes/webauthn-credentials-delete";
 
 export interface Env {
   DB: D1Database;
   JWT_SECRET: string;
   JWT_ISSUER: string;
   TURNSTILE_SECRET: string;
+  WEBAUTHN_RP_ID: string;
+  WEBAUTHN_RP_NAME: string;
+  WEBAUTHN_ORIGIN: string;
 }
 
 export default {
@@ -52,6 +61,18 @@ export default {
         response = await handleTotpStatus(request, env);
       } else if (url.pathname === "/change-password" && request.method === "POST") {
         response = await handleChangePassword(request, env);
+      } else if (url.pathname === "/webauthn/register/start" && request.method === "POST") {
+        response = await handleWebauthnRegisterStart(request, env);
+      } else if (url.pathname === "/webauthn/register/finish" && request.method === "POST") {
+        response = await handleWebauthnRegisterFinish(request, env);
+      } else if (url.pathname === "/webauthn/auth/start" && request.method === "POST") {
+        response = await handleWebauthnAuthStart(request, env);
+      } else if (url.pathname === "/webauthn/auth/finish" && request.method === "POST") {
+        response = await handleWebauthnAuthFinish(request, env);
+      } else if (url.pathname === "/webauthn/credentials" && request.method === "POST") {
+        response = await handleWebauthnCredentialsList(request, env);
+      } else if (url.pathname === "/webauthn/credentials/delete" && request.method === "POST") {
+        response = await handleWebauthnCredentialsDelete(request, env);
       } else {
         response = errorResponse(Errors.NOT_FOUND);
       }

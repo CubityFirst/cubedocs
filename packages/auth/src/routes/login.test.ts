@@ -36,6 +36,10 @@ async function makeEnv(user?: {
     DB: { prepare: vi.fn().mockReturnValue(stmt) } as unknown as D1Database,
     JWT_SECRET: "test-secret",
     JWT_ISSUER: "test",
+    TURNSTILE_SECRET: "test-turnstile",
+    WEBAUTHN_RP_ID: "localhost",
+    WEBAUTHN_RP_NAME: "Test",
+    WEBAUTHN_ORIGIN: "http://localhost",
   };
 }
 

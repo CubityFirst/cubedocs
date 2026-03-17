@@ -27,11 +27,31 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
   const moderationResponse = checkModeration(row.moderation);
   if (moderationResponse) return moderationResponse;
 
-  if (row.totp_secret) {
+  const webauthnResult = await env.DB.prepare(
+    "SELECT COUNT(*) as count FROM webauthn_credentials WHERE user_id = ?",
+  ).bind(row.id).first<{ count: number }>();
+  const hasWebauthn = (webauthnResult?.count ?? 0) > 0;
+  const hasTOTP = !!row.totp_secret;
+
+  if (hasWebauthn && hasTOTP) {
+    // Both methods available: if totpCode supplied the user chose TOTP, otherwise prompt for choice
+    if (!body.totpCode) {
+      return Response.json(
+        { ok: false, error: "two_factor_required", methods: ["totp", "webauthn"], userId: row.id },
+        { status: 200 },
+      );
+    }
+    const totpValid = await verifyTOTP(row.totp_secret!, body.totpCode);
+    if (!totpValid) {
+      return Response.json({ ok: false, error: "invalid_totp" }, { status: 401 });
+    }
+  } else if (hasWebauthn) {
+    return Response.json({ ok: false, error: "webauthn_required", userId: row.id }, { status: 200 });
+  } else if (hasTOTP) {
     if (!body.totpCode) {
       return Response.json({ ok: false, error: "totp_required" }, { status: 200 });
     }
-    const totpValid = await verifyTOTP(row.totp_secret, body.totpCode);
+    const totpValid = await verifyTOTP(row.totp_secret!, body.totpCode);
     if (!totpValid) {
       return Response.json({ ok: false, error: "invalid_totp" }, { status: 401 });
     }

@@ -1,10 +1,14 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { startAuthentication } from "@simplewebauthn/browser";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 import { AuthForm } from "@/components/AuthForm";
 import { Turnstile } from "@/components/Turnstile";
 import { getToken, setToken } from "@/lib/auth";
+
+type LoginStep = "credentials" | "totp" | "webauthn" | "method_picker";
 
 function moderationMessage(error?: string, until?: number): string {
   const contact = "Please email docs@cubityfir.st for further details.";
@@ -25,17 +29,89 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const [totpRequired, setTotpRequired] = useState(false);
+  const [step, setStep] = useState<LoginStep>("credentials");
+  const [pendingUserId, setPendingUserId] = useState<string | null>(null);
   const [totpCode, setTotpCode] = useState("");
 
+  // Ref so the webauthn flow can read the latest turnstileToken without a stale closure
+  const turnstileTokenRef = useRef<string | null>(null);
+  turnstileTokenRef.current = turnstileToken;
+
   const handleTurnstileVerify = useCallback((token: string) => setTurnstileToken(token), []);
-  const handleTurnstileExpire = useCallback(() => setTurnstileToken(null), []);;
+  const handleTurnstileExpire = useCallback(() => setTurnstileToken(null), []);
 
   useEffect(() => {
     if (getToken()) {
       navigate(from, { replace: true });
     }
   }, [navigate, from]);
+
+  async function runWebauthnFlow(userId: string) {
+    setLoading(true);
+    setError(null);
+    try {
+      const startRes = await fetch("/api/webauthn/auth/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      const startJson = await startRes.json() as {
+        ok: boolean;
+        data?: { options: Record<string, unknown>; challengeId: string };
+      };
+      if (!startJson.ok || !startJson.data) {
+        setError("Failed to start security key authentication.");
+        return;
+      }
+
+      const { options, challengeId } = startJson.data;
+      let assertion;
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        assertion = await startAuthentication(options as any);
+      } catch {
+        setError("Security key authentication was cancelled or failed. Please try again.");
+        return;
+      }
+
+      const currentTurnstile = turnstileTokenRef.current;
+      if (!currentTurnstile) {
+        setError("Please complete the security challenge.");
+        return;
+      }
+
+      const finishRes = await fetch("/api/webauthn/auth/finish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          challengeId,
+          response: assertion,
+          email,
+          turnstileToken: currentTurnstile,
+        }),
+      });
+      const finishJson = await finishRes.json() as {
+        ok: boolean;
+        data?: { token: string };
+        error?: string;
+        until?: number;
+      };
+
+      if (finishJson.ok && finishJson.data) {
+        setToken(finishJson.data.token);
+        navigate(from, { replace: true });
+      } else if (finishRes.status === 403) {
+        setError(moderationMessage(finishJson.error, finishJson.until));
+      } else {
+        setError("Security key verification failed. Please try again.");
+      }
+    } catch {
+      setError("Could not connect to the server. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -53,15 +129,32 @@ export function LoginPage() {
           email,
           password,
           turnstileToken,
-          ...(totpRequired ? { totpCode } : {}),
+          ...(step === "totp" ? { totpCode } : {}),
         }),
       });
-      const json = await res.json() as { ok: boolean; data?: { token: string }; error?: string; until?: number };
+      const json = await res.json() as {
+        ok: boolean;
+        data?: { token: string };
+        error?: string;
+        until?: number;
+        userId?: string;
+        methods?: string[];
+      };
+
       if (json.ok && json.data) {
         setToken(json.data.token);
         navigate(from, { replace: true });
       } else if (json.error === "totp_required") {
-        setTotpRequired(true);
+        setStep("totp");
+      } else if (json.error === "webauthn_required" && json.userId) {
+        setPendingUserId(json.userId);
+        setStep("webauthn");
+        setLoading(false);
+        await runWebauthnFlow(json.userId);
+        return;
+      } else if (json.error === "two_factor_required" && json.userId) {
+        setPendingUserId(json.userId);
+        setStep("method_picker");
       } else if (json.error === "invalid_totp") {
         setError("Invalid authenticator code. Please try again.");
         setTotpCode("");
@@ -77,7 +170,14 @@ export function LoginPage() {
     }
   }
 
-  if (totpRequired) {
+  function handleBack() {
+    setStep("credentials");
+    setTotpCode("");
+    setPendingUserId(null);
+    setError(null);
+  }
+
+  if (step === "totp") {
     return (
       <AuthForm
         title="CubeDocs"
@@ -90,7 +190,7 @@ export function LoginPage() {
           <button
             type="button"
             className="text-primary underline-offset-4 hover:underline text-sm"
-            onClick={() => { setTotpRequired(false); setTotpCode(""); setError(null); }}
+            onClick={handleBack}
           >
             Back to sign in
           </button>
@@ -112,6 +212,92 @@ export function LoginPage() {
           />
           <p className="text-xs text-muted-foreground">Enter the 6-digit code from your authenticator app.</p>
         </div>
+        <Turnstile onVerify={handleTurnstileVerify} onExpire={handleTurnstileExpire} />
+      </AuthForm>
+    );
+  }
+
+  if (step === "method_picker") {
+    return (
+      <AuthForm
+        title="CubeDocs"
+        subtitle="Choose verification method"
+        submitLabel=""
+        loading={false}
+        error={error}
+        onSubmit={e => e.preventDefault()}
+        hideSubmit
+        footer={
+          <button
+            type="button"
+            className="text-primary underline-offset-4 hover:underline text-sm"
+            onClick={handleBack}
+          >
+            Back to sign in
+          </button>
+        }
+      >
+        <p className="text-sm text-muted-foreground">
+          Your account has two-factor authentication enabled. Choose how to verify:
+        </p>
+        <div className="flex flex-col gap-3 pt-1">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setStep("totp")}
+          >
+            Authenticator app
+          </Button>
+          <Button
+            type="button"
+            disabled={loading}
+            onClick={async () => {
+              if (!pendingUserId) return;
+              setStep("webauthn");
+              await runWebauthnFlow(pendingUserId);
+            }}
+          >
+            {loading ? "Waiting for key…" : "Security key"}
+          </Button>
+        </div>
+        <Turnstile onVerify={handleTurnstileVerify} onExpire={handleTurnstileExpire} />
+      </AuthForm>
+    );
+  }
+
+  if (step === "webauthn") {
+    return (
+      <AuthForm
+        title="CubeDocs"
+        subtitle="Security key"
+        submitLabel=""
+        loading={false}
+        error={error}
+        onSubmit={e => e.preventDefault()}
+        hideSubmit
+        footer={
+          <button
+            type="button"
+            className="text-primary underline-offset-4 hover:underline text-sm"
+            onClick={handleBack}
+          >
+            Back to sign in
+          </button>
+        }
+      >
+        <p className="text-sm text-muted-foreground">
+          {loading
+            ? "Touch your security key when it flashes…"
+            : "Security key verification failed or was cancelled."}
+        </p>
+        {!loading && (
+          <Button
+            type="button"
+            onClick={() => pendingUserId && runWebauthnFlow(pendingUserId)}
+          >
+            Try again
+          </Button>
+        )}
         <Turnstile onVerify={handleTurnstileVerify} onExpire={handleTurnstileExpire} />
       </AuthForm>
     );

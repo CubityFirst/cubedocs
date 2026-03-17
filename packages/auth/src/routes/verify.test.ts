@@ -7,7 +7,15 @@ import type { Env } from "../index";
 const JWT_SECRET = "test-secret";
 
 function makeEnv(): Env {
-  return { DB: {} as unknown as D1Database, JWT_SECRET, JWT_ISSUER: "test" };
+  return {
+    DB: {} as unknown as D1Database,
+    JWT_SECRET,
+    JWT_ISSUER: "test",
+    TURNSTILE_SECRET: "test-turnstile",
+    WEBAUTHN_RP_ID: "localhost",
+    WEBAUTHN_RP_NAME: "Test",
+    WEBAUTHN_ORIGIN: "http://localhost",
+  };
 }
 
 function makeSession(): Session {

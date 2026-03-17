@@ -45,6 +45,27 @@ export default {
         return addCorsHeaders(authRes);
       }
 
+      // WebAuthn management routes — authenticated, proxied to auth worker with userId injected
+      if (url.pathname.startsWith("/me/webauthn")) {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        const webauthnPath = url.pathname.replace("/me/webauthn", "/webauthn");
+        const body = await request.json<Record<string, unknown>>();
+        const authRes = await env.AUTH.fetch(`https://auth${webauthnPath}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...body, userId: session.userId }),
+        });
+        return addCorsHeaders(authRes);
+      }
+
+      // WebAuthn login ceremony — unauthenticated, forwarded directly
+      if (url.pathname.startsWith("/webauthn/auth")) {
+        return addCorsHeaders(
+          await env.AUTH.fetch(new Request(`https://auth${url.pathname}`, request)),
+        );
+      }
+
       // PATCH /me/password — change password
       if (url.pathname === "/me/password" && request.method === "PATCH") {
         const session = await getSession(request, env);
