@@ -13,9 +13,9 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
   if (!turnstileValid) return errorResponse(Errors.BAD_REQUEST);
 
   const row = await env.DB.prepare(
-    "SELECT id, email, name, password_hash, created_at FROM users WHERE email = ?",
+    "SELECT id, email, name, password_hash, created_at, moderation FROM users WHERE email = ?",
   ).bind(body.email.toLowerCase()).first<{
-    id: string; email: string; name: string; password_hash: string; created_at: string;
+    id: string; email: string; name: string; password_hash: string; created_at: string; moderation: number;
   }>();
 
   if (!row) return errorResponse(Errors.UNAUTHORIZED);
@@ -23,10 +23,27 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
   const valid = await verifyPassword(body.password, row.password_hash);
   if (!valid) return errorResponse(Errors.UNAUTHORIZED);
 
+  const moderationResponse = checkModeration(row.moderation);
+  if (moderationResponse) return moderationResponse;
+
   const token = await signJwt(
     { userId: row.id, email: row.email, expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 },
     env.JWT_SECRET,
   );
 
   return okResponse({ token, user: { id: row.id, email: row.email, name: row.name, createdAt: row.created_at } });
+}
+
+// Returns a 403 response if the account is restricted, or null if active.
+// moderation: 0 = active, -1 = disabled, >0 = suspended until unix timestamp (seconds)
+export function checkModeration(moderation: number): Response | null {
+  if (moderation === 0) return null;
+  if (moderation === -1) return Response.json({ ok: false, error: "account_disabled" }, { status: 403 });
+  if (moderation > 0) {
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    if (nowSeconds < moderation) {
+      return Response.json({ ok: false, error: "account_suspended", until: moderation }, { status: 403 });
+    }
+  }
+  return null; // suspension has expired
 }

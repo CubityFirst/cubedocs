@@ -6,6 +6,15 @@ import { AuthForm } from "@/components/AuthForm";
 import { Turnstile } from "@/components/Turnstile";
 import { getToken, setToken } from "@/lib/auth";
 
+function moderationMessage(error?: string, until?: number): string {
+  const contact = "Please email docs@cubityfir.st for further details.";
+  if (error === "account_suspended" && until) {
+    const date = new Date(until * 1000).toLocaleDateString(undefined, { dateStyle: "long" });
+    return `Your account has been temporarily suspended until ${date}. ${contact}`;
+  }
+  return `Your account has been disabled. ${contact}`;
+}
+
 export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -39,10 +48,12 @@ export function LoginPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password, turnstileToken }),
       });
-      const json = await res.json() as { ok: boolean; data?: { token: string }; error?: string };
+      const json = await res.json() as { ok: boolean; data?: { token: string }; error?: string; until?: number };
       if (json.ok && json.data) {
         setToken(json.data.token);
         navigate(from, { replace: true });
+      } else if (res.status === 403) {
+        setError(moderationMessage(json.error, json.until));
       } else {
         setError("Invalid email or password.");
       }

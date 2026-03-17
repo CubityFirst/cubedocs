@@ -189,7 +189,8 @@ export async function handleDocs(
 
   // PUT /docs/:id — editor or above
   if (docId && request.method === "PUT") {
-    const doc = await env.DB.prepare("SELECT project_id FROM docs WHERE id = ?").bind(docId).first<{ project_id: string }>();
+    type DocRow = { id: string; title: string; project_id: string; author_id: string; published_at: string | null; show_heading: number; show_last_updated: number; folder_id: string | null; created_at: string; updated_at: string };
+    const doc = await env.DB.prepare("SELECT * FROM docs WHERE id = ?").bind(docId).first<DocRow>();
     if (!doc) return errorResponse(Errors.NOT_FOUND);
 
     const caller = await getCallerInfo(env.DB, doc.project_id, user.userId);
@@ -198,8 +199,10 @@ export async function handleDocs(
 
     const body = await request.json<Partial<{ title: string; content: string; publishedAt: string | null; showHeading: boolean; showLastUpdated: boolean; folderId: string | null; changelog: string }>>();
     const now = new Date().toISOString();
+    let returnContent: string | undefined;
 
     if (body.content !== undefined) {
+      returnContent = body.content;
       const blameKey = `${doc.project_id}/${docId}.blame`;
       const [oldR2, oldBlameR2] = await Promise.all([
         env.ASSETS.get(`${doc.project_id}/${docId}`),
@@ -238,11 +241,20 @@ export async function handleDocs(
         .bind(body.folderId, docId).run();
     }
 
-    const updated = await env.DB.prepare("SELECT * FROM docs WHERE id = ?").bind(docId).first<Doc>();
-    if (!updated) return errorResponse(Errors.NOT_FOUND);
-    const r2Object = await env.ASSETS.get(`${doc.project_id}/${docId}`);
-    const content = r2Object ? await r2Object.text() : "";
-    return okResponse({ ...updated, content });
+    if (returnContent === undefined) {
+      const r2Object = await env.ASSETS.get(`${doc.project_id}/${docId}`);
+      returnContent = r2Object ? await r2Object.text() : "";
+    }
+    const updated = {
+      ...doc,
+      title: body.title ?? doc.title,
+      published_at: body.publishedAt ?? null,
+      show_heading: showHeading !== null ? showHeading : doc.show_heading,
+      show_last_updated: showLastUpdated !== null ? showLastUpdated : doc.show_last_updated,
+      folder_id: body.folderId !== undefined ? body.folderId : doc.folder_id,
+      updated_at: now,
+    };
+    return okResponse({ ...updated, content: returnContent });
   }
 
   // DELETE /docs/:id — editor or above

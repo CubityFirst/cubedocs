@@ -6,6 +6,9 @@ import { App } from "./App";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 document.documentElement.classList.add("dark");
+if (import.meta.env.DEV) {
+  document.documentElement.setAttribute("data-dev", "true");
+}
 
 createRoot(document.getElementById("app")!).render(
   <StrictMode>

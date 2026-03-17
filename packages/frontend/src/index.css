@@ -93,6 +93,35 @@
 
 * {
   border-color: var(--border);
+  scrollbar-color: var(--muted-foreground) var(--muted);
+}
+
+[data-dev="true"]::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: #ffcc00;
+  z-index: 9998;
+  pointer-events: none;
+}
+
+[data-dev="true"]::after {
+  content: "DEV";
+  position: fixed;
+  top: 6px;
+  right: 10px;
+  z-index: 9999;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: oklch(0.141 0.005 285.823);
+  background: #ffcc00;
+  padding: 1px 6px;
+  border-radius: 4px;
+  pointer-events: none;
 }
 
 body {

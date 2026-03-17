@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { remarkCallouts } from "@/lib/remark-callouts";
 import { remarkImageAttrs } from "@/lib/remark-image-attrs";
+import { remarkUnderline } from "@/lib/remark-underline";
 import { Callout, type CalloutType } from "@/components/Callout";
 import { MarkdownCode } from "@/components/CodeBlock";
 import { AuthenticatedImage } from "@/components/AuthenticatedImage";
@@ -83,6 +84,39 @@ function timeAgo(iso: string): string {
 
 
 
+function applyMarker(value: string, start: number, end: number, marker: string) {
+  const ml = marker.length;
+  const selected = value.slice(start, end);
+
+  // True iff `str` is wrapped in exactly `marker` (not a longer marker like ** vs *)
+  const exactWrap = (str: string) => {
+    if (str.length < ml * 2 + 1 || !str.startsWith(marker) || !str.endsWith(marker)) return false;
+    if (marker === "*") return str[ml] !== "*" && str[str.length - ml - 1] !== "*";
+    return true;
+  };
+
+  // Case 1: markers sit just outside the current selection
+  const before = start >= ml ? value.slice(start - ml, start) : "";
+  const after = value.slice(end, end + ml);
+  const outerMatch =
+    before === marker &&
+    after === marker &&
+    (marker !== "*" || (value[start - ml - 1] !== "*" && value[end + ml] !== "*"));
+
+  if (outerMatch) {
+    return { value: value.slice(0, start - ml) + selected + value.slice(end + ml), start: start - ml, end: end - ml };
+  }
+
+  // Case 2: selection itself includes the markers
+  if (exactWrap(selected)) {
+    const inner = selected.slice(ml, selected.length - ml);
+    return { value: value.slice(0, start) + inner + value.slice(end), start, end: start + inner.length };
+  }
+
+  // Case 3: add markers
+  return { value: value.slice(0, start) + marker + selected + marker + value.slice(end), start: start + ml, end: end + ml };
+}
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
@@ -98,7 +132,7 @@ function Code({ children }: { children: string }) {
   );
 }
 
-const remarkPlugins = [remarkGfm, remarkCallouts, remarkImageAttrs];
+const remarkPlugins = [remarkGfm, remarkCallouts, remarkImageAttrs, remarkUnderline];
 
 const markdownComponents = {
   blockquote({ children, node, ...props }: React.ComponentPropsWithoutRef<"blockquote"> & { node?: { properties?: Record<string, unknown> } }) {
@@ -427,6 +461,25 @@ const [editorScrollTop, setEditorScrollTop] = useState(0);
                 className="absolute inset-0 rounded-none border-0 bg-background p-4 font-mono text-sm leading-relaxed shadow-none ring-0 focus-visible:ring-0"
                 value={draft}
                 onChange={e => setDraft(e.target.value)}
+                onKeyDown={e => {
+                  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                    e.preventDefault();
+                    handleSaveClick();
+                    return;
+                  }
+                  if ((e.ctrlKey || e.metaKey) && ['b', 'i', 'u'].includes(e.key)) {
+                    e.preventDefault();
+                    const ta = e.currentTarget;
+                    const marker = e.key === 'b' ? '**' : e.key === 'i' ? '*' : '__';
+                    const result = applyMarker(ta.value, ta.selectionStart, ta.selectionEnd, marker);
+                    setDraft(result.value);
+                    requestAnimationFrame(() => {
+                      if (textareaRef.current) {
+                        textareaRef.current.setSelectionRange(result.start, result.end);
+                      }
+                    });
+                  }
+                }}
                 onClick={handleEditorActivity}
                 onKeyUp={handleEditorActivity}
                 onScroll={e => setEditorScrollTop(e.currentTarget.scrollTop)}
@@ -485,7 +538,7 @@ const [editorScrollTop, setEditorScrollTop] = useState(0);
                   <Code>{`# H1\n## H2\n### H3`}</Code>
                 </Section>
                 <Section title="Emphasis">
-                  <Code>{`**bold**\n*italic*\n~~strikethrough~~`}</Code>
+                  <Code>{`**bold**       Ctrl+B\n*italic*       Ctrl+I\n__underline__  Ctrl+U\n~~strikethrough~~`}</Code>
                 </Section>
                 <Section title="Links & images">
                   <Code>{`[link text](https://example.com)\n![alt text](https://example.com/img.png)`}</Code>
@@ -531,6 +584,15 @@ const [editorScrollTop, setEditorScrollTop] = useState(0);
             <Textarea
               value={changelogText}
               onChange={e => setChangelogText(e.target.value)}
+              onKeyDown={e => {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                  e.preventDefault();
+                  if (!saving && !(changelogMode === 'enforced' && !changelogText.trim())) {
+                    setChangelogDialogOpen(false);
+                    handleSave(changelogText.trim() || undefined);
+                  }
+                }
+              }}
               placeholder="e.g. Fixed typo in introduction, added new section on deployment…"
               className="min-h-[80px]"
               autoFocus
