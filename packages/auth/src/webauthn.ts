@@ -4,6 +4,7 @@ import {
   generateAuthenticationOptions,
   verifyAuthenticationResponse,
 } from "@simplewebauthn/server";
+import { errorResponse, Errors } from "./lib";
 import type { Env } from "./index";
 
 export function uint8ArrayToBase64url(bytes: Uint8Array): string {
@@ -96,6 +97,59 @@ export async function consumeChallenge(
   if (Date.now() - row.created_at > 5 * 60 * 1000) return null;
 
   return row.challenge;
+}
+
+/**
+ * Verifies a WebAuthn authentication assertion end-to-end:
+ * consumes the challenge, looks up the stored credential, verifies the
+ * response, and updates the counter.
+ *
+ * Returns null on success, or an error Response on failure.
+ */
+export async function verifyWebauthnAssertion(
+  env: Env,
+  userId: string,
+  challengeId: string,
+  response: Record<string, unknown>,
+  logPrefix = "webauthn",
+): Promise<Response | null> {
+  const challenge = await consumeChallenge(env, challengeId, userId, "authentication");
+  if (!challenge) return errorResponse(Errors.BAD_REQUEST);
+
+  const responseId = (response as { id: string }).id;
+  const storedCred = await env.DB.prepare(
+    "SELECT id, public_key, counter FROM webauthn_credentials WHERE id = ? AND user_id = ?",
+  ).bind(responseId, userId).first<{ id: string; public_key: string; counter: number }>();
+  if (!storedCred) return errorResponse(Errors.UNAUTHORIZED);
+
+  let verification: Awaited<ReturnType<typeof verifyAuthenticationResponse>>;
+  try {
+    verification = await verifyAuthenticationResponse({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      response: response as any,
+      expectedChallenge: challenge,
+      expectedOrigin: env.WEBAUTHN_ORIGIN,
+      expectedRPID: env.WEBAUTHN_RP_ID,
+      authenticator: {
+        credentialID: base64urlToUint8Array(storedCred.id),
+        credentialPublicKey: base64urlToUint8Array(storedCred.public_key),
+        counter: storedCred.counter,
+      },
+    });
+  } catch (err) {
+    console.error(`[${logPrefix}] verifyAuthenticationResponse threw:`, err);
+    return errorResponse(Errors.UNAUTHORIZED);
+  }
+
+  if (!verification.verified || !verification.authenticationInfo) {
+    return errorResponse(Errors.UNAUTHORIZED);
+  }
+
+  await env.DB.prepare("UPDATE webauthn_credentials SET counter = ? WHERE id = ?")
+    .bind(verification.authenticationInfo.newCounter, storedCred.id)
+    .run();
+
+  return null;
 }
 
 export { verifyRegistrationResponse, verifyAuthenticationResponse };

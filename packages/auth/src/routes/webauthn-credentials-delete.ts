@@ -1,9 +1,5 @@
 import { okResponse, errorResponse, Errors } from "../lib";
-import {
-  consumeChallenge,
-  verifyAuthenticationResponse,
-  base64urlToUint8Array,
-} from "../webauthn";
+import { verifyWebauthnAssertion } from "../webauthn";
 import { verifyTOTP } from "../totp";
 import type { Env } from "../index";
 
@@ -24,7 +20,11 @@ export async function handleWebauthnCredentialsDelete(request: Request, env: Env
 
   const hasTOTP = !!user.totp_secret;
 
-  if (hasTOTP) {
+  if (body.challengeId && body.webauthnResponse) {
+    // WebAuthn path — accepted regardless of whether TOTP is also enabled
+    const assertionError = await verifyWebauthnAssertion(env, body.userId, body.challengeId, body.webauthnResponse, "webauthn-credentials-delete");
+    if (assertionError) return assertionError;
+  } else if (hasTOTP) {
     if (!body.totpCode) {
       return Response.json({ ok: false, error: "totp_required" }, { status: 200 });
     }
@@ -33,47 +33,8 @@ export async function handleWebauthnCredentialsDelete(request: Request, env: Env
       return Response.json({ ok: false, error: "invalid_totp" }, { status: 401 });
     }
   } else {
-    // WebAuthn-only: require a completed authentication assertion
-    if (!body.challengeId || !body.webauthnResponse) {
-      return Response.json({ ok: false, error: "webauthn_required" }, { status: 200 });
-    }
-
-    const challenge = await consumeChallenge(env, body.challengeId, body.userId, "authentication");
-    if (!challenge) return errorResponse(Errors.BAD_REQUEST);
-
-    const responseId = (body.webauthnResponse as { id: string }).id;
-    const storedCred = await env.DB.prepare(
-      "SELECT id, public_key, counter FROM webauthn_credentials WHERE id = ? AND user_id = ?",
-    ).bind(responseId, body.userId).first<{ id: string; public_key: string; counter: number }>();
-    if (!storedCred) return errorResponse(Errors.UNAUTHORIZED);
-
-    let verification: Awaited<ReturnType<typeof verifyAuthenticationResponse>>;
-    try {
-      verification = await verifyAuthenticationResponse({
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        response: body.webauthnResponse as any,
-        expectedChallenge: challenge,
-        expectedOrigin: env.WEBAUTHN_ORIGIN,
-        expectedRPID: env.WEBAUTHN_RP_ID,
-        authenticator: {
-          credentialID: base64urlToUint8Array(storedCred.id),
-          credentialPublicKey: base64urlToUint8Array(storedCred.public_key),
-          counter: storedCred.counter,
-        },
-      });
-    } catch (err) {
-      console.error("[webauthn-credentials-delete] verifyAuthenticationResponse threw:", err);
-      return errorResponse(Errors.UNAUTHORIZED);
-    }
-
-    if (!verification.verified || !verification.authenticationInfo) {
-      return errorResponse(Errors.UNAUTHORIZED);
-    }
-
-    // Update counter even when deleting to prevent replay on other endpoints
-    await env.DB.prepare("UPDATE webauthn_credentials SET counter = ? WHERE id = ?")
-      .bind(verification.authenticationInfo.newCounter, storedCred.id)
-      .run();
+    // No TOTP and no WebAuthn assertion provided
+    return Response.json({ ok: false, error: "webauthn_required" }, { status: 200 });
   }
 
   const result = await env.DB.prepare(

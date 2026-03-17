@@ -178,12 +178,12 @@ export function UserSettingsPage() {
   }
 
   async function handleDisableTOTP() {
-    await runWithTwoFA(async ({ totpCode }) => {
+    await runWithTwoFA(async ({ totpCode, challengeId, webauthnResponse }) => {
       const token = getToken();
       const res = await fetch("/api/me/totp/disable", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ code: totpCode }),
+        body: JSON.stringify({ code: totpCode, challengeId, webauthnResponse }),
       });
       const json = await res.json() as { ok: boolean };
       if (json.ok) {
