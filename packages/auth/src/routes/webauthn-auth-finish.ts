@@ -1,6 +1,5 @@
 import { okResponse, errorResponse, Errors } from "../lib";
 import { verifyWebauthnAssertion } from "../webauthn";
-import { verifyTurnstile } from "../turnstile";
 import { signJwt } from "../jwt";
 import { checkModeration } from "./login";
 import type { Env } from "../index";
@@ -11,15 +10,11 @@ export async function handleWebauthnAuthFinish(request: Request, env: Env): Prom
     challengeId: string;
     response: Record<string, unknown>;
     email: string;
-    turnstileToken: string;
   }>();
 
-  if (!body.userId || !body.challengeId || !body.response || !body.email || !body.turnstileToken) {
+  if (!body.userId || !body.challengeId || !body.response || !body.email) {
     return errorResponse(Errors.BAD_REQUEST);
   }
-
-  const turnstileValid = await verifyTurnstile(body.turnstileToken, env.TURNSTILE_SECRET);
-  if (!turnstileValid) return errorResponse(Errors.BAD_REQUEST);
 
   const user = await env.DB.prepare(
     "SELECT id, email, name, created_at, moderation FROM users WHERE id = ? AND email = ?",
