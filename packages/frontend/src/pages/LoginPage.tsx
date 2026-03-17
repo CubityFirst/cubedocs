@@ -32,6 +32,7 @@ export function LoginPage() {
   const [step, setStep] = useState<LoginStep>("credentials");
   const [pendingUserId, setPendingUserId] = useState<string | null>(null);
   const [totpCode, setTotpCode] = useState("");
+  const [pendingWebauthn, setPendingWebauthn] = useState(false);
 
   // Ref so the webauthn flow can read the latest turnstileToken without a stale closure
   const turnstileTokenRef = useRef<string | null>(null);
@@ -46,7 +47,7 @@ export function LoginPage() {
     }
   }, [navigate, from]);
 
-  async function runWebauthnFlow(userId: string) {
+  const runWebauthnFlow = useCallback(async function runWebauthnFlow(userId: string) {
     setLoading(true);
     setError(null);
     try {
@@ -111,7 +112,19 @@ export function LoginPage() {
     } finally {
       setLoading(false);
     }
-  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [email, from, navigate]);
+
+  // Auto-start webauthn flow once a fresh Turnstile token is available.
+  // This is needed because the token used for the initial credential check is
+  // already consumed by the time we reach the webauthn step.
+  useEffect(() => {
+    if (pendingWebauthn && turnstileToken && pendingUserId && !loading) {
+      setPendingWebauthn(false);
+      runWebauthnFlow(pendingUserId);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingWebauthn, turnstileToken]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -150,7 +163,8 @@ export function LoginPage() {
         setPendingUserId(json.userId);
         setStep("webauthn");
         setLoading(false);
-        await runWebauthnFlow(json.userId);
+        setTurnstileToken(null); // clear consumed token; fresh one will arrive from the webauthn step's Turnstile
+        setPendingWebauthn(true);
         return;
       } else if (json.error === "two_factor_required" && json.userId) {
         setPendingUserId(json.userId);
