@@ -438,45 +438,39 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
   async function handleDeleteSelected() {
     if (deletingSelected || selectedEntries.size === 0) return;
     const toDelete = new Set(selectedEntries);
-    await runWithTwoFA(async () => {
-      setDeletingSelected(true);
-      try {
-        const token = getToken();
-        await Promise.all(
-          [...toDelete].map(id =>
-            fetch(`/api/passwords/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } })
-          )
-        );
-        setEntries(prev => prev.filter(e => !toDelete.has(e.id)));
-        setSelectedEntries(new Set());
-        return undefined;
-      } catch {
-        toast({ title: "Failed to delete entries", variant: "destructive" });
-        return "Failed to delete entries.";
-      } finally {
-        setDeletingSelected(false);
-      }
-    });
+    setDeletingSelected(true);
+    try {
+      const token = getToken();
+      await Promise.all(
+        [...toDelete].map(id =>
+          fetch(`/api/passwords/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } })
+        )
+      );
+      setEntries(prev => prev.filter(e => !toDelete.has(e.id)));
+      setSelectedEntries(new Set());
+    } catch {
+      toast({ title: "Failed to delete entries", variant: "destructive" });
+    } finally {
+      setDeletingSelected(false);
+    }
   }
 
   async function handleDelete() {
     if (!detailEntry) return;
     const entryId = detailEntry.id;
-    await runWithTwoFA(async () => {
-      const token = getToken();
-      const res = await fetch(`/api/passwords/${entryId}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const json = await res.json() as { ok: boolean };
-      if (json.ok) {
-        setEntries(prev => prev.filter(e => e.id !== entryId));
-        setDialog(null);
-        setConfirmDelete(false);
-        return undefined;
-      }
-      return "Failed to delete entry.";
+    const token = getToken();
+    const res = await fetch(`/api/passwords/${entryId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
     });
+    const json = await res.json() as { ok: boolean };
+    if (json.ok) {
+      setEntries(prev => prev.filter(e => e.id !== entryId));
+      setDialog(null);
+      setConfirmDelete(false);
+    } else {
+      toast({ title: "Failed to delete entry", variant: "destructive" });
+    }
   }
 
   async function openHistory() {

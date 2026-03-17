@@ -66,6 +66,9 @@ interface Project {
   published_at: string | null;
   vault_enabled: number;
   changelog_mode: string;
+  vanity_slug: string | null;
+  features: number;
+  ai_enabled: number;
 }
 
 interface Member {
@@ -114,6 +117,11 @@ export function SiteSettingsPage() {
   const [togglingPublish, setTogglingPublish] = useState(false);
   const [togglingVault, setTogglingVault] = useState(false);
   const [togglingChangelog, setTogglingChangelog] = useState(false);
+  const [togglingAi, setTogglingAi] = useState(false);
+
+  const [vanitySlug, setVanitySlug] = useState("");
+  const [savingSlug, setSavingSlug] = useState(false);
+  const [slugError, setSlugError] = useState<string | null>(null);
 
   const token = getToken();
   const currentUser = token ? parseToken(token) : null;
@@ -128,6 +136,7 @@ export function SiteSettingsPage() {
           setProject(json.data);
           setName(json.data.name);
           setDescription(json.data.description ?? "");
+          setVanitySlug(json.data.vanity_slug ?? "");
           // Determine role if user is the owner (before members load)
           if (currentUser && json.data.owner_id === currentUser.userId) {
             setMyRole("owner");
@@ -318,6 +327,57 @@ export function SiteSettingsPage() {
     }
   }
 
+  async function handleToggleAi(enabled: boolean) {
+    if (!projectId || !project) return;
+    setTogglingAi(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ aiEnabled: enabled }),
+      });
+      const json = await res.json() as { ok: boolean; data?: Project };
+      if (json.ok && json.data) {
+        setProject(json.data);
+        toast({ title: enabled ? "AI features enabled." : "AI features disabled." });
+      } else {
+        toast({ title: "Failed to update AI setting.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Could not connect to the server.", variant: "destructive" });
+    } finally {
+      setTogglingAi(false);
+    }
+  }
+
+  async function handleSaveSlug(e: React.FormEvent) {
+    e.preventDefault();
+    if (!projectId) return;
+    setSavingSlug(true);
+    setSlugError(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ vanitySlug: vanitySlug.trim() || null }),
+      });
+      const json = await res.json() as { ok: boolean; data?: Project; error?: string };
+      if (json.ok && json.data) {
+        setProject(json.data);
+        setVanitySlug(json.data.vanity_slug ?? "");
+        toast({ title: "Custom link saved." });
+      } else if (res.status === 409) {
+        setSlugError("This URL is already taken.");
+      } else {
+        setSlugError("Failed to save custom link.");
+      }
+    } catch {
+      setSlugError("Could not connect to the server.");
+    } finally {
+      setSavingSlug(false);
+    }
+  }
+
   async function handleDelete() {
     if (!projectId) return;
     setDeleting(true);
@@ -360,6 +420,7 @@ export function SiteSettingsPage() {
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">On this page</p>
             <a href="#general" className="py-1 text-sm text-muted-foreground transition-colors hover:text-foreground">General</a>
             {isAdminOrOwner && <a href="#publishing" className="py-1 text-sm text-muted-foreground transition-colors hover:text-foreground">Publishing</a>}
+            {isAdminOrOwner && !!(project.features & 1) && <a href="#custom-link" className="py-1 text-sm text-muted-foreground transition-colors hover:text-foreground flex items-center gap-1.5">Custom Link <PremiumBadge /></a>}
             {isAdminOrOwner && <a href="#features" className="py-1 text-sm text-muted-foreground transition-colors hover:text-foreground">Features</a>}
             {isAdminOrOwner && <a href="#members" className="py-1 text-sm text-muted-foreground transition-colors hover:text-foreground">Members</a>}
             {isOwner && <a href="#danger" className="py-1 text-sm text-destructive/70 transition-colors hover:text-destructive">Danger Zone</a>}
@@ -446,7 +507,8 @@ export function SiteSettingsPage() {
                     size="icon"
                     className="h-8 w-8"
                     onClick={() => {
-                      const url = `${window.location.origin}/s/${projectId}`;
+                      const slug = project.vanity_slug ?? projectId;
+                      const url = `${window.location.origin}/s/${slug}`;
                       navigator.clipboard.writeText(url);
                       toast({ title: "Link copied to clipboard." });
                     }}
@@ -468,6 +530,64 @@ export function SiteSettingsPage() {
                 </Button>
               </div>
             </div>
+          </div>
+        </>
+      )}
+
+      {/* Custom Link section — admins and owners only, requires CUSTOM_LINK_ENABLED flag */}
+      {isAdminOrOwner && !!(project.features & 1) && (
+        <>
+          <Separator className="my-10" />
+          <div className="flex flex-col gap-4">
+            <div id="custom-link">
+              <h3 className="text-base font-semibold flex items-center gap-2">Custom Link <PremiumBadge /></h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Set a custom URL so your public site can be shared at a memorable address.
+              </p>
+            </div>
+            <form onSubmit={handleSaveSlug} className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground shrink-0">{window.location.origin}/s/</span>
+                  <Input
+                    id="vanity-slug"
+                    value={vanitySlug}
+                    onChange={e => setVanitySlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+                    placeholder="my-site"
+                    className="flex-1"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Lowercase letters, numbers, and hyphens only. 3–50 characters. The original project link will continue to work.
+                </p>
+              </div>
+              {slugError && (
+                <Alert variant="destructive">
+                  <AlertDescription>{slugError}</AlertDescription>
+                </Alert>
+              )}
+              <div className="flex items-center gap-3">
+                <Button type="submit" disabled={savingSlug} className="self-start">
+                  {savingSlug ? "Saving…" : "Save"}
+                </Button>
+                {project.vanity_slug && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-muted-foreground"
+                    onClick={() => {
+                      const url = `${window.location.origin}/s/${project.vanity_slug}`;
+                      navigator.clipboard.writeText(url);
+                      toast({ title: "Custom link copied to clipboard." });
+                    }}
+                  >
+                    <Link className="h-3.5 w-3.5 mr-1.5" />
+                    Copy link
+                  </Button>
+                )}
+              </div>
+            </form>
           </div>
         </>
       )}
@@ -496,6 +616,21 @@ export function SiteSettingsPage() {
                 disabled={togglingVault}
               />
             </div>
+            {!!(project.features & 2) && (
+              <div className="flex items-center justify-between rounded-md border border-border px-4 py-3">
+                <div className="flex flex-col gap-0.5">
+                  <p className="text-sm font-medium flex items-center gap-2">AI Features <PremiumBadge /></p>
+                  <p className="text-xs text-muted-foreground">
+                    Enable AI-powered writing assistance and document summarization.
+                  </p>
+                </div>
+                <Switch
+                  checked={project.ai_enabled === 1}
+                  onCheckedChange={handleToggleAi}
+                  disabled={togglingAi}
+                />
+              </div>
+            )}
             <div className="flex items-center justify-between rounded-md border border-border px-4 py-3">
               <div className="flex flex-col gap-0.5">
                 <p className="text-sm font-medium">Save Changelog</p>
@@ -691,6 +826,14 @@ export function SiteSettingsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function PremiumBadge() {
+  return (
+    <Badge variant="outline" className="text-[10px] font-semibold px-1.5 py-0 bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800">
+      PREMIUM
+    </Badge>
   );
 }
 

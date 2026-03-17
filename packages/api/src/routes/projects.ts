@@ -1,5 +1,7 @@
-import { okResponse, errorResponse, Errors, ROLE_RANK, type Session, type Project, type Role } from "../lib";
+import { okResponse, errorResponse, Errors, ROLE_RANK, ProjectFeatures, type Session, type Project, type Role } from "../lib";
 import type { Env } from "../index";
+
+const VANITY_SLUG_REGEX = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/;
 
 async function getCallerRole(db: D1Database, projectId: string, userId: string): Promise<Role | null> {
   const row = await db.prepare("SELECT role FROM project_members WHERE project_id = ? AND user_id = ?")
@@ -69,9 +71,18 @@ export async function handleProjects(
     if (role === null) return errorResponse(Errors.NOT_FOUND);
     if (ROLE_RANK[role] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
 
-    const body = await request.json<{ name?: string; description?: string | null; publishedAt?: string | null; vaultEnabled?: boolean; changelogMode?: string }>();
+    const body = await request.json<{ name?: string; description?: string | null; publishedAt?: string | null; vaultEnabled?: boolean; changelogMode?: string; vanitySlug?: string | null; aiEnabled?: boolean }>();
     if (body.name !== undefined && !body.name.trim()) return errorResponse(Errors.BAD_REQUEST);
     if (body.changelogMode !== undefined && !["off", "on", "enforced"].includes(body.changelogMode)) return errorResponse(Errors.BAD_REQUEST);
+    if (body.vanitySlug !== undefined && body.vanitySlug !== null) {
+      if (!VANITY_SLUG_REGEX.test(body.vanitySlug) || body.vanitySlug.length < 3 || body.vanitySlug.length > 50) return errorResponse(Errors.BAD_REQUEST);
+      const proj = await env.DB.prepare("SELECT features FROM projects WHERE id = ?").bind(projectId).first<{ features: number }>();
+      if (!proj || !(proj.features & ProjectFeatures.CUSTOM_LINK)) return errorResponse(Errors.FORBIDDEN);
+    }
+    if (body.aiEnabled !== undefined) {
+      const proj = await env.DB.prepare("SELECT features FROM projects WHERE id = ?").bind(projectId).first<{ features: number }>();
+      if (!proj || !(proj.features & ProjectFeatures.AI_FEATURES)) return errorResponse(Errors.FORBIDDEN);
+    }
 
     const fields: string[] = [];
     const values: unknown[] = [];
@@ -80,10 +91,17 @@ export async function handleProjects(
     if (body.publishedAt !== undefined) { fields.push("published_at = ?"); values.push(body.publishedAt ?? null); }
     if (body.vaultEnabled !== undefined) { fields.push("vault_enabled = ?"); values.push(body.vaultEnabled ? 1 : 0); }
     if (body.changelogMode !== undefined) { fields.push("changelog_mode = ?"); values.push(body.changelogMode); }
+    if (body.vanitySlug !== undefined) { fields.push("vanity_slug = ?"); values.push(body.vanitySlug ?? null); }
+    if (body.aiEnabled !== undefined) { fields.push("ai_enabled = ?"); values.push(body.aiEnabled ? 1 : 0); }
     if (fields.length === 0) return errorResponse(Errors.BAD_REQUEST);
 
     values.push(projectId);
-    await env.DB.prepare(`UPDATE projects SET ${fields.join(", ")} WHERE id = ?`).bind(...values).run();
+    try {
+      await env.DB.prepare(`UPDATE projects SET ${fields.join(", ")} WHERE id = ?`).bind(...values).run();
+    } catch (e: unknown) {
+      if (e instanceof Error && e.message.includes("UNIQUE")) return errorResponse(Errors.CONFLICT);
+      throw e;
+    }
 
     const updated = await env.DB.prepare("SELECT * FROM projects WHERE id = ?").bind(projectId).first<Project>();
     return okResponse(updated);

@@ -42,8 +42,8 @@ export async function handlePublic(
   if (parts[0] === "projects" && parts[1]) {
     const projectId = parts[1];
     const project = await env.DB.prepare(
-      "SELECT id, name, description, published_at FROM projects WHERE id = ? AND published_at IS NOT NULL",
-    ).bind(projectId).first<PublicProject>();
+      "SELECT id, name, description, published_at FROM projects WHERE (id = ? OR vanity_slug = ?) AND published_at IS NOT NULL",
+    ).bind(projectId, projectId).first<PublicProject>();
     if (!project) return errorResponse(Errors.NOT_FOUND);
 
     const docs = await env.DB.prepare(
@@ -63,13 +63,14 @@ export async function handlePublic(
 
   // /public/docs/:projectId/:docId
   if (parts[0] === "docs" && parts[1] && parts[2]) {
-    const projectId = parts[1];
+    const projectIdOrSlug = parts[1];
     const docId = parts[2];
 
     const project = await env.DB.prepare(
-      "SELECT id, name, published_at FROM projects WHERE id = ?",
-    ).bind(projectId).first<Pick<PublicProject, "id" | "name" | "published_at">>();
+      "SELECT id, name, published_at FROM projects WHERE id = ? OR vanity_slug = ?",
+    ).bind(projectIdOrSlug, projectIdOrSlug).first<Pick<PublicProject, "id" | "name" | "published_at">>();
     if (!project) return errorResponse(Errors.NOT_FOUND);
+    const projectId = project.id;
 
     const doc = await env.DB.prepare(
       "SELECT id, title, published_at, show_last_updated, updated_at FROM docs WHERE id = ? AND project_id = ?",

@@ -1,0 +1,1 @@
+ALTER TABLE projects ADD COLUMN custom_link_enabled INTEGER NOT NULL DEFAULT 0;

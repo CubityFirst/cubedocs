@@ -58,6 +58,7 @@ export interface DocsLayoutContext {
   projectName: string;
   projectPublishedAt: string | null;
   changelogMode: string;
+  myRole: string | null;
   addDoc: (doc: { id: string; title: string }) => void;
   setBreadcrumbs: Dispatch<SetStateAction<BreadcrumbItem[]>>;
 }
@@ -203,6 +204,7 @@ export function DocsLayout() {
     projectName: currentProject?.name ?? "",
     projectPublishedAt: currentProject?.published_at ?? null,
     changelogMode: currentProject?.changelog_mode ?? "off",
+    myRole: currentProject?.role ?? null,
     addDoc,
     setBreadcrumbs,
   };

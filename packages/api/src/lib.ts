@@ -25,11 +25,19 @@ export interface Doc {
   updatedAt: string;
 }
 
+export const ProjectFeatures = {
+  CUSTOM_LINK: 1,
+  AI_FEATURES: 2,
+} as const;
+
 export interface Project {
   id: string;
   name: string;
   ownerId: string;
   createdAt: string;
+  vanity_slug: string | null;
+  features: number;
+  ai_enabled: number;
 }
 
 export type Role = "viewer" | "editor" | "admin" | "owner";

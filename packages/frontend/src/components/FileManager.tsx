@@ -5,6 +5,7 @@ import { Folder, FileText, Plus, FolderPlus, Search, X, Download, Upload, Image,
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ResizableTable, ResizableTableRow } from "@/components/ui/resizable-table";
 import { Badge } from "@/components/ui/badge";
@@ -92,10 +93,12 @@ function RoleBadge({ role }: { role: Role }) {
 interface Props {
   projectId: string;
   projectName: string;
+  myRole?: string | null;
   onDocCreated: (doc: DocItem) => void;
 }
 
-export function FileManager({ projectId, projectName, onDocCreated }: Props) {
+export function FileManager({ projectId, projectName, myRole, onDocCreated }: Props) {
+  const canEdit = myRole === "editor" || myRole === "admin" || myRole === "owner";
   const navigate = useNavigate();
   const location = useLocation();
   const { setBreadcrumbs } = useOutletContext<DocsLayoutContext>();
@@ -116,6 +119,7 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
   const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<{ type: "folder" | "doc" | "file"; id: string; currentName: string } | null>(null);
   const [renameName, setRenameName] = useState("");
   const [renaming, setRenaming] = useState(false);
@@ -341,9 +345,10 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
     await loadContents();
   }
 
-  async function handleDeleteSelected() {
+  async function handleDeleteConfirmed() {
     if (deleting) return;
     setDeleting(true);
+    setDeleteConfirmOpen(false);
     const token = getToken();
     try {
       await Promise.all([
@@ -555,7 +560,7 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
                 draggable
                   onDragStart={() => onDragStart("doc", doc.id)}
                   onDragEnd={onDragEnd}
-                  checkboxCell={
+                  checkboxCell={canEdit ? (
                     <Checkbox
                       checked={selectedDocs.has(doc.id)}
                       onCheckedChange={checked => {
@@ -567,7 +572,7 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
                         });
                       }}
                     />
-                  }
+                  ) : undefined}
                   cells={[
                     {
                       content: (
@@ -620,7 +625,7 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
               draggable
               onDragStart={() => onDragStart("file", file.id)}
               onDragEnd={onDragEnd}
-              checkboxCell={
+              checkboxCell={canEdit ? (
                 <Checkbox
                   checked={selectedFiles.has(file.id)}
                   onCheckedChange={checked => {
@@ -632,7 +637,7 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
                     });
                   }}
                 />
-              }
+              ) : undefined}
               cells={[
                 {
                   content: (
@@ -720,8 +725,8 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
           <Plus className="h-3.5 w-3.5" />
           {creatingDoc ? "Creating…" : "New document"}
         </Button>
-        {(selectedDocs.size > 0 || selectedFiles.size > 0) && (
-          <Button size="sm" variant="destructive" className="gap-1.5" onClick={handleDeleteSelected} disabled={deleting}>
+        {canEdit && (selectedDocs.size > 0 || selectedFiles.size > 0) && (
+          <Button size="sm" variant="destructive" className="gap-1.5" onClick={() => setDeleteConfirmOpen(true)} disabled={deleting}>
             <Trash2 className="h-3.5 w-3.5" />
             {deleting ? "Deleting…" : `Delete (${selectedDocs.size + selectedFiles.size})`}
           </Button>
@@ -785,6 +790,29 @@ export function FileManager({ projectId, projectName, onDocCreated }: Props) {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Delete confirmation dialog */}
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete {selectedDocs.size + selectedFiles.size} {selectedDocs.size + selectedFiles.size === 1 ? "item" : "items"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This action is irreversible and all data will be lost.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleDeleteConfirmed}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
     </div>
   );
