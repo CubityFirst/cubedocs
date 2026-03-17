@@ -23,7 +23,7 @@ function walk(node: MdastNode, source: string) {
 }
 
 export function remarkUnderline() {
-  return (tree: MdastNode, file: { value: string }) => {
+  return (tree: MdastNode, file: { value: string | Uint8Array }) => {
     walk(tree, String(file.value));
   };
 }
