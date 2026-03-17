@@ -213,7 +213,7 @@ export function DocsLayout() {
       <div className="relative shrink-0">
       <aside className={cn("flex h-full flex-col border-r border-border transition-[width] duration-200 overflow-hidden", sidebarOpen ? "w-64" : "w-0")}>
         {/* Logo / Site header */}
-        <div className="flex h-14 items-center gap-2 px-4">
+        <div className="flex h-14 items-center gap-2 px-4 border-b border-border">
           {projectId && currentProject ? (
             <>
               <button
@@ -243,8 +243,6 @@ export function DocsLayout() {
             </>
           )}
         </div>
-
-        <Separator />
 
         {projectId ? (
           /* ── Project sidebar ── */
@@ -382,7 +380,7 @@ export function DocsLayout() {
       <main className="flex flex-1 flex-col overflow-hidden">
         {/* Breadcrumb bar — always at the top */}
         {breadcrumbs.length > 0 && (
-          <div className="shrink-0 flex items-center gap-1 px-6 py-3 border-b border-border bg-background text-sm">
+          <div className="shrink-0 flex h-14 items-center gap-1 px-6 border-b border-border bg-background text-sm">
             {breadcrumbs.map((crumb, i) => {
               const isLast = i === breadcrumbs.length - 1;
               return (

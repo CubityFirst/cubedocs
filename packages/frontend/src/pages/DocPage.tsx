@@ -416,9 +416,16 @@ const [editorScrollTop, setEditorScrollTop] = useState(0);
   if (editing) {
     return (
       <div className="flex h-full flex-col">
-        {/* Toolbar */}
-        <div className="flex items-center justify-end border-b border-border px-6 py-2">
-          <div className="flex items-center gap-2">
+        {/* Title + toolbar */}
+        <div className="flex items-center gap-4 border-b border-border px-6 py-3">
+          <Input
+            value={titleDraft}
+            onChange={e => setTitleDraft(e.target.value)}
+            placeholder="Document title"
+            className="min-w-0 max-w-sm border-0 bg-transparent px-0 text-2xl font-bold shadow-none focus-visible:ring-0"
+            autoFocus={location.state?.isNew}
+          />
+          <div className="ml-auto flex items-center gap-2">
             {saveError && <p className="text-xs text-destructive">{saveError}</p>}
             <Button variant="ghost" size="sm" onClick={cancelEditing} className="gap-1.5">
               <X className="h-3.5 w-3.5" />
@@ -429,17 +436,6 @@ const [editorScrollTop, setEditorScrollTop] = useState(0);
               {saving ? "Saving…" : "Save"}
             </Button>
           </div>
-        </div>
-
-        {/* Title input */}
-        <div className="border-b border-border px-6 py-3">
-          <Input
-            value={titleDraft}
-            onChange={e => setTitleDraft(e.target.value)}
-            placeholder="Document title"
-            className="border-0 bg-transparent px-0 text-2xl font-bold shadow-none focus-visible:ring-0"
-            autoFocus={location.state?.isNew}
-          />
         </div>
 
         {/* Split editor / preview */}
@@ -510,7 +506,7 @@ const [editorScrollTop, setEditorScrollTop] = useState(0);
           </div>
 
           <div className="flex w-1/2 flex-col overflow-auto">
-            <div className="border-b border-border px-4 py-1.5">
+            <div className="border-b border-border px-4 py-1.5 flex items-center">
               <span className="text-xs font-medium text-muted-foreground">Preview</span>
             </div>
             <div className="flex-1 overflow-auto px-8 py-6">
