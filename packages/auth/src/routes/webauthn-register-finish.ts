@@ -4,6 +4,7 @@ import {
   verifyRegistrationResponse,
   uint8ArrayToBase64url,
 } from "../webauthn";
+import { requireMFA } from "../mfa";
 import type { Env } from "../index";
 
 export async function handleWebauthnRegisterFinish(request: Request, env: Env): Promise<Response> {
@@ -12,8 +13,18 @@ export async function handleWebauthnRegisterFinish(request: Request, env: Env): 
     challengeId: string;
     response: Record<string, unknown>;
     name?: string;
+    totpCode?: string;
+    challengeId2fa?: string;
+    webauthnResponse?: unknown;
   }>();
   if (!body.userId || !body.challengeId || !body.response) return errorResponse(Errors.BAD_REQUEST);
+
+  const mfaError = await requireMFA(env, body.userId, {
+    totpCode: body.totpCode,
+    challengeId: body.challengeId2fa,
+    webauthnResponse: body.webauthnResponse,
+  });
+  if (mfaError) return mfaError;
 
   const challenge = await consumeChallenge(env, body.challengeId, body.userId, "registration");
   if (!challenge) return errorResponse(Errors.BAD_REQUEST);

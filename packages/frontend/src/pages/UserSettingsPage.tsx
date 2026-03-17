@@ -5,6 +5,7 @@ import { startRegistration } from "@simplewebauthn/browser";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
@@ -50,13 +51,11 @@ export function UserSettingsPage() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [passwordTotpCode, setPasswordTotpCode] = useState("");
-  const [passwordTotpRequired, setPasswordTotpRequired] = useState(false);
   const [passwordSaving, setPasswordSaving] = useState(false);
 
   const { runWithTwoFA, twoFADialog, busy: twoFABusy } = use2FA({
-    totpEnabled,
-    webauthnEnabled: webauthnCredentials.length > 0,
+    totp: totpEnabled,
+    webauthn: webauthnCredentials.length > 0,
   });
 
   useEffect(() => {
@@ -151,30 +150,38 @@ export function UserSettingsPage() {
   async function handleSetupVerify(e: React.FormEvent) {
     e.preventDefault();
     if (!pendingSecret || !setupCode) return;
-    setSetupLoading(true);
-    try {
-      const token = getToken();
-      const res = await fetch("/api/me/totp/enable", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ secret: pendingSecret, code: setupCode }),
-      });
-      const json = await res.json() as { ok: boolean };
-      if (json.ok) {
-        setTotpEnabled(true);
-        setSetupStep("idle");
-        setPendingSecret(null);
-        setPendingUri(null);
-        setSetupCode("");
-        toast({ title: "Two-factor authentication enabled" });
-      } else {
-        toast({ title: "Invalid code. Please try again.", variant: "destructive" });
+    await runWithTwoFA(async (verification) => {
+      setSetupLoading(true);
+      try {
+        const token = getToken();
+        const res = await fetch("/api/me/totp/enable", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            secret: pendingSecret,
+            code: setupCode,
+            totpCode: verification.totpCode,
+            challengeId: verification.challengeId,
+            webauthnResponse: verification.webauthnResponse,
+          }),
+        });
+        const json = await res.json() as { ok: boolean; error?: string };
+        if (json.ok) {
+          setTotpEnabled(true);
+          setSetupStep("idle");
+          setPendingSecret(null);
+          setPendingUri(null);
+          setSetupCode("");
+          toast({ title: "Two-factor authentication enabled" });
+          return undefined;
+        }
+        return json.error === "invalid_totp" ? "Invalid authenticator code." : "Invalid code. Please try again.";
+      } catch {
+        return "Could not connect to the server.";
+      } finally {
+        setSetupLoading(false);
       }
-    } catch {
-      toast({ title: "Could not connect to the server", variant: "destructive" });
-    } finally {
-      setSetupLoading(false);
-    }
+    });
   }
 
   async function handleDisableTOTP() {
@@ -183,7 +190,7 @@ export function UserSettingsPage() {
       const res = await fetch("/api/me/totp/disable", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ code: totpCode, challengeId, webauthnResponse }),
+        body: JSON.stringify({ totpCode, challengeId, webauthnResponse }),
       });
       const json = await res.json() as { ok: boolean };
       if (json.ok) {
@@ -197,66 +204,69 @@ export function UserSettingsPage() {
 
   async function handleRegisterKey(e: React.FormEvent) {
     e.preventDefault();
-    setRegisterLoading(true);
-    try {
-      const token = getToken();
-      const startRes = await fetch("/api/me/webauthn/register/start", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({}),
-      });
-      const startJson = await startRes.json() as {
-        ok: boolean;
-        data?: { options: Record<string, unknown>; challengeId: string };
-      };
-      if (!startJson.ok || !startJson.data) {
-        toast({ title: "Failed to start security key registration", variant: "destructive" });
-        return;
-      }
-
-      const { options, challengeId } = startJson.data;
-      let credential;
+    await runWithTwoFA(async (verification) => {
+      setRegisterLoading(true);
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        credential = await startRegistration(options as any);
-      } catch {
-        toast({ title: "Security key registration was cancelled or failed", variant: "destructive" });
-        return;
-      }
-
-      const finishRes = await fetch("/api/me/webauthn/register/finish", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          challengeId,
-          response: credential,
-          name: newKeyName.trim() || "Security Key",
-        }),
-      });
-      const finishJson = await finishRes.json() as { ok: boolean };
-      if (finishJson.ok) {
-        // Reload credentials list
-        const listRes = await fetch("/api/me/webauthn/credentials", {
+        const token = getToken();
+        const startRes = await fetch("/api/me/webauthn/register/start", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
           body: JSON.stringify({}),
         });
-        const listJson = await listRes.json() as {
+        const startJson = await startRes.json() as {
           ok: boolean;
-          data?: { credentials: WebAuthnCredential[] };
+          data?: { options: Record<string, unknown>; challengeId: string };
         };
-        if (listJson.ok && listJson.data) setWebauthnCredentials(listJson.data.credentials);
-        setAddingKey(false);
-        setNewKeyName("");
-        toast({ title: "Security key added" });
-      } else {
-        toast({ title: "Failed to register security key", variant: "destructive" });
+        if (!startJson.ok || !startJson.data) {
+          return "Failed to start security key registration.";
+        }
+
+        const { options, challengeId: registerChallengeId } = startJson.data;
+        let credential;
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          credential = await startRegistration(options as any);
+        } catch {
+          return "Security key registration was cancelled or failed.";
+        }
+
+        const finishRes = await fetch("/api/me/webauthn/register/finish", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            challengeId: registerChallengeId,
+            response: credential,
+            name: newKeyName.trim() || "Security Key",
+            totpCode: verification.totpCode,
+            challengeId2fa: verification.challengeId,
+            webauthnResponse: verification.webauthnResponse,
+          }),
+        });
+        const finishJson = await finishRes.json() as { ok: boolean; error?: string };
+        if (finishJson.ok) {
+          // Reload credentials list
+          const listRes = await fetch("/api/me/webauthn/credentials", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({}),
+          });
+          const listJson = await listRes.json() as {
+            ok: boolean;
+            data?: { credentials: WebAuthnCredential[] };
+          };
+          if (listJson.ok && listJson.data) setWebauthnCredentials(listJson.data.credentials);
+          setAddingKey(false);
+          setNewKeyName("");
+          toast({ title: "Security key added" });
+        } else {
+          return finishJson.error ?? "Failed to register security key.";
+        }
+      } catch {
+        return "Could not connect to the server.";
+      } finally {
+        setRegisterLoading(false);
       }
-    } catch {
-      toast({ title: "Could not connect to the server", variant: "destructive" });
-    } finally {
-      setRegisterLoading(false);
-    }
+    });
   }
 
   async function handleDeleteKey(credentialId: string) {
@@ -284,46 +294,47 @@ export function UserSettingsPage() {
     setCurrentPassword("");
     setNewPassword("");
     setConfirmPassword("");
-    setPasswordTotpCode("");
-    setPasswordTotpRequired(false);
   }
 
   async function handleChangePassword(e: React.FormEvent) {
     e.preventDefault();
     if (!currentPassword || !newPassword || newPassword !== confirmPassword) return;
     if (zxcvbn(newPassword).score < 3) return;
-    setPasswordSaving(true);
-    try {
-      const token = getToken();
-      const res = await fetch("/api/me/password", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          currentPassword,
-          newPassword,
-          ...(passwordTotpRequired ? { totpCode: passwordTotpCode } : {}),
-        }),
-      });
-      const json = await res.json() as { ok: boolean; error?: string };
-      if (json.ok) {
-        resetPasswordDialog();
-        setChangePasswordOpen(false);
-        toast({ title: "Password changed" });
-      } else if (json.error === "totp_required") {
-        setPasswordTotpRequired(true);
-      } else if (json.error === "invalid_totp") {
-        toast({ title: "Invalid authenticator code", variant: "destructive" });
-        setPasswordTotpCode("");
-      } else if (json.error === "password_too_weak") {
-        toast({ title: "New password is too weak", variant: "destructive" });
-      } else {
+    await runWithTwoFA(async (verification) => {
+      setPasswordSaving(true);
+      try {
+        const token = getToken();
+        const res = await fetch("/api/me/password", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            currentPassword,
+            newPassword,
+            totpCode: verification.totpCode,
+            challengeId: verification.challengeId,
+            webauthnResponse: verification.webauthnResponse,
+          }),
+        });
+        const json = await res.json() as { ok: boolean; error?: string };
+        if (json.ok) {
+          resetPasswordDialog();
+          setChangePasswordOpen(false);
+          toast({ title: "Password changed" });
+          return undefined;
+        }
+        if (json.error === "invalid_totp") return "Invalid authenticator code.";
+        if (json.error === "password_too_weak") {
+          toast({ title: "New password is too weak", variant: "destructive" });
+          return undefined;
+        }
         toast({ title: "Current password is incorrect", variant: "destructive" });
+        return undefined;
+      } catch {
+        return "Could not connect to the server.";
+      } finally {
+        setPasswordSaving(false);
       }
-    } catch {
-      toast({ title: "Could not connect to the server", variant: "destructive" });
-    } finally {
-      setPasswordSaving(false);
-    }
+    });
   }
 
   function handleCancelSetup() {
@@ -473,17 +484,22 @@ export function UserSettingsPage() {
 
                 <form onSubmit={handleSetupVerify} className="flex flex-col gap-3">
                   <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="setup-code">Enter the 6-digit code from your app</Label>
-                    <Input
-                      id="setup-code"
-                      value={setupCode}
-                      onChange={e => setSetupCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                      placeholder="000000"
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
+                    <Label>Enter the 6-digit code from your app</Label>
+                    <InputOTP
                       maxLength={6}
-                      required
-                    />
+                      value={setupCode}
+                      onChange={setSetupCode}
+                      autoComplete="one-time-code"
+                    >
+                      <InputOTPGroup>
+                        <InputOTPSlot index={0} />
+                        <InputOTPSlot index={1} />
+                        <InputOTPSlot index={2} />
+                        <InputOTPSlot index={3} />
+                        <InputOTPSlot index={4} />
+                        <InputOTPSlot index={5} />
+                      </InputOTPGroup>
+                    </InputOTP>
                   </div>
                   <div className="flex gap-2">
                     <Button type="submit" disabled={setupLoading || setupCode.length !== 6}>
@@ -663,23 +679,6 @@ export function UserSettingsPage() {
                     )}
                   </div>
 
-                  {passwordTotpRequired && (
-                    <div className="flex flex-col gap-1.5">
-                      <Label htmlFor="password-totp">Authenticator code</Label>
-                      <Input
-                        id="password-totp"
-                        value={passwordTotpCode}
-                        onChange={e => setPasswordTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                        placeholder="000000"
-                        inputMode="numeric"
-                        autoComplete="one-time-code"
-                        maxLength={6}
-                        autoFocus
-                        required
-                      />
-                      <p className="text-xs text-muted-foreground">Enter the 6-digit code from your authenticator app.</p>
-                    </div>
-                  )}
                 </form>
                 <DialogFooter>
                   <Button variant="outline" type="button" onClick={() => { resetPasswordDialog(); setChangePasswordOpen(false); }}>

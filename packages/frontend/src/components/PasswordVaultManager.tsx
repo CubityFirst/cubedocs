@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { HistorySheet, type RevisionMeta } from "@/components/HistorySheet";
 import { HistoryBanner } from "@/components/HistoryBanner";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -137,7 +139,7 @@ function CopyBtn({ text, field, copied, onCopy }: { text: string; field: string;
   );
 }
 
-function TOTPDisplay({ secret }: { secret: string }) {
+function TOTPDisplay({ secret, reveal = true }: { secret: string; reveal?: boolean }) {
   const [code, setCode] = useState("------");
   const [secs, setSecs] = useState(30);
 
@@ -155,10 +157,34 @@ function TOTPDisplay({ secret }: { secret: string }) {
     return () => { live = false; clearInterval(id); };
   }, [secret]);
 
+  const radius = 10;
+  const circumference = 2 * Math.PI * radius;
+  // Drains clockwise: starts full, decreases as secs decreases
+  const dashoffset = circumference * (1 - secs / 30);
+  const color = secs <= 5 ? "#ef4444" : secs <= 10 ? "#f97316" : "currentColor";
+
   return (
     <div className="flex items-center gap-2">
-      <span className={`font-mono text-lg tracking-widest ${secs <= 5 ? "text-destructive" : ""}`}>{code}</span>
-      <span className={`text-xs ${secs <= 5 ? "text-destructive" : "text-muted-foreground"}`}>{secs}s</span>
+      {reveal
+        ? <span className={`font-mono text-lg tracking-widest ${secs <= 5 ? "text-destructive" : secs <= 10 ? "text-orange-500" : ""}`}>{code}</span>
+        : <span className="font-mono text-lg tracking-widest text-muted-foreground">••••••</span>}
+      <svg width="36" height="36" viewBox="0 0 36 36" style={{ flexShrink: 0 }}>
+        {/* Background circle */}
+        <circle cx="18" cy="18" r={radius} fill="none" stroke="currentColor" strokeWidth="2.5" className="text-muted-foreground/20" />
+        {/* Progress arc — rotated so it starts at top and drains clockwise */}
+        <circle
+          cx="18" cy="18" r={radius}
+          fill="none"
+          stroke={color}
+          strokeWidth="2.5"
+          strokeDasharray={circumference}
+          strokeDashoffset={dashoffset}
+          strokeLinecap="round"
+          transform="rotate(-90 18 18)"
+          style={{ transition: "stroke-dashoffset 0.5s linear, stroke 0.3s" }}
+        />
+        <text x="18" y="18" textAnchor="middle" dominantBaseline="central" fontSize="11" fontWeight="600" fill={color} fontFamily="monospace" style={{ transition: "fill 0.3s" }}>{secs}</text>
+      </svg>
     </div>
   );
 }
@@ -207,6 +233,11 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
 
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [renameTarget, setRenameTarget] = useState<{ type: "folder" | "entry"; id: string; currentName: string } | null>(null);
+  const [renameName, setRenameName] = useState("");
+  const [renaming, setRenaming] = useState(false);
+  const [contextDeleteTarget, setContextDeleteTarget] = useState<{ type: "folder" | "entry"; id: string; name: string } | null>(null);
+  const [contextDeleting, setContextDeleting] = useState(false);
   const [historyRevisions, setHistoryRevisions] = useState<RevisionMeta[] | null>(null);
   const [viewingHistoryRevision, setViewingHistoryRevision] = useState<RevisionDetail | null>(null);
   const [loadingHistoryRevision, setLoadingHistoryRevision] = useState(false);
@@ -550,6 +581,52 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
     }
   }
 
+  async function handleRename(e: React.FormEvent) {
+    e.preventDefault();
+    if (!renameTarget || !renameName.trim() || renaming) return;
+    setRenaming(true);
+    const token = getToken();
+    try {
+      if (renameTarget.type === "folder") {
+        await fetch(`/api/folders/${renameTarget.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ name: renameName.trim() }),
+        });
+        setFolders(prev => prev.map(f => f.id === renameTarget.id ? { ...f, name: renameName.trim() } : f));
+      } else {
+        await fetch(`/api/passwords/${renameTarget.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ title: renameName.trim() }),
+        });
+        setEntries(prev => prev.map(en => en.id === renameTarget.id ? { ...en, title: renameName.trim() } : en));
+      }
+      setRenameTarget(null);
+    } finally {
+      setRenaming(false);
+    }
+  }
+
+  async function handleContextDelete() {
+    if (!contextDeleteTarget || contextDeleting) return;
+    setContextDeleting(true);
+    const token = getToken();
+    const { type, id } = contextDeleteTarget;
+    try {
+      if (type === "folder") {
+        await fetch(`/api/folders/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+        setFolders(prev => prev.filter(f => f.id !== id));
+      } else {
+        await fetch(`/api/passwords/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+        setEntries(prev => prev.filter(en => en.id !== id));
+      }
+      setContextDeleteTarget(null);
+    } finally {
+      setContextDeleting(false);
+    }
+  }
+
   // Drag handlers
   function onDragStart(type: "entry" | "folder", id: string) { draggedItem.current = { type, id }; }
   function onDragEnd() { draggedItem.current = null; setDropTarget(null); }
@@ -608,9 +685,8 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
         <>
           {folderRows.map(folder => {
             const isDropTarget = dropTarget === folder.id;
-            return (
+            const folderRow = (
               <ResizableTableRow
-                key={folder.id}
                 columns={VAULT_COLUMNS}
                 draggable
                   onDragStart={() => onDragStart("folder", folder.id)}
@@ -657,92 +733,148 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
                     { content: null },
                   ]}
                 />
-              );
+            );
+            return (
+              <ContextMenu key={folder.id}>
+                <ContextMenuTrigger asChild><div>{folderRow}</div></ContextMenuTrigger>
+                <ContextMenuContent>
+                  <ContextMenuItem onClick={() => { setRenameTarget({ type: "folder", id: folder.id, currentName: folder.name }); setRenameName(folder.name); }}>
+                    <Pencil />
+                    Rename
+                  </ContextMenuItem>
+                  <ContextMenuSeparator />
+                  <ContextMenuItem variant="destructive" onClick={() => setContextDeleteTarget({ type: "folder", id: folder.id, name: folder.name })}>
+                    <Trash2 />
+                    Delete
+                  </ContextMenuItem>
+                </ContextMenuContent>
+              </ContextMenu>
+            );
             })}
-          {entryRows.map(entry => (
-            <ResizableTableRow
-              key={entry.id}
-              columns={VAULT_COLUMNS}
-              draggable
-                onDragStart={() => onDragStart("entry", entry.id)}
-                onDragEnd={onDragEnd}
-                checkboxCell={
-                  <Checkbox
-                    checked={selectedEntries.has(entry.id)}
-                    onCheckedChange={checked => {
-                      setSelectedEntries(prev => {
-                        const next = new Set(prev);
-                        if (checked) next.add(entry.id);
-                        else next.delete(entry.id);
-                        return next;
-                      });
-                    }}
-                  />
-                }
-                cells={[
-                  {
-                    content: (
-                      <>
-                        <Lock className="h-4 w-4 shrink-0 mr-2 text-muted-foreground/60" />
-                        <span className="text-sm truncate">{entry.title}</span>
-                      </>
-                    ),
-                    className: "px-3 cursor-pointer",
-                    onClick: () => openDetail(entry),
-                  },
-                  {
-                    content: (
-                      <div className="flex items-center gap-0.5" onClick={e => e.stopPropagation()}>
-                        <Button
-                          variant="ghost" size="icon" className="h-7 w-7"
-                          title="Copy username" disabled={!entry.username}
-                          onClick={() => entry.username && copyToClipboard(entry.username, `row-username-${entry.id}`)}
-                        >
-                          {copiedField === `row-username-${entry.id}` ? <Check className="h-3.5 w-3.5 text-green-500" /> : <User className="h-3.5 w-3.5" />}
-                        </Button>
-                        <Button
-                          variant="ghost" size="icon" className="h-7 w-7"
-                          title="Copy password"
-                          onClick={() => copyDecryptedField(entry.id, "password")}
-                        >
-                          {copiedField === `row-password-${entry.id}` ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Key className="h-3.5 w-3.5" />}
-                        </Button>
-                        <Button
-                          variant="ghost" size="icon" className={`h-7 w-7${!entry.has_totp ? " opacity-25" : ""}`}
-                          title="Copy TOTP"
-                          disabled={!entry.has_totp}
-                          onClick={() => copyDecryptedField(entry.id, "totp")}
-                        >
-                          {copiedField === `row-totp-${entry.id}` ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Clock className="h-3.5 w-3.5" />}
-                        </Button>
-                        <Button
-                          variant="ghost" size="icon" className="h-7 w-7"
-                          title="Open URL" disabled={!entry.url} asChild={!!entry.url}
-                        >
-                          {entry.url ? (
-                            <a href={entry.url} target="_blank" rel="noopener noreferrer">
+          {entryRows.map(entry => {
+            const entryRow = (
+              <ResizableTableRow
+                columns={VAULT_COLUMNS}
+                draggable
+                  onDragStart={() => onDragStart("entry", entry.id)}
+                  onDragEnd={onDragEnd}
+                  checkboxCell={
+                    <Checkbox
+                      checked={selectedEntries.has(entry.id)}
+                      onCheckedChange={checked => {
+                        setSelectedEntries(prev => {
+                          const next = new Set(prev);
+                          if (checked) next.add(entry.id);
+                          else next.delete(entry.id);
+                          return next;
+                        });
+                      }}
+                    />
+                  }
+                  cells={[
+                    {
+                      content: (
+                        <>
+                          <Lock className="h-4 w-4 shrink-0 mr-2 text-muted-foreground/60" />
+                          <span className="text-sm truncate">{entry.title}</span>
+                        </>
+                      ),
+                      className: "px-3 cursor-pointer",
+                      onClick: () => openDetail(entry),
+                    },
+                    {
+                      content: (
+                        <div className="flex items-center gap-0.5" onClick={e => e.stopPropagation()}>
+                          <Button
+                            variant="ghost" size="icon" className="h-7 w-7"
+                            title="Copy username" disabled={!entry.username}
+                            onClick={() => entry.username && copyToClipboard(entry.username, `row-username-${entry.id}`)}
+                          >
+                            {copiedField === `row-username-${entry.id}` ? <Check className="h-3.5 w-3.5 text-green-500" /> : <User className="h-3.5 w-3.5" />}
+                          </Button>
+                          <Button
+                            variant="ghost" size="icon" className="h-7 w-7"
+                            title="Copy password"
+                            onClick={() => copyDecryptedField(entry.id, "password")}
+                          >
+                            {copiedField === `row-password-${entry.id}` ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Key className="h-3.5 w-3.5" />}
+                          </Button>
+                          <Button
+                            variant="ghost" size="icon" className={`h-7 w-7${!entry.has_totp ? " opacity-25" : ""}`}
+                            title="Copy TOTP"
+                            disabled={!entry.has_totp}
+                            onClick={() => copyDecryptedField(entry.id, "totp")}
+                          >
+                            {copiedField === `row-totp-${entry.id}` ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Clock className="h-3.5 w-3.5" />}
+                          </Button>
+                          <Button
+                            variant="ghost" size="icon" className="h-7 w-7"
+                            title="Open URL" disabled={!entry.url} asChild={!!entry.url}
+                          >
+                            {entry.url ? (
+                              <a href={entry.url} target="_blank" rel="noopener noreferrer">
+                                <ExternalLink className="h-3.5 w-3.5" />
+                              </a>
+                            ) : (
                               <ExternalLink className="h-3.5 w-3.5" />
-                            </a>
-                          ) : (
-                            <ExternalLink className="h-3.5 w-3.5" />
-                          )}
-                        </Button>
-                      </div>
-                    ),
-                    className: "px-1",
-                  },
-                  {
-                    content: <span className="text-sm text-muted-foreground truncate">{entry.username ?? ""}</span>,
-                  },
-                  {
-                    content: <span className="text-sm text-muted-foreground truncate">{entry.url ? formatHostname(entry.url) : ""}</span>,
-                  },
-                  {
-                    content: <span className="text-sm text-muted-foreground truncate">{formatRelativeTime(entry.last_change_date)}</span>,
-                  },
-                ]}
-              />
-          ))}
+                            )}
+                          </Button>
+                        </div>
+                      ),
+                      className: "px-1",
+                    },
+                    {
+                      content: <span className="text-sm text-muted-foreground truncate">{entry.username ?? ""}</span>,
+                    },
+                    {
+                      content: <span className="text-sm text-muted-foreground truncate">{entry.url ? formatHostname(entry.url) : ""}</span>,
+                    },
+                    {
+                      content: <span className="text-sm text-muted-foreground truncate">{formatRelativeTime(entry.last_change_date)}</span>,
+                    },
+                  ]}
+                />
+            );
+            return (
+              <ContextMenu key={entry.id}>
+                <ContextMenuTrigger asChild><div>{entryRow}</div></ContextMenuTrigger>
+                <ContextMenuContent>
+                  {entry.username ? (
+                    <ContextMenuItem onClick={() => copyToClipboard(entry.username!, `row-username-${entry.id}`)}>
+                      <User />
+                      Copy username
+                    </ContextMenuItem>
+                  ) : null}
+                  <ContextMenuItem onClick={() => copyDecryptedField(entry.id, "password")}>
+                    <Key />
+                    Copy password
+                  </ContextMenuItem>
+                  {entry.has_totp ? (
+                    <ContextMenuItem onClick={() => copyDecryptedField(entry.id, "totp")}>
+                      <Clock />
+                      Copy TOTP code
+                    </ContextMenuItem>
+                  ) : null}
+                  {entry.url ? (
+                    <ContextMenuItem onClick={() => copyToClipboard(entry.url!, `row-url-${entry.id}`)}>
+                      <ExternalLink />
+                      Copy URL
+                    </ContextMenuItem>
+                  ) : null}
+                  <ContextMenuSeparator />
+                  <ContextMenuItem onClick={() => { setRenameTarget({ type: "entry", id: entry.id, currentName: entry.title }); setRenameName(entry.title); }}>
+                    <Pencil />
+                    Rename
+                  </ContextMenuItem>
+                  <ContextMenuSeparator />
+                  <ContextMenuItem variant="destructive" onClick={() => setContextDeleteTarget({ type: "entry", id: entry.id, name: entry.title })}>
+                    <Trash2 />
+                    Delete
+                  </ContextMenuItem>
+                </ContextMenuContent>
+              </ContextMenu>
+            );
+          })}
         </>
       </ResizableTable>
     );
@@ -897,9 +1029,7 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
                       <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">TOTP</span>
                       <div className="flex items-center gap-1">
                         <div className="flex-1">
-                          {revealTotp
-                            ? <TOTPDisplay secret={viewData.totp} />
-                            : <span className="font-mono text-lg tracking-widest text-muted-foreground">••••••</span>}
+                          <TOTPDisplay secret={viewData.totp} reveal={revealTotp} />
                         </div>
                         <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => setRevealTotp(p => !p)}>
                           {revealTotp ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
@@ -1122,6 +1252,48 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
       />
 
       {twoFADialog}
+
+      {/* Rename dialog */}
+      <Dialog open={!!renameTarget} onOpenChange={open => { if (!open) setRenameTarget(null); }}>
+        <DialogContent className="sm:max-w-xs">
+          <DialogHeader>
+            <DialogTitle>Rename</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleRename} className="flex flex-col gap-3">
+            <Input
+              value={renameName}
+              onChange={e => setRenameName(e.target.value)}
+              autoFocus
+              required
+            />
+            <Button type="submit" disabled={renaming || !renameName.trim()}>
+              {renaming ? "Renaming…" : "Rename"}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Context menu single-item delete confirmation */}
+      <AlertDialog open={!!contextDeleteTarget} onOpenChange={open => { if (!open) setContextDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete "{contextDeleteTarget?.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action is irreversible and all data will be lost.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleContextDelete}
+              disabled={contextDeleting}
+            >
+              {contextDeleting ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
     </div>
   );

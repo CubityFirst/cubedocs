@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useLocation, useOutletContext } from "react-router-dom";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
-import { Folder, FileText, Plus, FolderPlus, Search, X, Download, Upload, Image, FileCode, FileArchive, File, Trash2, Pencil } from "lucide-react";
+import { Folder, FileText, Plus, FolderPlus, Search, X, Download, Upload, Image, FileCode, FileArchive, File, Trash2, Pencil, Link } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -9,6 +9,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Checkbox } from "@/components/ui/checkbox";
 import { ResizableTable, ResizableTableRow } from "@/components/ui/resizable-table";
 import { Badge } from "@/components/ui/badge";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { useToast } from "@/hooks/use-toast";
 import { getToken } from "@/lib/auth";
 
 interface FolderItem {
@@ -100,6 +102,7 @@ interface Props {
 export function FileManager({ projectId, projectName, myRole, onDocCreated }: Props) {
   const canEdit = myRole === "editor" || myRole === "admin" || myRole === "owner";
   const navigate = useNavigate();
+  const { toast } = useToast();
   const location = useLocation();
   const { setBreadcrumbs } = useOutletContext<DocsLayoutContext>();
 
@@ -123,6 +126,8 @@ export function FileManager({ projectId, projectName, myRole, onDocCreated }: Pr
   const [renameTarget, setRenameTarget] = useState<{ type: "folder" | "doc" | "file"; id: string; currentName: string } | null>(null);
   const [renameName, setRenameName] = useState("");
   const [renaming, setRenaming] = useState(false);
+  const [contextDeleteTarget, setContextDeleteTarget] = useState<{ type: "folder" | "doc" | "file"; id: string; name: string } | null>(null);
+  const [contextDeleting, setContextDeleting] = useState(false);
   const [folderCounts, setFolderCounts] = useState<Map<string, { files: number; folders: number }>>(new Map());
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -298,8 +303,7 @@ export function FileManager({ projectId, projectName, myRole, onDocCreated }: Pr
     await loadContents();
   }
 
-  async function handleDownloadDoc(e: React.MouseEvent, doc: DocItem) {
-    e.stopPropagation();
+  async function downloadDoc(doc: DocItem) {
     const token = getToken();
     const res = await fetch(`/api/docs/${doc.id}`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -316,6 +320,11 @@ export function FileManager({ projectId, projectName, myRole, onDocCreated }: Pr
     a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function handleDownloadDoc(e: React.MouseEvent, doc: DocItem) {
+    e.stopPropagation();
+    await downloadDoc(doc);
   }
 
   function openFile(file: FileItem) {
@@ -399,6 +408,28 @@ export function FileManager({ projectId, projectName, myRole, onDocCreated }: Pr
       setRenameTarget(null);
     } finally {
       setRenaming(false);
+    }
+  }
+
+  async function handleContextDelete() {
+    if (!contextDeleteTarget || contextDeleting) return;
+    setContextDeleting(true);
+    const token = getToken();
+    const { type, id } = contextDeleteTarget;
+    try {
+      if (type === "folder") {
+        await fetch(`/api/folders/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+        setFolders(prev => prev.filter(f => f.id !== id));
+      } else if (type === "doc") {
+        await fetch(`/api/docs/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+        setDocs(prev => prev.filter(d => d.id !== id));
+      } else {
+        await fetch(`/api/files/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+        setFiles(prev => prev.filter(f => f.id !== id));
+      }
+      setContextDeleteTarget(null);
+    } finally {
+      setContextDeleting(false);
     }
   }
 
@@ -494,9 +525,8 @@ export function FileManager({ projectId, projectName, myRole, onDocCreated }: Pr
         <>
           {folderRows.map(folder => {
             const isDropTarget = dropTarget === folder.id;
-            return (
+            const folderRow = (
               <ResizableTableRow
-                key={folder.id}
                 columns={FILE_COLUMNS}
                 draggable
                   onDragStart={() => onDragStart("folder", folder.id)}
@@ -534,13 +564,15 @@ export function FileManager({ projectId, projectName, myRole, onDocCreated }: Pr
                               </Badge>
                             ) : null;
                           })()}
-                          <button
-                            onClick={e => { e.stopPropagation(); setRenameTarget({ type: "folder", id: folder.id, currentName: folder.name }); setRenameName(folder.name); }}
-                            className="ml-1.5 shrink-0 opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-opacity"
-                            title="Rename"
-                          >
-                            <Pencil className="h-3 w-3" />
-                          </button>
+                          {canEdit && (
+                            <button
+                              onClick={e => { e.stopPropagation(); setRenameTarget({ type: "folder", id: folder.id, currentName: folder.name }); setRenameName(folder.name); }}
+                              className="ml-1.5 shrink-0 opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-opacity"
+                              title="Rename"
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </button>
+                          )}
                         </div>
                       ),
                       onClick: () => enterFolder(folder),
@@ -549,13 +581,29 @@ export function FileManager({ projectId, projectName, myRole, onDocCreated }: Pr
                     { content: null },
                   ]}
                 />
-              );
+            );
+            if (!canEdit) return <div key={folder.id}>{folderRow}</div>;
+            return (
+              <ContextMenu key={folder.id}>
+                <ContextMenuTrigger asChild><div>{folderRow}</div></ContextMenuTrigger>
+                <ContextMenuContent>
+                  <ContextMenuItem onClick={() => { setRenameTarget({ type: "folder", id: folder.id, currentName: folder.name }); setRenameName(folder.name); }}>
+                    <Pencil />
+                    Rename
+                  </ContextMenuItem>
+                  <ContextMenuSeparator />
+                  <ContextMenuItem variant="destructive" onClick={() => setContextDeleteTarget({ type: "folder", id: folder.id, name: folder.name })}>
+                    <Trash2 />
+                    Delete
+                  </ContextMenuItem>
+                </ContextMenuContent>
+              </ContextMenu>
+            );
             })}
           {docRows.map(doc => {
             const navToDoc = () => navigate(`/projects/${projectId}/docs/${doc.id}`, { state: { folderPath: path } });
-            return (
+            const docRow = (
               <ResizableTableRow
-                key={doc.id}
                 columns={FILE_COLUMNS}
                 draggable
                   onDragStart={() => onDragStart("doc", doc.id)}
@@ -579,13 +627,15 @@ export function FileManager({ projectId, projectName, myRole, onDocCreated }: Pr
                         <div className="group flex items-center w-full min-w-0">
                           <FileText className="h-4 w-4 shrink-0 mr-2 text-muted-foreground/60" />
                           <span className="text-sm truncate">{doc.title || "Untitled"}</span>
-                          <button
-                            onClick={e => { e.stopPropagation(); setRenameTarget({ type: "doc", id: doc.id, currentName: doc.title || "Untitled" }); setRenameName(doc.title || "Untitled"); }}
-                            className="ml-1.5 shrink-0 opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-opacity"
-                            title="Rename"
-                          >
-                            <Pencil className="h-3 w-3" />
-                          </button>
+                          {canEdit && (
+                            <button
+                              onClick={e => { e.stopPropagation(); setRenameTarget({ type: "doc", id: doc.id, currentName: doc.title || "Untitled" }); setRenameName(doc.title || "Untitled"); }}
+                              className="ml-1.5 shrink-0 opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-opacity"
+                              title="Rename"
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </button>
+                          )}
                         </div>
                       ),
                       className: "px-3 cursor-pointer",
@@ -616,66 +666,125 @@ export function FileManager({ projectId, projectName, myRole, onDocCreated }: Pr
                     },
                   ]}
                 />
-              );
+            );
+            return (
+              <ContextMenu key={doc.id}>
+                <ContextMenuTrigger asChild><div>{docRow}</div></ContextMenuTrigger>
+                <ContextMenuContent>
+                  <ContextMenuItem onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/projects/${projectId}/docs/${doc.id}`); toast({ title: "Link copied" }); }}>
+                    <Link />
+                    Copy link
+                  </ContextMenuItem>
+                  <ContextMenuItem onClick={() => downloadDoc(doc)}>
+                    <Download />
+                    Download
+                  </ContextMenuItem>
+                  {canEdit && <ContextMenuSeparator />}
+                  {canEdit && (
+                    <ContextMenuItem onClick={() => { setRenameTarget({ type: "doc", id: doc.id, currentName: doc.title || "Untitled" }); setRenameName(doc.title || "Untitled"); }}>
+                      <Pencil />
+                      Rename
+                    </ContextMenuItem>
+                  )}
+                  {canEdit && (
+                    <ContextMenuItem variant="destructive" onClick={() => setContextDeleteTarget({ type: "doc", id: doc.id, name: doc.title || "Untitled" })}>
+                      <Trash2 />
+                      Delete
+                    </ContextMenuItem>
+                  )}
+                </ContextMenuContent>
+              </ContextMenu>
+            );
           })}
-          {fileRows.map(file => (
-            <ResizableTableRow
-              key={file.id}
-              columns={FILE_COLUMNS}
-              draggable
-              onDragStart={() => onDragStart("file", file.id)}
-              onDragEnd={onDragEnd}
-              checkboxCell={canEdit ? (
-                <Checkbox
-                  checked={selectedFiles.has(file.id)}
-                  onCheckedChange={checked => {
-                    setSelectedFiles(prev => {
-                      const next = new Set(prev);
-                      if (checked) next.add(file.id);
-                      else next.delete(file.id);
-                      return next;
-                    });
-                  }}
-                />
-              ) : undefined}
-              cells={[
-                {
-                  content: (
-                    <div className="group flex items-center w-full min-w-0">
-                      <FileIcon mimeType={file.mime_type} className="h-4 w-4 shrink-0 mr-2 text-muted-foreground/60" />
-                      <span className="text-sm truncate">{file.name}</span>
-                      <button
-                        onClick={e => { e.stopPropagation(); setRenameTarget({ type: "file", id: file.id, currentName: file.name }); setRenameName(file.name); }}
-                        className="ml-1.5 shrink-0 opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-opacity"
-                        title="Rename"
-                      >
-                        <Pencil className="h-3 w-3" />
-                      </button>
-                    </div>
-                  ),
-                  className: "px-3 cursor-pointer",
-                  onClick: () => openFile(file),
-                },
-                {
-                  content: <span className="text-sm text-muted-foreground">{formatBytes(file.size)}</span>,
-                },
-                {
-                  content: (
-                    <div className="flex items-center justify-between gap-2 w-full">
-                      <span className="text-sm text-muted-foreground truncate">{formatRelativeTime(file.created_at)}</span>
-                      <button
-                        onClick={e => { e.stopPropagation(); downloadFile(file); }}
-                        className="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
-                        title="Download"
-                      >
-                        <Download className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ),
-                },
-              ]}
-            />
-          ))}
+          {fileRows.map(file => {
+            const fileRow = (
+              <ResizableTableRow
+                columns={FILE_COLUMNS}
+                draggable
+                onDragStart={() => onDragStart("file", file.id)}
+                onDragEnd={onDragEnd}
+                checkboxCell={canEdit ? (
+                  <Checkbox
+                    checked={selectedFiles.has(file.id)}
+                    onCheckedChange={checked => {
+                      setSelectedFiles(prev => {
+                        const next = new Set(prev);
+                        if (checked) next.add(file.id);
+                        else next.delete(file.id);
+                        return next;
+                      });
+                    }}
+                  />
+                ) : undefined}
+                cells={[
+                  {
+                    content: (
+                      <div className="group flex items-center w-full min-w-0">
+                        <FileIcon mimeType={file.mime_type} className="h-4 w-4 shrink-0 mr-2 text-muted-foreground/60" />
+                        <span className="text-sm truncate">{file.name}</span>
+                        {canEdit && (
+                          <button
+                            onClick={e => { e.stopPropagation(); setRenameTarget({ type: "file", id: file.id, currentName: file.name }); setRenameName(file.name); }}
+                            className="ml-1.5 shrink-0 opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-opacity"
+                            title="Rename"
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </button>
+                        )}
+                      </div>
+                    ),
+                    className: "px-3 cursor-pointer",
+                    onClick: () => openFile(file),
+                  },
+                  {
+                    content: <span className="text-sm text-muted-foreground">{formatBytes(file.size)}</span>,
+                  },
+                  {
+                    content: (
+                      <div className="flex items-center justify-between gap-2 w-full">
+                        <span className="text-sm text-muted-foreground truncate">{formatRelativeTime(file.created_at)}</span>
+                        <button
+                          onClick={e => { e.stopPropagation(); downloadFile(file); }}
+                          className="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
+                          title="Download"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ),
+                  },
+                ]}
+              />
+            );
+            return (
+              <ContextMenu key={file.id}>
+                <ContextMenuTrigger asChild><div>{fileRow}</div></ContextMenuTrigger>
+                <ContextMenuContent>
+                  <ContextMenuItem onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/projects/${projectId}/files/${file.id}`); toast({ title: "Link copied" }); }}>
+                    <Link />
+                    Copy link
+                  </ContextMenuItem>
+                  <ContextMenuItem onClick={() => downloadFile(file)}>
+                    <Download />
+                    Download
+                  </ContextMenuItem>
+                  {canEdit && <ContextMenuSeparator />}
+                  {canEdit && (
+                    <ContextMenuItem onClick={() => { setRenameTarget({ type: "file", id: file.id, currentName: file.name }); setRenameName(file.name); }}>
+                      <Pencil />
+                      Rename
+                    </ContextMenuItem>
+                  )}
+                  {canEdit && (
+                    <ContextMenuItem variant="destructive" onClick={() => setContextDeleteTarget({ type: "file", id: file.id, name: file.name })}>
+                      <Trash2 />
+                      Delete
+                    </ContextMenuItem>
+                  )}
+                </ContextMenuContent>
+              </ContextMenu>
+            );
+          })}
         </>
       </ResizableTable>
     );
@@ -809,6 +918,28 @@ export function FileManager({ projectId, projectName, myRole, onDocCreated }: Pr
               onClick={handleDeleteConfirmed}
             >
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Context menu single-item delete confirmation */}
+      <AlertDialog open={!!contextDeleteTarget} onOpenChange={open => { if (!open) setContextDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete "{contextDeleteTarget?.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action is irreversible and all data will be lost.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleContextDelete}
+              disabled={contextDeleting}
+            >
+              {contextDeleting ? "Deleting…" : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

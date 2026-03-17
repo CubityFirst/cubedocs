@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { startAuthentication } from "@simplewebauthn/browser";
 import { Input } from "@/components/ui/input";
+import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { AuthForm } from "@/components/AuthForm";
@@ -185,20 +186,24 @@ export function LoginPage() {
           </button>
         }
       >
-        <div className="space-y-2">
-          <Label htmlFor="totp-code">Authenticator code</Label>
-          <Input
-            id="totp-code"
-            type="text"
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            placeholder="000000"
+        <div className="space-y-2 flex flex-col items-center">
+          <Label>Authenticator code</Label>
+          <InputOTP
             maxLength={6}
             value={totpCode}
-            onChange={e => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            onChange={setTotpCode}
+            autoComplete="one-time-code"
             autoFocus
-            required
-          />
+          >
+            <InputOTPGroup>
+              <InputOTPSlot index={0} />
+              <InputOTPSlot index={1} />
+              <InputOTPSlot index={2} />
+              <InputOTPSlot index={3} />
+              <InputOTPSlot index={4} />
+              <InputOTPSlot index={5} />
+            </InputOTPGroup>
+          </InputOTP>
           <p className="text-xs text-muted-foreground">Enter the 6-digit code from your authenticator app.</p>
         </div>
         <Turnstile onVerify={handleTurnstileVerify} onExpire={handleTurnstileExpire} />

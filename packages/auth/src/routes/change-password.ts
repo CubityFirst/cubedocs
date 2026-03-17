@@ -1,7 +1,7 @@
 import zxcvbn from "zxcvbn";
 import { okResponse, errorResponse, Errors } from "../lib";
 import { verifyPassword, hashPassword } from "../password";
-import { verifyTOTP } from "../totp";
+import { requireMFA } from "../mfa";
 import type { Env } from "../index";
 
 export async function handleChangePassword(request: Request, env: Env): Promise<Response> {
@@ -10,6 +10,8 @@ export async function handleChangePassword(request: Request, env: Env): Promise<
     currentPassword: string;
     newPassword: string;
     totpCode?: string;
+    challengeId?: string;
+    webauthnResponse?: unknown;
   }>();
 
   if (!body.userId || !body.currentPassword || !body.newPassword) {
@@ -21,23 +23,19 @@ export async function handleChangePassword(request: Request, env: Env): Promise<
   }
 
   const user = await env.DB.prepare(
-    "SELECT password_hash, totp_secret FROM users WHERE id = ?",
-  ).bind(body.userId).first<{ password_hash: string; totp_secret: string | null }>();
-
+    "SELECT password_hash FROM users WHERE id = ?",
+  ).bind(body.userId).first<{ password_hash: string }>();
   if (!user) return errorResponse(Errors.NOT_FOUND);
 
   const valid = await verifyPassword(body.currentPassword, user.password_hash);
   if (!valid) return errorResponse(Errors.UNAUTHORIZED);
 
-  if (user.totp_secret) {
-    if (!body.totpCode) {
-      return Response.json({ ok: false, error: "totp_required" }, { status: 200 });
-    }
-    const totpValid = await verifyTOTP(user.totp_secret, body.totpCode);
-    if (!totpValid) {
-      return Response.json({ ok: false, error: "invalid_totp" }, { status: 401 });
-    }
-  }
+  const mfaError = await requireMFA(env, body.userId, {
+    totpCode: body.totpCode,
+    challengeId: body.challengeId,
+    webauthnResponse: body.webauthnResponse,
+  });
+  if (mfaError) return mfaError;
 
   const newHash = await hashPassword(body.newPassword);
   await env.DB.prepare("UPDATE users SET password_hash = ? WHERE id = ?")

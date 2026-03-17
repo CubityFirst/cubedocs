@@ -1,14 +1,13 @@
 import { okResponse, errorResponse, Errors } from "../lib";
-import { verifyTOTP } from "../totp";
-import { verifyWebauthnAssertion } from "../webauthn";
+import { requireMFA } from "../mfa";
 import type { Env } from "../index";
 
 export async function handleTotpDisable(request: Request, env: Env): Promise<Response> {
   const body = await request.json<{
     userId: string;
-    code?: string;
+    totpCode?: string;
     challengeId?: string;
-    webauthnResponse?: Record<string, unknown>;
+    webauthnResponse?: unknown;
   }>();
   if (!body.userId) return errorResponse(Errors.BAD_REQUEST);
 
@@ -18,15 +17,12 @@ export async function handleTotpDisable(request: Request, env: Env): Promise<Res
   if (!user) return errorResponse(Errors.NOT_FOUND);
   if (!user.totp_secret) return errorResponse(Errors.BAD_REQUEST);
 
-  if (body.challengeId && body.webauthnResponse) {
-    // WebAuthn path — allow security key to confirm TOTP removal
-    const assertionError = await verifyWebauthnAssertion(env, body.userId, body.challengeId, body.webauthnResponse, "totp-disable");
-    if (assertionError) return assertionError;
-  } else {
-    if (!body.code) return errorResponse(Errors.BAD_REQUEST);
-    const valid = await verifyTOTP(user.totp_secret, body.code);
-    if (!valid) return errorResponse(Errors.UNAUTHORIZED);
-  }
+  const mfaError = await requireMFA(env, body.userId, {
+    totpCode: body.totpCode,
+    challengeId: body.challengeId,
+    webauthnResponse: body.webauthnResponse,
+  });
+  if (mfaError) return mfaError;
 
   await env.DB.prepare("UPDATE users SET totp_secret = NULL WHERE id = ?")
     .bind(body.userId)

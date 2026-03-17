@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { startAuthentication } from "@simplewebauthn/browser";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { getToken } from "@/lib/auth";
@@ -13,31 +13,29 @@ export type TwoFAVerification = {
   webauthnResponse?: unknown;
 };
 
-// Return undefined on success, an error message string on failure (keeps TOTP dialog open).
+// Return undefined on success, an error message string on failure (keeps dialog open).
 export type TwoFAAction = (v: TwoFAVerification) => Promise<string | undefined>;
 
-type DialogMode = "totp" | "webauthn";
+type DialogMode = "pick" | "totp" | "webauthn";
 
 /**
- * Reusable 2FA gate hook.
+ * Reusable MFA gate hook.
  *
- * - Both enabled      → dialog defaults to TOTP with option to switch to security key
- * - totpEnabled only  → TOTP dialog
- * - webauthnEnabled only → triggers WebAuthn authentication ceremony (no dialog)
- * - neither           → calls action immediately with no verification
- *
- * `runWithTwoFA(action)` returns a Promise that resolves when the action
- * completes OR when the user cancels (action is NOT called on cancel).
+ * - Both totp + webauthn → shows method picker dialog
+ * - totp only            → TOTP dialog
+ * - webauthn only        → triggers WebAuthn ceremony directly
+ * - neither              → calls action immediately with no verification
  */
 export function use2FA({
-  totpEnabled,
-  webauthnEnabled,
+  totp,
+  webauthn,
 }: {
-  totpEnabled: boolean;
-  webauthnEnabled: boolean;
+  totp: boolean;
+  webauthn: boolean;
 }) {
+  const hasMFA = totp || webauthn;
   const [open, setOpen] = useState(false);
-  const [mode, setMode] = useState<DialogMode>("totp");
+  const [mode, setMode] = useState<DialogMode>("pick");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [fieldError, setFieldError] = useState<string | null>(null);
@@ -99,7 +97,7 @@ export function use2FA({
     }
   }
 
-  // When mode switches to webauthn inside the dialog, auto-trigger the ceremony
+  // Auto-trigger WebAuthn ceremony when mode switches to webauthn
   useEffect(() => {
     if (open && mode === "webauthn") {
       runWebauthnInDialog();
@@ -107,20 +105,25 @@ export function use2FA({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, mode]);
 
+  function initialMode(): DialogMode {
+    if (totp && webauthn) return "pick";
+    if (totp) return "totp";
+    return "webauthn";
+  }
+
   async function runWithTwoFA(action: TwoFAAction): Promise<void> {
-    if (totpEnabled || webauthnEnabled) {
+    if (hasMFA) {
       return new Promise<void>((resolve) => {
         pendingRef.current = { action, resolve };
         setCode("");
         setFieldError(null);
         setWebauthnStatus("waiting");
-        // Default: TOTP if available, otherwise webauthn
-        setMode(totpEnabled ? "totp" : "webauthn");
+        setMode(initialMode());
         setOpen(true);
       });
     }
 
-    // No 2FA set up — proceed directly
+    // No MFA set up — proceed directly
     await action({});
   }
 
@@ -132,18 +135,6 @@ export function use2FA({
       pendingRef.current.resolve();
       pendingRef.current = null;
     }
-  }
-
-  function switchToWebauthn() {
-    setFieldError(null);
-    setWebauthnStatus("waiting");
-    setMode("webauthn");
-  }
-
-  function switchToTotp() {
-    setFieldError(null);
-    setCode("");
-    setMode("totp");
   }
 
   async function handleTotpSubmit(e: React.FormEvent) {
@@ -168,35 +159,51 @@ export function use2FA({
     <Dialog open={open} onOpenChange={o => { if (!o) closeDialog(); }}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>
-            {mode === "totp" ? "Confirm with authenticator" : "Confirm with security key"}
-          </DialogTitle>
+          <DialogTitle>Confirm identity</DialogTitle>
         </DialogHeader>
 
-        {mode === "totp" ? (
-          <form id="2fa-confirm-form" onSubmit={handleTotpSubmit} className="py-2">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="2fa-code">Enter the 6-digit code from your app</Label>
-              <Input
-                id="2fa-code"
-                value={code}
-                onChange={e => { setCode(e.target.value.replace(/\D/g, "").slice(0, 6)); setFieldError(null); }}
-                placeholder="000000"
-                inputMode="numeric"
-                autoComplete="one-time-code"
+        {mode === "pick" ? (
+          <div className="py-4 flex flex-col gap-3">
+            {totp && (
+              <Button
+                variant="outline"
+                className="w-full justify-start h-12 text-base"
+                onClick={() => setMode("totp")}
+              >
+                Authenticator app
+              </Button>
+            )}
+            {webauthn && (
+              <Button
+                variant="outline"
+                className="w-full justify-start h-12 text-base"
+                onClick={() => setMode("webauthn")}
+              >
+                Security key
+              </Button>
+            )}
+          </div>
+        ) : mode === "totp" ? (
+          <form id="2fa-confirm-form" onSubmit={handleTotpSubmit} className="pt-6 pb-4">
+            <div className="flex flex-col gap-3 items-center">
+              <Label>Enter the 6-digit code from your app</Label>
+              <InputOTP
                 maxLength={6}
+                value={code}
+                onChange={v => { setCode(v); setFieldError(null); }}
+                autoComplete="one-time-code"
                 autoFocus
-              />
+              >
+                <InputOTPGroup>
+                  <InputOTPSlot index={0} />
+                  <InputOTPSlot index={1} />
+                  <InputOTPSlot index={2} />
+                  <InputOTPSlot index={3} />
+                  <InputOTPSlot index={4} />
+                  <InputOTPSlot index={5} />
+                </InputOTPGroup>
+              </InputOTP>
               {fieldError && <p className="text-xs text-destructive">{fieldError}</p>}
-              {webauthnEnabled && (
-                <button
-                  type="button"
-                  className="text-xs text-primary underline-offset-4 hover:underline text-left mt-1"
-                  onClick={switchToWebauthn}
-                >
-                  Use a security key instead
-                </button>
-              )}
             </div>
           </form>
         ) : (
@@ -218,19 +225,19 @@ export function use2FA({
                 </Button>
               </>
             )}
-            {totpEnabled && (
-              <button
-                type="button"
-                className="text-xs text-primary underline-offset-4 hover:underline text-left"
-                onClick={switchToTotp}
-              >
-                Use authenticator app instead
-              </button>
-            )}
           </div>
         )}
 
         <DialogFooter>
+          {mode !== "pick" && totp && webauthn && (
+            <button
+              type="button"
+              className="text-xs text-primary underline-offset-4 hover:underline mr-auto"
+              onClick={() => { setFieldError(null); setCode(""); setMode(mode === "totp" ? "webauthn" : "totp"); }}
+            >
+              {mode === "totp" ? "Use a security key instead" : "Use authenticator app instead"}
+            </button>
+          )}
           <Button variant="outline" type="button" onClick={closeDialog}>
             Cancel
           </Button>

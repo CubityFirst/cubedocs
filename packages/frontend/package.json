@@ -25,6 +25,7 @@
     "@tailwindcss/typography": "^0.5.19",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
+    "input-otp": "^1.4.2",
     "lucide-react": "^0.400.0",
     "radix-ui": "^1.4.3",
     "react": "^19.0.0",
