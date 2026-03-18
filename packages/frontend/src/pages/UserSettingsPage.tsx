@@ -692,8 +692,7 @@ export function UserSettingsPage() {
                       !currentPassword ||
                       !newPassword ||
                       newPassword !== confirmPassword ||
-                      zxcvbn(newPassword).score < 3 ||
-                      (passwordTotpRequired && passwordTotpCode.length !== 6)
+                      zxcvbn(newPassword).score < 3
                     }
                   >
                     {passwordSaving ? "Saving…" : "Change password"}

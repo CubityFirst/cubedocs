@@ -249,7 +249,7 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
 
   // 2FA status
   const [twoFAStatus, setTwoFAStatus] = useState({ totpEnabled: false, webauthnEnabled: false });
-  const { runWithTwoFA, twoFADialog } = use2FA(twoFAStatus);
+  const { runWithTwoFA, twoFADialog } = use2FA({ totp: twoFAStatus.totpEnabled, webauthn: twoFAStatus.webauthnEnabled });
 
   useEffect(() => {
     const token = getToken();
