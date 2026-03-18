@@ -71,7 +71,7 @@ export async function handleProjects(
     if (role === null) return errorResponse(Errors.NOT_FOUND);
     if (ROLE_RANK[role] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
 
-    const body = await request.json<{ name?: string; description?: string | null; publishedAt?: string | null; vaultEnabled?: boolean; changelogMode?: string; vanitySlug?: string | null; aiEnabled?: boolean }>();
+    const body = await request.json<{ name?: string; description?: string | null; publishedAt?: string | null; vaultEnabled?: boolean; changelogMode?: string; vanitySlug?: string | null; aiEnabled?: boolean; homeDocEnabled?: boolean }>();
     if (body.name !== undefined && !body.name.trim()) return errorResponse(Errors.BAD_REQUEST);
     if (body.changelogMode !== undefined && !["off", "on", "enforced"].includes(body.changelogMode)) return errorResponse(Errors.BAD_REQUEST);
     if (body.vanitySlug !== undefined && body.vanitySlug !== null) {
@@ -93,6 +93,22 @@ export async function handleProjects(
     if (body.changelogMode !== undefined) { fields.push("changelog_mode = ?"); values.push(body.changelogMode); }
     if (body.vanitySlug !== undefined) { fields.push("vanity_slug = ?"); values.push(body.vanitySlug ?? null); }
     if (body.aiEnabled !== undefined) { fields.push("ai_enabled = ?"); values.push(body.aiEnabled ? 1 : 0); }
+    if (body.homeDocEnabled === true) {
+      const proj = await env.DB.prepare("SELECT home_doc_id FROM projects WHERE id = ?").bind(projectId).first<{ home_doc_id: string | null }>();
+      if (!proj?.home_doc_id) {
+        const docId = crypto.randomUUID();
+        const now = new Date().toISOString();
+        await env.ASSETS.put(`${projectId}/${docId}`, "");
+        await env.DB.prepare(
+          "INSERT INTO docs (id, title, project_id, author_id, folder_id, published_at, created_at, updated_at) VALUES (?, ?, ?, ?, NULL, NULL, ?, ?)",
+        ).bind(docId, "Home", projectId, user.userId, now, now).run();
+        fields.push("home_doc_id = ?");
+        values.push(docId);
+      }
+    } else if (body.homeDocEnabled === false) {
+      fields.push("home_doc_id = ?");
+      values.push(null);
+    }
     if (fields.length === 0) return errorResponse(Errors.BAD_REQUEST);
 
     values.push(projectId);

@@ -78,12 +78,14 @@ export async function handleDocs(
     const docWithAuthor = `
       SELECT d.id, d.title, d.folder_id, d.author_id, d.created_at, d.updated_at,
         COALESCE(pm.name, d.author_id) AS author_name,
-        pm.role AS author_role
+        pm.role AS author_role,
+        CASE WHEN p.home_doc_id = d.id THEN 1 ELSE 0 END AS is_home
       FROM docs d
       LEFT JOIN project_members pm ON pm.project_id = d.project_id AND pm.user_id = d.author_id
+      LEFT JOIN projects p ON p.id = d.project_id
     `;
 
-    type DocWithAuthor = Doc & { author_name: string; author_role: string | null };
+    type DocWithAuthor = Doc & { author_name: string; author_role: string | null; is_home: number };
 
     if (q) {
       const rootFolderId = params.get("rootFolderId");
@@ -265,6 +267,9 @@ export async function handleDocs(
     const caller = await getCallerInfo(env.DB, doc.project_id, user.userId);
     if (caller === null) return errorResponse(Errors.FORBIDDEN);
     if (ROLE_RANK[caller.role] < ROLE_RANK["editor"]) return errorResponse(Errors.FORBIDDEN);
+
+    const proj = await env.DB.prepare("SELECT home_doc_id FROM projects WHERE id = ?").bind(doc.project_id).first<{ home_doc_id: string | null }>();
+    if (proj?.home_doc_id === docId) return errorResponse(Errors.FORBIDDEN);
 
     const revisions = await env.DB.prepare("SELECT id FROM asset_revisions WHERE asset_type = 'doc' AND asset_id = ?")
       .bind(docId).all<{ id: string }>();

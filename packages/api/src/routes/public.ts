@@ -6,6 +6,8 @@ interface PublicProject {
   name: string;
   description: string | null;
   published_at: string | null;
+  vanity_slug: string | null;
+  home_doc_id: string | null;
 }
 
 interface PublicDoc {
@@ -13,6 +15,7 @@ interface PublicDoc {
   title: string;
   folder_id: string | null;
   published_at: string | null;
+  is_home: number;
 }
 
 interface PublicFolder {
@@ -42,13 +45,13 @@ export async function handlePublic(
   if (parts[0] === "projects" && parts[1]) {
     const projectId = parts[1];
     const project = await env.DB.prepare(
-      "SELECT id, name, description, published_at FROM projects WHERE (id = ? OR vanity_slug = ?) AND published_at IS NOT NULL",
+      "SELECT id, name, description, published_at, vanity_slug, home_doc_id FROM projects WHERE (id = ? OR vanity_slug = ?) AND published_at IS NOT NULL",
     ).bind(projectId, projectId).first<PublicProject>();
     if (!project) return errorResponse(Errors.NOT_FOUND);
 
     const docs = await env.DB.prepare(
-      "SELECT id, title, folder_id FROM docs WHERE project_id = ? ORDER BY created_at ASC",
-    ).bind(project.id).all<Pick<PublicDoc, "id" | "title" | "folder_id">>();
+      "SELECT id, title, folder_id, CASE WHEN ? = id THEN 1 ELSE 0 END AS is_home FROM docs WHERE project_id = ? ORDER BY created_at ASC",
+    ).bind(project.home_doc_id ?? "", project.id).all<Pick<PublicDoc, "id" | "title" | "folder_id" | "is_home">>();
 
     const folders = await env.DB.prepare(
       "SELECT id, name, parent_id FROM folders WHERE project_id = ? ORDER BY name ASC",
@@ -67,8 +70,8 @@ export async function handlePublic(
     const docId = parts[2];
 
     const project = await env.DB.prepare(
-      "SELECT id, name, published_at FROM projects WHERE id = ? OR vanity_slug = ?",
-    ).bind(projectIdOrSlug, projectIdOrSlug).first<Pick<PublicProject, "id" | "name" | "published_at">>();
+      "SELECT id, name, published_at, vanity_slug, home_doc_id FROM projects WHERE id = ? OR vanity_slug = ?",
+    ).bind(projectIdOrSlug, projectIdOrSlug).first<Pick<PublicProject, "id" | "name" | "published_at" | "vanity_slug" | "home_doc_id">>();
     if (!project) return errorResponse(Errors.NOT_FOUND);
     const projectId = project.id;
 
@@ -89,8 +92,8 @@ export async function handlePublic(
     let files: PublicFile[] | null = null;
     if (sitePublished) {
       const docsResult = await env.DB.prepare(
-        "SELECT id, title, folder_id FROM docs WHERE project_id = ? ORDER BY created_at ASC",
-      ).bind(projectId).all<Pick<PublicDoc, "id" | "title" | "folder_id">>();
+        "SELECT id, title, folder_id, CASE WHEN ? = id THEN 1 ELSE 0 END AS is_home FROM docs WHERE project_id = ? ORDER BY created_at ASC",
+      ).bind(project.home_doc_id ?? "", projectId).all<Pick<PublicDoc, "id" | "title" | "folder_id" | "is_home">>();
       docs = docsResult.results;
 
       const foldersResult = await env.DB.prepare(
@@ -107,7 +110,7 @@ export async function handlePublic(
     return okResponse({
       doc: { id: doc.id, title: doc.title, content, showLastUpdated: doc.show_last_updated !== 0, updatedAt: doc.updated_at },
       sitePublished,
-      project: { id: project.id, name: project.name },
+      project: { id: project.id, name: project.name, vanity_slug: project.vanity_slug ?? null, home_doc_id: project.home_doc_id ?? null },
       docs,
       folders,
       files,

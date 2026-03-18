@@ -137,6 +137,10 @@ export function DocsLayout() {
           navigate("/login", { replace: true, state: { from: location.pathname } });
           return;
         }
+        if (status === 403 || status === 404) {
+          navigate("/dashboard", { replace: true });
+          return;
+        }
         if (json.ok && json.data) setDocs(json.data);
       })
       .catch(() => {});
@@ -210,7 +214,7 @@ export function DocsLayout() {
   };
 
   return (
-    <div className="flex h-screen bg-background text-foreground">
+    <div className="flex h-screen overflow-hidden bg-background text-foreground">
       {/* Sidebar */}
       <div className="relative shrink-0">
       <aside className={cn("flex h-full flex-col border-r border-border transition-[width] duration-200 overflow-hidden", sidebarOpen ? "w-64" : "w-0")}>
@@ -408,7 +412,7 @@ export function DocsLayout() {
             })}
           </div>
         )}
-        <div className="flex-1 overflow-y-auto min-h-0">
+        <div className="flex-1 overflow-y-auto overscroll-contain min-h-0">
           <Outlet context={outletContext} />
         </div>
       </main>

@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { getToken } from "@/lib/auth";
 import { Badge } from "@/components/ui/badge";
-import { BookOpen, FileText, Folder, ChevronLeft, ChevronRight, Search, X, Image, FileCode, FileArchive, File, Download, ImageOff } from "lucide-react";
+import { BookOpen, FileText, Folder, House, ChevronLeft, ChevronRight, Search, X, Image, FileCode, FileArchive, File, Download, ImageOff } from "lucide-react";
 
 function toId(text: string): string {
   return text.toLowerCase().replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-");
@@ -63,7 +63,7 @@ function makePublicImage(projectId: string) {
         <a href="https://docs.cubityfir.st/s/e6d11927-cc6b-48d1-8577-af8b08019d61/258a2eb4-edac-4c86-91aa-afdc46c29c00" target="_blank" rel="noopener noreferrer" aria-label="Image unavailable - learn more">
           <Badge variant="destructive" className="inline-flex items-center gap-1.5 font-normal cursor-pointer" title={alt}>
             <ImageOff className="h-3.5 w-3.5 shrink-0" />
-            There was meant to be an image here, but it either doesn&apos;t exist, or you do not have permission to view it. Click here to find out more.
+            Image unavailable: Learn more about missing images and permissions.
           </Badge>
         </a>
       );
@@ -102,6 +102,7 @@ interface NavDoc {
   id: string;
   title: string;
   folder_id: string | null;
+  is_home?: number;
 }
 
 interface NavFolder {
@@ -121,7 +122,7 @@ interface NavFile {
 interface PublicData {
   doc: { id: string; title: string; content: string; showLastUpdated: boolean; updatedAt: string };
   sitePublished: boolean;
-  project: { id: string; name: string };
+  project: { id: string; name: string; vanity_slug: string | null; home_doc_id: string | null };
   docs: NavDoc[] | null;
   folders: NavFolder[] | null;
   files: NavFile[] | null;
@@ -266,7 +267,10 @@ function NavTree({
             {depth > 0 && (
               <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 h-px w-3 bg-border" />
             )}
-            <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            {doc.is_home === 1
+              ? <House className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              : <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            }
             <span className="truncate">{doc.title}</span>
           </NavLink>
         );
@@ -378,9 +382,12 @@ export function PublicDocPage() {
     if (!docId) {
       fetch(`/api/public/projects/${projectId}`)
         .then(r => r.json())
-        .then((json: { ok: boolean; data?: { id: string; docs: NavDoc[] } }) => {
+        .then((json: { ok: boolean; data?: { id: string; vanity_slug?: string | null; home_doc_id?: string | null; docs: NavDoc[] } }) => {
           if (json.ok && json.data && json.data.docs.length > 0) {
-            navigate(`/s/${projectId}/${json.data.docs[0].id}`, { replace: true });
+            const slug = json.data.vanity_slug ?? projectId;
+            const homeDoc = json.data.home_doc_id ? json.data.docs.find(d => d.id === json.data!.home_doc_id) : null;
+            const target = homeDoc ?? json.data.docs[0];
+            navigate(`/s/${slug}/${target.id}`, { replace: true });
           } else {
             setNotFound(true);
             setLoading(false);
@@ -405,6 +412,15 @@ export function PublicDocPage() {
       .catch(() => setNotFound(true))
       .finally(() => setLoading(false));
   }, [projectId, docId, navigate]);
+
+  // Redirect raw UUID to vanity slug once we know it
+  useEffect(() => {
+    if (!data || !docId) return;
+    const slug = data.project.vanity_slug;
+    if (slug && projectId !== slug) {
+      navigate(`/s/${slug}/${docId}`, { replace: true });
+    }
+  }, [data, projectId, docId, navigate]);
 
   if (loading) {
     return (
@@ -440,7 +456,7 @@ export function PublicDocPage() {
           <div className="flex h-14 items-center gap-2 px-4">
             {hasToken && (
               <button
-                onClick={() => navigate(`/projects/${projectId}`)}
+                onClick={() => navigate(`/projects/${data.project.id}`)}
                 className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                 title="Back to project"
               >
@@ -479,7 +495,7 @@ export function PublicDocPage() {
                   filteredDocs.map(doc => (
                     <NavLink
                       key={doc.id}
-                      to={`/s/${data.project.id}/${doc.id}`}
+                      to={`/s/${data.project.vanity_slug ?? data.project.id}/${doc.id}`}
                       onClick={() => setSelectedFile(null)}
                       className={({ isActive }) =>
                         `flex items-center gap-2 rounded-md py-1.5 pl-2 pr-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground ${
@@ -487,22 +503,46 @@ export function PublicDocPage() {
                         }`
                       }
                     >
-                      <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      {doc.is_home === 1
+                        ? <House className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        : <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      }
                       <span className="truncate">{doc.title}</span>
                     </NavLink>
                   ))
                 )
-              ) : (
-                <NavTree
-                  projectId={data.project.id}
-                  folders={data.folders ?? []}
-                  docs={data.docs!}
-                  files={data.files ?? []}
-                  onFileClick={setSelectedFile}
-                  onDocClick={() => setSelectedFile(null)}
-                  selectedFileId={selectedFile?.id ?? null}
-                />
-              )}
+              ) : (() => {
+                const homeDoc = data.docs!.find(d => d.is_home === 1);
+                const restDocs = homeDoc ? data.docs!.filter(d => d.id !== homeDoc.id) : data.docs!;
+                const slug = data.project.vanity_slug ?? data.project.id;
+                return (
+                  <>
+                    {homeDoc && (
+                      <NavLink
+                        to={`/s/${slug}/${homeDoc.id}`}
+                        onClick={() => setSelectedFile(null)}
+                        className={({ isActive }) =>
+                          `flex items-center gap-2 rounded-md py-1.5 pl-2 pr-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground ${
+                            isActive ? "bg-accent text-accent-foreground font-medium" : "text-foreground/80"
+                          }`
+                        }
+                      >
+                        <House className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <span className="truncate">{homeDoc.title}</span>
+                      </NavLink>
+                    )}
+                    <NavTree
+                      projectId={slug}
+                      folders={data.folders ?? []}
+                      docs={restDocs}
+                      files={data.files ?? []}
+                      onFileClick={setSelectedFile}
+                      onDocClick={() => setSelectedFile(null)}
+                      selectedFileId={selectedFile?.id ?? null}
+                    />
+                  </>
+                );
+              })()}
             </nav>
           </ScrollArea>
         </aside>

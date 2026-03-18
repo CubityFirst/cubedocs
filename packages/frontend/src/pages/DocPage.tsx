@@ -680,7 +680,7 @@ const [editorScrollTop, setEditorScrollTop] = useState(0);
                           </p>
                         </div>
                         <div className="flex shrink-0 items-center gap-1">
-                          {doc.published_at && (
+                          {(doc.published_at || projectPublishedAt) && (
                             <Button
                               variant="ghost"
                               size="icon"

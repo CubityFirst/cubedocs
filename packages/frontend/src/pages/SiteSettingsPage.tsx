@@ -36,7 +36,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { getToken } from "@/lib/auth";
 import { Switch } from "@/components/ui/switch";
-import { Globe, Link, Lock } from "lucide-react";
+import { Globe, House, Link, Lock } from "lucide-react";
 
 type Role = "viewer" | "editor" | "admin" | "owner";
 
@@ -69,6 +69,7 @@ interface Project {
   vanity_slug: string | null;
   features: number;
   ai_enabled: number;
+  home_doc_id: string | null;
 }
 
 interface Member {
@@ -118,6 +119,7 @@ export function SiteSettingsPage() {
   const [togglingVault, setTogglingVault] = useState(false);
   const [togglingChangelog, setTogglingChangelog] = useState(false);
   const [togglingAi, setTogglingAi] = useState(false);
+  const [togglingHomeDoc, setTogglingHomeDoc] = useState(false);
 
   const [vanitySlug, setVanitySlug] = useState("");
   const [savingSlug, setSavingSlug] = useState(false);
@@ -347,6 +349,29 @@ export function SiteSettingsPage() {
       toast({ title: "Could not connect to the server.", variant: "destructive" });
     } finally {
       setTogglingAi(false);
+    }
+  }
+
+  async function handleToggleHomeDoc(enabled: boolean) {
+    if (!projectId || !project) return;
+    setTogglingHomeDoc(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ homeDocEnabled: enabled }),
+      });
+      const json = await res.json() as { ok: boolean; data?: Project };
+      if (json.ok && json.data) {
+        setProject(json.data);
+        toast({ title: enabled ? "Home document created." : "Home document removed." });
+      } else {
+        toast({ title: "Failed to update home document setting.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Could not connect to the server.", variant: "destructive" });
+    } finally {
+      setTogglingHomeDoc(false);
     }
   }
 
@@ -652,6 +677,22 @@ export function SiteSettingsPage() {
                   <SelectItem value="enforced">Enforced</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="flex items-center justify-between rounded-md border border-border px-4 py-3">
+              <div className="flex flex-col gap-0.5">
+                <p className="text-sm font-medium flex items-center gap-2">
+                  <House className="h-4 w-4 text-muted-foreground" />
+                  Home Document
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Pin a home document that visitors land on when the site URL has no document specified.
+                </p>
+              </div>
+              <Switch
+                checked={!!project.home_doc_id}
+                onCheckedChange={handleToggleHomeDoc}
+                disabled={togglingHomeDoc}
+              />
             </div>
           </div>
         </>

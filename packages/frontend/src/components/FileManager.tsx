@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useLocation, useOutletContext } from "react-router-dom";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
-import { Folder, FileText, Plus, FolderPlus, Search, X, Download, Upload, Image, FileCode, FileArchive, File, Trash2, Pencil, Link } from "lucide-react";
+import { Folder, FileText, House, Plus, FolderPlus, Search, X, Download, Upload, Image, FileCode, FileArchive, File, Trash2, Pencil, Link } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -30,6 +30,7 @@ interface DocItem {
   updated_at: string;
   author_name?: string;
   author_role?: Role | null;
+  is_home?: number;
 }
 
 interface FileItem {
@@ -38,7 +39,10 @@ interface FileItem {
   mime_type: string;
   size: number;
   folder_id: string | null;
+  uploaded_by: string;
   created_at: string;
+  uploader_name?: string;
+  uploader_role?: Role | null;
 }
 
 function FileIcon({ mimeType, className }: { mimeType: string; className?: string }) {
@@ -516,6 +520,7 @@ export function FileManager({ projectId, projectName, myRole, onDocCreated }: Pr
   const FILE_COLUMNS = [
     { label: "Name", defaultSize: 0, minWidth: 200, maxWidth: 500 },
     { label: "Created by", defaultSize: 0, minWidth: 150, maxWidth: 400 },
+    { label: "Size", defaultSize: 15, minSize: 8 },
     { label: "Last updated", defaultSize: 25, minSize: 12 },
   ];
 
@@ -579,6 +584,7 @@ export function FileManager({ projectId, projectName, myRole, onDocCreated }: Pr
                     },
                     { content: null },
                     { content: null },
+                    { content: null },
                   ]}
                 />
             );
@@ -601,6 +607,7 @@ export function FileManager({ projectId, projectName, myRole, onDocCreated }: Pr
             );
             })}
           {docRows.map(doc => {
+            const isHome = doc.is_home === 1;
             const navToDoc = () => navigate(`/projects/${projectId}/docs/${doc.id}`, { state: { folderPath: path } });
             const docRow = (
               <ResizableTableRow
@@ -608,7 +615,7 @@ export function FileManager({ projectId, projectName, myRole, onDocCreated }: Pr
                 draggable
                   onDragStart={() => onDragStart("doc", doc.id)}
                   onDragEnd={onDragEnd}
-                  checkboxCell={canEdit ? (
+                  checkboxCell={!canEdit ? undefined : isHome ? null : (
                     <Checkbox
                       checked={selectedDocs.has(doc.id)}
                       onCheckedChange={checked => {
@@ -620,12 +627,15 @@ export function FileManager({ projectId, projectName, myRole, onDocCreated }: Pr
                         });
                       }}
                     />
-                  ) : undefined}
+                  )}
                   cells={[
                     {
                       content: (
                         <div className="group flex items-center w-full min-w-0">
-                          <FileText className="h-4 w-4 shrink-0 mr-2 text-muted-foreground/60" />
+                          {isHome
+                            ? <House className="h-4 w-4 shrink-0 mr-2 text-primary/70" />
+                            : <FileText className="h-4 w-4 shrink-0 mr-2 text-muted-foreground/60" />
+                          }
                           <span className="text-sm truncate">{doc.title || "Untitled"}</span>
                           {canEdit && (
                             <button
@@ -650,6 +660,7 @@ export function FileManager({ projectId, projectName, myRole, onDocCreated }: Pr
                       ),
                       onClick: navToDoc,
                     },
+                    { content: null },
                     {
                       content: (
                         <div className="flex items-center justify-between gap-2 w-full">
@@ -686,7 +697,7 @@ export function FileManager({ projectId, projectName, myRole, onDocCreated }: Pr
                       Rename
                     </ContextMenuItem>
                   )}
-                  {canEdit && (
+                  {canEdit && !isHome && (
                     <ContextMenuItem variant="destructive" onClick={() => setContextDeleteTarget({ type: "doc", id: doc.id, name: doc.title || "Untitled" })}>
                       <Trash2 />
                       Delete
@@ -735,6 +746,14 @@ export function FileManager({ projectId, projectName, myRole, onDocCreated }: Pr
                     ),
                     className: "px-3 cursor-pointer",
                     onClick: () => openFile(file),
+                  },
+                  {
+                    content: (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground truncate">
+                        {file.uploader_name ?? ""}
+                        {file.uploader_role && <RoleBadge role={file.uploader_role} />}
+                      </div>
+                    ),
                   },
                   {
                     content: <span className="text-sm text-muted-foreground">{formatBytes(file.size)}</span>,

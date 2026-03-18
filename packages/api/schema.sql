@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS projects (
   published_at    TEXT,
   vault_enabled   INTEGER NOT NULL DEFAULT 0,
   changelog_mode  TEXT NOT NULL DEFAULT 'off' CHECK(changelog_mode IN ('off', 'on', 'enforced')),
+  home_doc_id     TEXT,
   created_at      TEXT NOT NULL
 );
 

@@ -18,6 +18,8 @@ export interface FileRecord {
   folder_id: string | null;
   uploaded_by: string;
   created_at: string;
+  uploader_name?: string;
+  uploader_role?: string;
 }
 
 export async function handleFiles(
@@ -76,13 +78,20 @@ export async function handleFiles(
     if (role === null) return errorResponse(Errors.FORBIDDEN);
 
     const folderId = url.searchParams.get("folderId");
+    const baseSelect = `
+      SELECT f.id, f.name, f.mime_type, f.size, f.project_id, f.folder_id, f.uploaded_by, f.created_at,
+        COALESCE(pm.name, f.uploaded_by) AS uploader_name,
+        pm.role AS uploader_role
+      FROM files f
+      LEFT JOIN project_members pm ON pm.project_id = f.project_id AND pm.user_id = f.uploaded_by
+    `;
     const rows = folderId
-      ? await env.DB.prepare("SELECT * FROM files WHERE project_id = ? AND folder_id = ? ORDER BY name ASC")
+      ? await env.DB.prepare(`${baseSelect} WHERE f.project_id = ? AND f.folder_id = ? ORDER BY f.name ASC`)
           .bind(projectId, folderId).all<FileRecord>()
       : url.searchParams.has("folderId")
-        ? await env.DB.prepare("SELECT * FROM files WHERE project_id = ? AND folder_id IS NULL ORDER BY name ASC")
+        ? await env.DB.prepare(`${baseSelect} WHERE f.project_id = ? AND f.folder_id IS NULL ORDER BY f.name ASC`)
             .bind(projectId).all<FileRecord>()
-        : await env.DB.prepare("SELECT * FROM files WHERE project_id = ? ORDER BY created_at DESC")
+        : await env.DB.prepare(`${baseSelect} WHERE f.project_id = ? ORDER BY f.created_at DESC`)
             .bind(projectId).all<FileRecord>();
 
     return okResponse(rows.results);
