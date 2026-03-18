@@ -120,7 +120,7 @@ interface NavFile {
 }
 
 interface PublicData {
-  doc: { id: string; title: string; content: string; showLastUpdated: boolean; updatedAt: string };
+  doc: { id: string; title: string; content: string; showHeading: boolean; showLastUpdated: boolean; updatedAt: string };
   sitePublished: boolean;
   project: { id: string; name: string; vanity_slug: string | null; home_doc_id: string | null };
   docs: NavDoc[] | null;
@@ -565,7 +565,7 @@ export function PublicDocPage() {
               <div className="flex-1 min-w-0 px-6 py-10">
                 <div className="mx-auto max-w-3xl">
                   <article className="prose prose-neutral dark:prose-invert max-w-none">
-                    <h1>{data.doc.title}</h1>
+                    {data.doc.showHeading && <h1>{data.doc.title}</h1>}
                     {data.doc.showLastUpdated && (
                       <p className="not-prose -mt-2 mb-6 text-sm text-muted-foreground">
                         Last updated {new Date(data.doc.updatedAt).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}

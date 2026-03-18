@@ -76,8 +76,8 @@ export async function handlePublic(
     const projectId = project.id;
 
     const doc = await env.DB.prepare(
-      "SELECT id, title, published_at, show_last_updated, updated_at FROM docs WHERE id = ? AND project_id = ?",
-    ).bind(docId, projectId).first<PublicDoc & { show_last_updated: number; updated_at: string }>();
+      "SELECT id, title, published_at, show_last_updated, show_heading, updated_at FROM docs WHERE id = ? AND project_id = ?",
+    ).bind(docId, projectId).first<PublicDoc & { show_last_updated: number; show_heading: number; updated_at: string }>();
     if (!doc) return errorResponse(Errors.NOT_FOUND);
 
     const sitePublished = project.published_at !== null;
@@ -108,7 +108,7 @@ export async function handlePublic(
     }
 
     return okResponse({
-      doc: { id: doc.id, title: doc.title, content, showLastUpdated: doc.show_last_updated !== 0, updatedAt: doc.updated_at },
+      doc: { id: doc.id, title: doc.title, content, showHeading: doc.show_heading !== 0, showLastUpdated: doc.show_last_updated !== 0, updatedAt: doc.updated_at },
       sitePublished,
       project: { id: project.id, name: project.name, vanity_slug: project.vanity_slug ?? null, home_doc_id: project.home_doc_id ?? null },
       docs,
