@@ -1,0 +1,41 @@
+## Monorepo Structure
+
+pnpm + Turbo monorepo 
+
+- `packages/frontend` — React 19 SPA (Vite, Tailwind CSS 4, shadcn/ui)
+- `packages/api` — Core Cloudflare Worker (projects, docs, files, passwords)
+- `packages/auth` — Auth Cloudflare Worker (login, register, TOTP, WebAuthn)
+
+### API Response Shape
+
+Authentication uses `Authorization: Bearer <JWT>` headers. JWTs are issued by the Auth Worker and verified by the API Worker via a shared `JWT_SECRET`.
+
+### Auth Flow
+
+The Auth Worker handles all identity concerns (register, login, TOTP, WebAuthn). The API Worker verifies JWTs for protected routes and proxies auth-related endpoints to the Auth Worker via a service binding.
+
+### Role-Based Access
+
+Project members have roles with numeric ranks: Viewer (0), Editor (1), Admin (2), Owner (3).
+
+### Database Schemas
+
+- **API DB** (`cubedocs-main`): projects, docs, doc_revisions, folders, files, members, passwords — see `packages/api/migrations/`
+- **Auth DB** (`cubedocs-auth`): users, sessions, totp, webauthn_credentials — see `packages/auth/migrations/`
+
+## Frontend Notes
+
+- UI components from shadcn/ui — always use these instead of raw HTML elements
+- Markdown rendered via `react-markdown` + remark-gfm + Shiki for syntax highlighting
+- Custom callout syntax (note, warning, tip, error, success) rendered by the `Callout` component
+- Authenticated images use the `AuthenticatedImage` component (fetches with auth header)
+- PWA service worker in `dev-dist/sw.js` (auto-generated — do not edit manually)
+
+## Key Config Files
+
+| File | Purpose |
+|------|---------|
+| `turbo.json` | Task pipeline (build, dev, deploy, typecheck, test) |
+| `packages/frontend/vite.config.ts` | Vite + dev proxy to API |
+| `packages/api/wrangler.toml` | API Worker bindings (D1, R2, service bindings) |
+| `packages/auth/wrangler.toml` | Auth Worker bindings (D1) |

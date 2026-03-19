@@ -137,8 +137,7 @@ export default {
         if (session instanceof Response) return session;
         response = await handlePasswords(request, env, session, url);
       } else if (url.pathname.startsWith("/files")) {
-        const session = await getSession(request, env);
-        if (session instanceof Response) return session;
+        const session = await authenticate(request, env);
         response = await handleFiles(request, env, session, url);
       } else {
         response = errorResponse(Errors.NOT_FOUND);

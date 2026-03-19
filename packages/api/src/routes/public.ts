@@ -123,8 +123,8 @@ export async function handlePublic(
     const contextProjectId = url.searchParams.get("projectId");
     const meta = await env.DB.prepare(
       "SELECT f.mime_type, f.name, p.published_at FROM files f JOIN projects p ON p.id = f.project_id WHERE f.id = ?" +
-        (contextProjectId ? " AND f.project_id = ?" : ""),
-    ).bind(...(contextProjectId ? [fileId, contextProjectId] : [fileId])).first<{ mime_type: string; name: string; published_at: string | null }>();
+        (contextProjectId ? " AND (p.id = ? OR p.vanity_slug = ?)" : ""),
+    ).bind(...(contextProjectId ? [fileId, contextProjectId, contextProjectId] : [fileId])).first<{ mime_type: string; name: string; published_at: string | null }>();
     if (!meta || !meta.published_at) return errorResponse(Errors.NOT_FOUND);
 
     const obj = await env.ASSETS.get(`files/${fileId}`);

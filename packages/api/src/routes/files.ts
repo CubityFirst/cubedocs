@@ -25,24 +25,28 @@ export interface FileRecord {
 export async function handleFiles(
   request: Request,
   env: Env,
-  user: { userId: string },
+  user: { userId: string } | null,
   url: URL,
 ): Promise<Response> {
   const parts = url.pathname.replace(/^\/files\/?/, "").split("/");
   const fileId = parts[0] || null;
   const subResource = parts[1] || null;
 
-  // GET /files/:id/content — serve raw file (authenticated, project members only)
+  // GET /files/:id/content — serve raw file
+  // Access order: published project → authenticated member → deny
   if (fileId && subResource === "content" && request.method === "GET") {
     const contextProjectId = url.searchParams.get("projectId");
     const meta = await env.DB.prepare(
-      "SELECT name, mime_type, project_id FROM files WHERE id = ?" +
-        (contextProjectId ? " AND project_id = ?" : ""),
-    ).bind(...(contextProjectId ? [fileId, contextProjectId] : [fileId])).first<{ name: string; mime_type: string; project_id: string }>();
+      "SELECT f.name, f.mime_type, f.project_id, p.published_at FROM files f JOIN projects p ON p.id = f.project_id WHERE f.id = ?" +
+        (contextProjectId ? " AND f.project_id = ?" : ""),
+    ).bind(...(contextProjectId ? [fileId, contextProjectId] : [fileId])).first<{ name: string; mime_type: string; project_id: string; published_at: string | null }>();
     if (!meta) return errorResponse(Errors.NOT_FOUND);
 
-    const role = await getCallerRole(env.DB, meta.project_id, user.userId);
-    if (role === null) return errorResponse(Errors.FORBIDDEN);
+    if (!meta.published_at) {
+      if (!user) return errorResponse(Errors.UNAUTHORIZED);
+      const role = await getCallerRole(env.DB, meta.project_id, user.userId);
+      if (role === null) return errorResponse(Errors.FORBIDDEN);
+    }
 
     const obj = await env.ASSETS.get(`files/${fileId}`);
     if (!obj) return errorResponse(Errors.NOT_FOUND);
@@ -52,10 +56,13 @@ export async function handleFiles(
       headers: {
         "Content-Type": meta.mime_type || "application/octet-stream",
         "Content-Disposition": `inline; filename="${meta.name}"`,
-        "Cache-Control": "private, no-store",
+        "Cache-Control": meta.published_at ? "public, max-age=3600" : "private, no-store",
       },
     });
   }
+
+  // All other file operations require authentication
+  if (!user) return errorResponse(Errors.UNAUTHORIZED);
 
   // GET /files/:id — get single file metadata (any member)
   if (fileId && !subResource && request.method === "GET") {

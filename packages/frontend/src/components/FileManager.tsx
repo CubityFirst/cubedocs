@@ -811,14 +811,14 @@ export function FileManager({ projectId, projectName, myRole, onDocCreated }: Pr
 
   return (
     <div
-      className="relative flex flex-col"
+      className="relative flex min-h-full flex-col"
       onDragEnter={e => { if (!draggedItem.current && e.dataTransfer.types.includes("Files")) setExternalDragOver(true); }}
       onDragOver={e => { if (!draggedItem.current && e.dataTransfer.types.includes("Files")) { e.preventDefault(); setExternalDragOver(true); } }}
       onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setExternalDragOver(false); }}
       onDrop={handleExternalDrop}
     >
       {(externalDragOver || uploadingCount > 0) && (
-        <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 rounded-lg bg-background/80 backdrop-blur-sm ring-2 ring-inset ring-primary/40">
+        <div className="pointer-events-none absolute inset-3 z-20 flex flex-col items-center justify-center gap-2 rounded-lg bg-background/80 backdrop-blur-sm ring-2 ring-inset ring-primary/40">
           <Upload className="h-8 w-8 text-primary/60" />
           <p className="text-sm font-medium text-muted-foreground">
             {uploadingCount > 0 ? `Uploading ${uploadingCount} ${uploadingCount === 1 ? "file" : "files"}…` : "Drop to upload"}
