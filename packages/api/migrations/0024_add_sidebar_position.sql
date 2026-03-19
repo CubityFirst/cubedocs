@@ -1,0 +1,1 @@
+ALTER TABLE docs ADD COLUMN sidebar_position INTEGER DEFAULT NULL;

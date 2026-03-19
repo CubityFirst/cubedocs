@@ -34,6 +34,7 @@
     "react-qr-code": "^2.0.15",
     "react-resizable-panels": "^4",
     "react-router-dom": "^6.26.0",
+    "remark-frontmatter": "^5.0.0",
     "remark-gfm": "^4.0.1",
     "shiki": "^1.0.0",
     "tailwind-merge": "^2.5.0",

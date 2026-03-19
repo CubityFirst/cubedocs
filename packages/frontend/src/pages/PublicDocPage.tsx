@@ -2,8 +2,10 @@ import { useState, useEffect, useMemo, isValidElement } from "react";
 import { useParams, useNavigate, NavLink } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkFrontmatter from "remark-frontmatter";
 import { remarkCallouts } from "@/lib/remark-callouts";
 import { remarkImageAttrs } from "@/lib/remark-image-attrs";
+import { parseFrontmatter } from "@/lib/frontmatter";
 import { Callout, type CalloutType } from "@/components/Callout";
 import { MarkdownCode } from "@/components/CodeBlock";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -38,7 +40,16 @@ interface Heading { level: number; text: string; id: string }
 
 function extractHeadings(content: string): Heading[] {
   const headings: Heading[] = [];
-  for (const line of content.split("\n")) {
+  const lines = content.split("\n");
+  let inFrontmatter = false;
+  let frontmatterDone = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (i === 0 && line.trimEnd() === "---") { inFrontmatter = true; continue; }
+    if (inFrontmatter && !frontmatterDone) {
+      if (line.trimEnd() === "---") { inFrontmatter = false; frontmatterDone = true; }
+      continue;
+    }
     const match = line.match(/^(#{1,6})\s+(.+)$/);
     if (match) {
       const text = match[2].trim();
@@ -48,7 +59,7 @@ function extractHeadings(content: string): Heading[] {
   return headings;
 }
 
-const remarkPlugins = [remarkGfm, remarkCallouts, remarkImageAttrs];
+const remarkPlugins = [remarkFrontmatter, remarkGfm, remarkCallouts, remarkImageAttrs];
 
 function makePublicImage(projectId: string) {
   return function PublicImage({ src, alt, ...props }: React.ComponentPropsWithoutRef<"img">) {
@@ -102,7 +113,9 @@ const baseMarkdownComponents = {
 interface NavDoc {
   id: string;
   title: string;
+  display_title?: string | null;
   folder_id: string | null;
+  sidebar_position?: number | null;
   is_home?: number;
 }
 
@@ -121,7 +134,7 @@ interface NavFile {
 }
 
 interface PublicData {
-  doc: { id: string; title: string; content: string; showHeading: boolean; showLastUpdated: boolean; updatedAt: string };
+  doc: { id: string; title: string; display_title: string | null; hide_title: boolean | null; content: string; showHeading: boolean; showLastUpdated: boolean; updatedAt: string };
   sitePublished: boolean;
   project: { id: string; name: string; vanity_slug: string | null; home_doc_id: string | null };
   docs: NavDoc[] | null;
@@ -140,6 +153,17 @@ function FileTypeIcon({ mimeType, className }: { mimeType: string; className?: s
   if (mimeType === "application/json" || mimeType.startsWith("text/")) return <FileCode className={className} />;
   if (mimeType.includes("zip") || mimeType.includes("tar") || mimeType.includes("gzip") || mimeType.includes("archive")) return <FileArchive className={className} />;
   return <File className={className} />;
+}
+
+function flattenDocs(folders: NavFolder[], docs: NavDoc[], parentId: string | null = null): NavDoc[] {
+  const childFolders = folders.filter(f => f.parent_id === parentId);
+  const childDocs = docs.filter(d => d.folder_id === parentId);
+  const result: NavDoc[] = [];
+  for (const folder of childFolders) {
+    result.push(...flattenDocs(folders, docs, folder.id));
+  }
+  result.push(...childDocs);
+  return result;
 }
 
 function folderHasItems(folderId: string, folders: NavFolder[], docs: NavDoc[], files: NavFile[]): boolean {
@@ -272,7 +296,7 @@ function NavTree({
               ? <House className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               : <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             }
-            <span className="truncate">{doc.title}</span>
+            <span className="truncate">{doc.display_title ?? doc.title}</span>
           </NavLink>
         );
       })}
@@ -447,7 +471,7 @@ export function PublicDocPage() {
   const showNav = data.sitePublished && data.docs && (data.docs.length > 0 || (data.files && data.files.length > 0));
 
   const filteredDocs = searchQuery.trim()
-    ? (data.docs ?? []).filter(d => d.title.toLowerCase().includes(searchQuery.toLowerCase()))
+    ? (data.docs ?? []).filter(d => (d.display_title ?? d.title).toLowerCase().includes(searchQuery.toLowerCase()))
     : null;
 
   return (
@@ -510,7 +534,7 @@ export function PublicDocPage() {
                         ? <House className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                         : <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                       }
-                      <span className="truncate">{doc.title}</span>
+                      <span className="truncate">{doc.display_title ?? doc.title}</span>
                     </NavLink>
                   ))
                 )
@@ -531,7 +555,7 @@ export function PublicDocPage() {
                         }
                       >
                         <House className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                        <span className="truncate">{homeDoc.title}</span>
+                        <span className="truncate">{homeDoc.display_title ?? homeDoc.title}</span>
                       </NavLink>
                     )}
                     <NavTree
@@ -576,7 +600,12 @@ export function PublicDocPage() {
               <div className="flex-1 min-w-0 px-6 py-10">
                 <div className="mx-auto max-w-3xl">
                   <article className="prose prose-neutral dark:prose-invert max-w-none">
-                    {data.doc.showHeading && <h1>{data.doc.title}</h1>}
+                    {(() => {
+                      const fm = parseFrontmatter(data.doc.content);
+                      const showHeading = fm.hide_title !== undefined ? !fm.hide_title : data.doc.showHeading;
+                      const headingTitle = fm.title ?? data.doc.title;
+                      return showHeading && <h1>{headingTitle}</h1>;
+                    })()}
                     {data.doc.showLastUpdated && (
                       <p className="not-prose -mt-2 mb-6 text-sm text-muted-foreground">
                         Last updated {new Date(data.doc.updatedAt).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}
@@ -592,6 +621,47 @@ export function PublicDocPage() {
                       </p>
                     )}
                   </article>
+
+                  {(() => {
+                    if (!data.docs || data.docs.length < 2) return null;
+                    const slug = data.project.vanity_slug ?? data.project.id;
+                    const homeDoc = data.docs.find(d => d.is_home === 1);
+                    const restDocs = homeDoc ? data.docs.filter(d => d.id !== homeDoc.id) : data.docs;
+                    const orderedDocs: NavDoc[] = [
+                      ...(homeDoc ? [homeDoc] : []),
+                      ...flattenDocs(data.folders ?? [], restDocs),
+                    ];
+                    const idx = orderedDocs.findIndex(d => d.id === docId);
+                    if (idx === -1) return null;
+                    const prevDoc = idx > 0 ? orderedDocs[idx - 1] : null;
+                    const nextDoc = idx < orderedDocs.length - 1 ? orderedDocs[idx + 1] : null;
+                    return (
+                      <div className="not-prose mt-12 flex justify-between gap-4">
+                        {prevDoc ? (
+                          <button
+                            onClick={() => navigate(`/s/${slug}/${prevDoc.id}`)}
+                            className="group flex flex-col gap-0.5 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-accent w-[calc(50%-8px)]"
+                          >
+                            <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                              <ChevronLeft className="h-3.5 w-3.5" /> Previous
+                            </span>
+                            <span className="text-sm font-medium text-foreground truncate">{prevDoc.display_title ?? prevDoc.title}</span>
+                          </button>
+                        ) : <div />}
+                        {nextDoc ? (
+                          <button
+                            onClick={() => navigate(`/s/${slug}/${nextDoc.id}`)}
+                            className="group flex flex-col gap-0.5 rounded-lg border border-border bg-card p-4 text-right transition-colors hover:bg-accent w-[calc(50%-8px)] items-end ml-auto"
+                          >
+                            <span className="flex items-center justify-end gap-1.5 text-xs font-medium text-muted-foreground">
+                              Next <ChevronRight className="h-3.5 w-3.5" />
+                            </span>
+                            <span className="text-sm font-medium text-foreground truncate">{nextDoc.display_title ?? nextDoc.title}</span>
+                          </button>
+                        ) : <div />}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 

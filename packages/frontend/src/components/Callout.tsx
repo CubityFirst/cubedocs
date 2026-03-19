@@ -15,6 +15,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useState } from "react";
 import type { ReactNode, FC, SVGProps } from "react";
 
 export type CalloutType =
@@ -139,6 +140,7 @@ export function Callout({ type, title, fold, children }: CalloutProps) {
   const { label, Icon, border, bg, accent } = config;
   const displayTitle = title || label;
   const isFoldable = fold === "+" || fold === "-";
+  const [open, setOpen] = useState(fold === "+");
 
   const header = (
     <div className={cn("flex items-center gap-1.5 text-sm font-semibold", accent)}>
@@ -146,7 +148,7 @@ export function Callout({ type, title, fold, children }: CalloutProps) {
       <span>{displayTitle}</span>
       {isFoldable && (
         <ChevronDown
-          className={cn("ml-auto h-4 w-4 shrink-0 transition-transform", fold === "-" && "-rotate-90")}
+          className={cn("ml-auto h-4 w-4 shrink-0 transition-transform duration-200", !open && "-rotate-90")}
           aria-hidden
         />
       )}
@@ -167,7 +169,11 @@ export function Callout({ type, title, fold, children }: CalloutProps) {
 
   if (isFoldable) {
     return (
-      <details className={containerClass} open={fold === "+"}>
+      <details
+        className={containerClass}
+        open={open}
+        onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
+      >
         <summary className="cursor-pointer list-none">{header}</summary>
         {body}
       </details>

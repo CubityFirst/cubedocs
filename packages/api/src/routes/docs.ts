@@ -1,4 +1,5 @@
 import { okResponse, errorResponse, Errors, ROLE_RANK, type Session, type Doc, type Role } from "../lib";
+import { parseFrontmatter } from "../lib/frontmatter";
 import type { Env } from "../index";
 
 type BlameEntry = { u: string; n: string; t: string; c: string | null } | null;
@@ -76,7 +77,7 @@ export async function handleDocs(
     const folderId = params.get("folderId");
     const q = params.get("q");
     const docWithAuthor = `
-      SELECT d.id, d.title, d.folder_id, d.author_id, d.created_at, d.updated_at,
+      SELECT d.id, d.title, d.folder_id, d.author_id, d.created_at, d.updated_at, d.sidebar_position,
         COALESCE(pm.name, d.author_id) AS author_name,
         pm.role AS author_role,
         CASE WHEN p.home_doc_id = d.id THEN 1 ELSE 0 END AS is_home
@@ -100,20 +101,20 @@ export async function handleDocs(
           ${docWithAuthor}
           WHERE d.project_id = ? AND d.folder_id IN (SELECT id FROM subtree)
             AND (LOWER(d.title) LIKE LOWER(?) OR LOWER(COALESCE(pm.name, d.author_id)) LIKE LOWER(?))
-          ORDER BY d.title ASC
+          ORDER BY CASE WHEN d.sidebar_position IS NULL THEN 1 ELSE 0 END, d.sidebar_position ASC, d.title ASC
         `).bind(rootFolderId, projectId, `%${q}%`, `%${q}%`).all<DocWithAuthor>();
       } else {
-        rows = await env.DB.prepare(`${docWithAuthor} WHERE d.project_id = ? AND (LOWER(d.title) LIKE LOWER(?) OR LOWER(COALESCE(pm.name, d.author_id)) LIKE LOWER(?)) ORDER BY d.title ASC`)
+        rows = await env.DB.prepare(`${docWithAuthor} WHERE d.project_id = ? AND (LOWER(d.title) LIKE LOWER(?) OR LOWER(COALESCE(pm.name, d.author_id)) LIKE LOWER(?)) ORDER BY CASE WHEN d.sidebar_position IS NULL THEN 1 ELSE 0 END, d.sidebar_position ASC, d.title ASC`)
           .bind(projectId, `%${q}%`, `%${q}%`).all<DocWithAuthor>();
       }
       return okResponse(rows.results);
     }
 
     const rows = folderId
-      ? await env.DB.prepare(`${docWithAuthor} WHERE d.project_id = ? AND d.folder_id = ? ORDER BY d.title ASC`)
+      ? await env.DB.prepare(`${docWithAuthor} WHERE d.project_id = ? AND d.folder_id = ? ORDER BY CASE WHEN d.sidebar_position IS NULL THEN 1 ELSE 0 END, d.sidebar_position ASC, d.title ASC`)
           .bind(projectId, folderId).all<DocWithAuthor>()
       : params.has("folderId")
-        ? await env.DB.prepare(`${docWithAuthor} WHERE d.project_id = ? AND d.folder_id IS NULL ORDER BY d.title ASC`)
+        ? await env.DB.prepare(`${docWithAuthor} WHERE d.project_id = ? AND d.folder_id IS NULL ORDER BY CASE WHEN d.sidebar_position IS NULL THEN 1 ELSE 0 END, d.sidebar_position ASC, d.title ASC`)
             .bind(projectId).all<DocWithAuthor>()
         : await env.DB.prepare(`${docWithAuthor} WHERE d.project_id = ? ORDER BY d.created_at DESC`)
             .bind(projectId).all<DocWithAuthor>();
@@ -133,11 +134,13 @@ export async function handleDocs(
     const now = new Date().toISOString();
     const content = body.content ?? "";
     const folderId = body.folderId ?? null;
+    const fm = parseFrontmatter(content);
+    const sidebarPosition = fm.sidebar_position ?? null;
 
     await env.ASSETS.put(`${body.projectId}/${id}`, content);
     await env.DB.prepare(
-      "INSERT INTO docs (id, title, project_id, author_id, folder_id, published_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NULL, ?, ?)",
-    ).bind(id, body.title, body.projectId, user.userId, folderId, now, now).run();
+      "INSERT INTO docs (id, title, project_id, author_id, folder_id, sidebar_position, published_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)",
+    ).bind(id, body.title, body.projectId, user.userId, folderId, sidebarPosition, now, now).run();
 
     return okResponse(
       { id, title: body.title, content, projectId: body.projectId, authorId: user.userId, folderId, publishedAt: null, createdAt: now, updatedAt: now },
@@ -186,7 +189,10 @@ export async function handleDocs(
     ]);
     const content = r2Content ? await r2Content.text() : "";
     const blame: BlameEntry[] = r2Blame ? JSON.parse(await r2Blame.text()) : [];
-    return okResponse({ ...row, content, blame, myRole: caller.role });
+    const fm = parseFrontmatter(content);
+    const display_title = fm.title ?? null;
+    const hide_title = fm.hide_title ?? null;
+    return okResponse({ ...row, content, blame, myRole: caller.role, display_title, hide_title });
   }
 
   // PUT /docs/:id — editor or above
@@ -233,10 +239,16 @@ export async function handleDocs(
 
     const showHeading = body.showHeading !== undefined ? (body.showHeading ? 1 : 0) : null;
     const showLastUpdated = body.showLastUpdated !== undefined ? (body.showLastUpdated ? 1 : 0) : null;
+    const newSidebarPosition = body.content !== undefined ? (parseFrontmatter(body.content).sidebar_position ?? null) : undefined;
 
     await env.DB.prepare(
       "UPDATE docs SET title = COALESCE(?, title), published_at = ?, show_heading = COALESCE(?, show_heading), show_last_updated = COALESCE(?, show_last_updated), updated_at = ? WHERE id = ?",
     ).bind(body.title ?? null, body.publishedAt ?? null, showHeading, showLastUpdated, now, docId).run();
+
+    if (newSidebarPosition !== undefined) {
+      await env.DB.prepare("UPDATE docs SET sidebar_position = ? WHERE id = ?")
+        .bind(newSidebarPosition, docId).run();
+    }
 
     if (body.folderId !== undefined) {
       await env.DB.prepare("UPDATE docs SET folder_id = ? WHERE id = ?")

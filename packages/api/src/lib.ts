@@ -21,6 +21,7 @@ export interface Doc {
   publishedAt: string | null;
   show_heading: number;
   show_last_updated: number;
+  sidebar_position: number | null;
   createdAt: string;
   updatedAt: string;
 }

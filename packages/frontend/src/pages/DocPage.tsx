@@ -2,9 +2,11 @@ import { useState, useEffect, useCallback, useRef, useMemo, isValidElement } fro
 import { useParams, useLocation, useNavigate, useOutletContext } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkFrontmatter from "remark-frontmatter";
 import { remarkCallouts } from "@/lib/remark-callouts";
 import { remarkImageAttrs } from "@/lib/remark-image-attrs";
 import { remarkUnderline } from "@/lib/remark-underline";
+import { parseFrontmatter } from "@/lib/frontmatter";
 import { Callout, type CalloutType } from "@/components/Callout";
 import { MarkdownCode } from "@/components/CodeBlock";
 import { AuthenticatedImage } from "@/components/AuthenticatedImage";
@@ -18,7 +20,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { HistorySheet, type RevisionMeta } from "@/components/HistorySheet";
 import { HistoryBanner } from "@/components/HistoryBanner";
-import { Pencil, X, Save, Settings, Globe, Lock, Link, History } from "lucide-react";
+import { Pencil, X, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight } from "lucide-react";
 import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
 import { getToken } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
@@ -46,7 +48,16 @@ interface Heading { level: number; text: string; id: string }
 
 function extractHeadings(content: string): Heading[] {
   const headings: Heading[] = [];
-  for (const line of content.split("\n")) {
+  const lines = content.split("\n");
+  let inFrontmatter = false;
+  let frontmatterDone = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (i === 0 && line.trimEnd() === "---") { inFrontmatter = true; continue; }
+    if (inFrontmatter && !frontmatterDone) {
+      if (line.trimEnd() === "---") { inFrontmatter = false; frontmatterDone = true; }
+      continue;
+    }
     const match = line.match(/^(#{1,6})\s+(.+)$/);
     if (match) {
       const text = match[2].trim();
@@ -132,7 +143,7 @@ function Code({ children }: { children: string }) {
   );
 }
 
-const remarkPlugins = [remarkGfm, remarkCallouts, remarkImageAttrs, remarkUnderline];
+const remarkPlugins = [remarkFrontmatter, remarkGfm, remarkCallouts, remarkImageAttrs, remarkUnderline];
 
 function makeAuthenticatedImage(projectId: string) {
   return function AuthImg(props: React.ComponentPropsWithoutRef<"img">) {
@@ -174,6 +185,8 @@ interface Doc {
   published_at: string | null;
   show_heading: number;
   show_last_updated: number;
+  display_title?: string | null;
+  hide_title?: boolean | null;
   myRole?: string;
   blame?: (BlameEntry | null)[];
 }
@@ -186,7 +199,7 @@ export function DocPage() {
   const { projectId, docId } = useParams<{ projectId: string; docId: string }>();
   const location = useLocation();
   const navigate = useNavigate();
-  const { updateDocTitle, setBreadcrumbs, projectPublishedAt, changelogMode } = useOutletContext<DocsLayoutContext>();
+  const { updateDocTitle, setBreadcrumbs, projectPublishedAt, changelogMode, docs: allDocs } = useOutletContext<DocsLayoutContext>();
   const { toast } = useToast();
 
   const markdownComponents = useMemo(() => ({
@@ -759,7 +772,12 @@ const [editorScrollTop, setEditorScrollTop] = useState(0);
             />
           )}
           <article className="prose prose-neutral dark:prose-invert max-w-none">
-            {doc.show_heading !== 0 && <h1>{doc.title}</h1>}
+            {(() => {
+              const fm = parseFrontmatter(viewingRevision ? viewingRevision.content : doc.content);
+              const showHeading = fm.hide_title !== undefined ? !fm.hide_title : doc.show_heading !== 0;
+              const headingTitle = fm.title ?? doc.title;
+              return showHeading && <h1>{headingTitle}</h1>;
+            })()}
             {!viewingRevision && doc.show_last_updated !== 0 && (
               <p className="not-prose -mt-2 mb-6 text-sm text-muted-foreground">
                 Last updated {timeAgo(doc.updated_at)}
@@ -775,6 +793,39 @@ const [editorScrollTop, setEditorScrollTop] = useState(0);
               </p>
             )}
           </article>
+
+          {(() => {
+            const idx = allDocs.findIndex(d => d.id === docId);
+            if (idx === -1 || allDocs.length < 2) return null;
+            const prevDoc = idx > 0 ? allDocs[idx - 1] : null;
+            const nextDoc = idx < allDocs.length - 1 ? allDocs[idx + 1] : null;
+            return (
+              <div className="not-prose mt-12 flex justify-between gap-4">
+                {prevDoc ? (
+                  <button
+                    onClick={() => navigate(`/projects/${projectId}/docs/${prevDoc.id}`)}
+                    className="group flex flex-col gap-0.5 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-accent w-[calc(50%-8px)]"
+                  >
+                    <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                      <ChevronLeft className="h-3.5 w-3.5" /> Previous
+                    </span>
+                    <span className="text-sm font-medium text-foreground truncate">{prevDoc.title}</span>
+                  </button>
+                ) : <div />}
+                {nextDoc ? (
+                  <button
+                    onClick={() => navigate(`/projects/${projectId}/docs/${nextDoc.id}`)}
+                    className="group flex flex-col gap-0.5 rounded-lg border border-border bg-card p-4 text-right transition-colors hover:bg-accent w-[calc(50%-8px)] items-end ml-auto"
+                  >
+                    <span className="flex items-center justify-end gap-1.5 text-xs font-medium text-muted-foreground">
+                      Next <ChevronRight className="h-3.5 w-3.5" />
+                    </span>
+                    <span className="text-sm font-medium text-foreground truncate">{nextDoc.title}</span>
+                  </button>
+                ) : <div />}
+              </div>
+            );
+          })()}
 
         </div>
       </div>

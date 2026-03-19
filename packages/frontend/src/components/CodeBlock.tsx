@@ -1,5 +1,7 @@
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect, useCallback, type ReactNode } from "react";
+import { Check, Copy } from "lucide-react";
 import { getHighlighter, highlighterReady } from "@/lib/shiki";
+import { Button } from "@/components/ui/button";
 
 const THEME = "github-dark-dimmed";
 
@@ -22,6 +24,7 @@ interface CodeBlockProps {
 /** Highlighted fenced code block using Shiki (github-dark-dimmed theme). */
 export function CodeBlock({ lang, code }: CodeBlockProps) {
   const [html, setHtml] = useState<string | null>(() => highlight(code, lang));
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     // If highlighter wasn't ready on first render, wait for it then re-render.
@@ -29,21 +32,43 @@ export function CodeBlock({ lang, code }: CodeBlockProps) {
     highlighterReady.then(() => setHtml(highlight(code, lang)));
   }, [code, lang]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const copy = useCallback(() => {
+    navigator.clipboard.writeText(code).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, [code]);
+
+  const copyButton = (
+    <Button
+      size="icon"
+      variant="ghost"
+      onClick={copy}
+      className="absolute top-2 right-2 h-7 w-7 text-zinc-400 hover:text-zinc-100 hover:bg-white/10"
+      aria-label="Copy code"
+    >
+      {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+    </Button>
+  );
+
   if (html) {
     return (
-      <div
-        className="not-prose my-4 overflow-x-auto rounded-md text-sm [&>pre]:p-4"
-        // Shiki escapes all user code content — safe to set innerHTML
-        dangerouslySetInnerHTML={{ __html: html }}
-      />
+      <div className="not-prose relative my-4 rounded-md text-sm [&>pre]:overflow-x-auto [&>pre]:p-4">
+        {/* Shiki escapes all user code content — safe to set innerHTML */}
+        <div dangerouslySetInnerHTML={{ __html: html }} />
+        {copyButton}
+      </div>
     );
   }
 
   // Plain fallback shown only on the very first page load before Shiki is ready.
   return (
-    <pre className="not-prose my-4 overflow-x-auto rounded-md bg-[#22272e] p-4 text-sm text-[#adbac7]">
-      <code>{code}</code>
-    </pre>
+    <div className="not-prose relative my-4">
+      <pre className="overflow-x-auto rounded-md bg-[#22272e] p-4 text-sm text-[#adbac7]">
+        <code>{code}</code>
+      </pre>
+      {copyButton}
+    </div>
   );
 }
 

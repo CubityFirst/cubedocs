@@ -1,4 +1,5 @@
 import { okResponse, errorResponse, Errors } from "../lib";
+import { parseFrontmatter } from "../lib/frontmatter";
 import type { Env } from "../index";
 
 interface PublicProject {
@@ -16,6 +17,7 @@ interface PublicDoc {
   folder_id: string | null;
   published_at: string | null;
   is_home: number;
+  sidebar_position: number | null;
 }
 
 interface PublicFolder {
@@ -50,8 +52,8 @@ export async function handlePublic(
     if (!project) return errorResponse(Errors.NOT_FOUND);
 
     const docs = await env.DB.prepare(
-      "SELECT id, title, folder_id, CASE WHEN ? = id THEN 1 ELSE 0 END AS is_home FROM docs WHERE project_id = ? ORDER BY created_at ASC",
-    ).bind(project.home_doc_id ?? "", project.id).all<Pick<PublicDoc, "id" | "title" | "folder_id" | "is_home">>();
+      "SELECT id, title, folder_id, sidebar_position, CASE WHEN ? = id THEN 1 ELSE 0 END AS is_home FROM docs WHERE project_id = ? ORDER BY CASE WHEN sidebar_position IS NULL THEN 1 ELSE 0 END, sidebar_position ASC, title ASC",
+    ).bind(project.home_doc_id ?? "", project.id).all<Pick<PublicDoc, "id" | "title" | "folder_id" | "sidebar_position" | "is_home">>();
 
     const folders = await env.DB.prepare(
       "SELECT id, name, parent_id FROM folders WHERE project_id = ? ORDER BY name ASC",
@@ -86,14 +88,15 @@ export async function handlePublic(
 
     const r2Object = await env.ASSETS.get(`${projectId}/${docId}`);
     const content = r2Object ? await r2Object.text() : "";
+    const fm = parseFrontmatter(content);
 
     let docs: Pick<PublicDoc, "id" | "title" | "folder_id">[] | null = null;
     let folders: PublicFolder[] | null = null;
     let files: PublicFile[] | null = null;
     if (sitePublished) {
       const docsResult = await env.DB.prepare(
-        "SELECT id, title, folder_id, CASE WHEN ? = id THEN 1 ELSE 0 END AS is_home FROM docs WHERE project_id = ? ORDER BY created_at ASC",
-      ).bind(project.home_doc_id ?? "", projectId).all<Pick<PublicDoc, "id" | "title" | "folder_id" | "is_home">>();
+        "SELECT id, title, folder_id, sidebar_position, CASE WHEN ? = id THEN 1 ELSE 0 END AS is_home FROM docs WHERE project_id = ? ORDER BY CASE WHEN sidebar_position IS NULL THEN 1 ELSE 0 END, sidebar_position ASC, title ASC",
+      ).bind(project.home_doc_id ?? "", projectId).all<Pick<PublicDoc, "id" | "title" | "folder_id" | "sidebar_position" | "is_home">>();
       docs = docsResult.results;
 
       const foldersResult = await env.DB.prepare(
@@ -108,7 +111,7 @@ export async function handlePublic(
     }
 
     return okResponse({
-      doc: { id: doc.id, title: doc.title, content, showHeading: doc.show_heading !== 0, showLastUpdated: doc.show_last_updated !== 0, updatedAt: doc.updated_at },
+      doc: { id: doc.id, title: doc.title, display_title: fm.title ?? null, hide_title: fm.hide_title ?? null, content, showHeading: doc.show_heading !== 0, showLastUpdated: doc.show_last_updated !== 0, updatedAt: doc.updated_at },
       sitePublished,
       project: { id: project.id, name: project.name, vanity_slug: project.vanity_slug ?? null, home_doc_id: project.home_doc_id ?? null },
       docs,
