@@ -2,21 +2,24 @@ import { useState, useRef, useEffect } from "react";
 import { startAuthentication } from "@simplewebauthn/browser";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { getToken } from "@/lib/auth";
+import { KeyRound, Smartphone, Hash } from "lucide-react";
 
 export type TwoFAVerification = {
   totpCode?: string;
   challengeId?: string;
   webauthnResponse?: unknown;
+  backupCode?: string;
 };
 
 // Return undefined on success, an error message string on failure (keeps dialog open).
 export type TwoFAAction = (v: TwoFAVerification) => Promise<string | undefined>;
 
-type DialogMode = "pick" | "totp" | "webauthn";
+type DialogMode = "pick" | "totp" | "webauthn" | "backup";
 
 /**
  * Reusable MFA gate hook.
@@ -155,6 +158,24 @@ export function use2FA({
     }
   }
 
+  async function handleBackupSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!pendingRef.current || !code.trim()) return;
+    setBusy(true);
+    const { action, resolve } = pendingRef.current;
+    const err = await action({ backupCode: code.trim() });
+    setBusy(false);
+    if (err === undefined) {
+      pendingRef.current = null;
+      setOpen(false);
+      setCode("");
+      resolve();
+    } else {
+      setFieldError(err);
+      setCode("");
+    }
+  }
+
   const twoFADialog = (
     <Dialog open={open} onOpenChange={o => { if (!o) closeDialog(); }}>
       <DialogContent>
@@ -163,23 +184,35 @@ export function use2FA({
         </DialogHeader>
 
         {mode === "pick" ? (
-          <div className="py-4 flex flex-col gap-3">
-            {totp && (
-              <Button
-                variant="outline"
-                className="w-full justify-start h-12 text-base"
-                onClick={() => setMode("totp")}
-              >
-                Authenticator app
-              </Button>
-            )}
+          <div className="py-2 flex flex-col gap-3">
             {webauthn && (
               <Button
                 variant="outline"
-                className="w-full justify-start h-12 text-base"
+                className="w-full h-12 text-base"
                 onClick={() => setMode("webauthn")}
               >
+                <KeyRound className="size-4 mr-2" />
                 Security key
+              </Button>
+            )}
+            {totp && (
+              <Button
+                variant="outline"
+                className="w-full h-12 text-base"
+                onClick={() => setMode("totp")}
+              >
+                <Smartphone className="size-4 mr-2" />
+                Authenticator app
+              </Button>
+            )}
+            {totp && (
+              <Button
+                variant="outline"
+                className="w-full h-12 text-base"
+                onClick={() => setMode("backup")}
+              >
+                <Hash className="size-4 mr-2" />
+                Backup code
               </Button>
             )}
           </div>
@@ -206,7 +239,7 @@ export function use2FA({
               {fieldError && <p className="text-xs text-destructive">{fieldError}</p>}
             </div>
           </form>
-        ) : (
+        ) : mode === "webauthn" ? (
           <div className="py-2 flex flex-col gap-2">
             {webauthnStatus === "waiting" && !fieldError ? (
               <p className="text-sm text-muted-foreground">
@@ -226,23 +259,39 @@ export function use2FA({
               </>
             )}
           </div>
+        ) : (
+          <form id="2fa-confirm-form" onSubmit={handleBackupSubmit} className="pt-6 pb-4">
+            <div className="flex flex-col gap-3">
+              <Label htmlFor="backup-code-input">Enter a backup code</Label>
+              <Input
+                id="backup-code-input"
+                value={code}
+                onChange={e => { setCode(e.target.value); setFieldError(null); }}
+                placeholder="XXXXX-XXXXX"
+                autoFocus
+                autoComplete="off"
+                spellCheck={false}
+              />
+              {fieldError && <p className="text-xs text-destructive">{fieldError}</p>}
+            </div>
+          </form>
         )}
 
         <DialogFooter>
-          {mode !== "pick" && totp && webauthn && (
+          {mode !== "pick" && (totp || webauthn) && (
             <button
               type="button"
               className="text-xs text-primary underline-offset-4 hover:underline mr-auto"
-              onClick={() => { setFieldError(null); setCode(""); setMode(mode === "totp" ? "webauthn" : "totp"); }}
+              onClick={() => { setFieldError(null); setCode(""); setMode("pick"); }}
             >
-              {mode === "totp" ? "Use a security key instead" : "Use authenticator app instead"}
+              Use a different method
             </button>
           )}
           <Button variant="outline" type="button" onClick={closeDialog}>
             Cancel
           </Button>
-          {mode === "totp" && (
-            <Button type="submit" form="2fa-confirm-form" disabled={busy || code.length !== 6}>
+          {(mode === "totp" || mode === "backup") && (
+            <Button type="submit" form="2fa-confirm-form" disabled={busy || code.length === 0}>
               {busy ? "Confirming…" : "Confirm"}
             </Button>
           )}

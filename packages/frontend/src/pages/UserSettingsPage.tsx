@@ -12,7 +12,7 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { use2FA } from "@/hooks/use2FA";
 import { getToken } from "@/lib/auth";
-import { LockOpen, LockKeyhole, Key, Trash2, Loader2 } from "lucide-react";
+import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy } from "lucide-react";
 
 interface WebAuthnCredential {
   id: string;
@@ -45,6 +45,11 @@ export function UserSettingsPage() {
   const [newKeyName, setNewKeyName] = useState("");
   const [registerLoading, setRegisterLoading] = useState(false);
   const [processingKeyId, setProcessingKeyId] = useState<string | null>(null);
+
+  // Backup codes state
+  const [backupCodesOpen, setBackupCodesOpen] = useState(false);
+  const [backupCodes, setBackupCodes] = useState<string[]>([]);
+  const [backupCodesLoading, setBackupCodesLoading] = useState(false);
 
   // Change password state
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
@@ -180,6 +185,31 @@ export function UserSettingsPage() {
         return "Could not connect to the server.";
       } finally {
         setSetupLoading(false);
+      }
+    });
+  }
+
+  async function handleViewBackupCodes() {
+    await runWithTwoFA(async (verification) => {
+      setBackupCodesLoading(true);
+      try {
+        const token = getToken();
+        const res = await fetch("/api/me/totp/backup-codes/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify(verification),
+        });
+        const json = await res.json() as { ok: boolean; data?: { codes: string[] }; error?: string };
+        if (json.ok && json.data) {
+          setBackupCodes(json.data.codes);
+          setBackupCodesOpen(true);
+          return undefined;
+        }
+        return json.error === "invalid_totp" ? "Invalid authenticator code." : "Failed to generate backup codes.";
+      } catch {
+        return "Could not connect to the server.";
+      } finally {
+        setBackupCodesLoading(false);
       }
     });
   }
@@ -448,7 +478,10 @@ export function UserSettingsPage() {
             {totpLoading ? (
               <p className="mt-4 text-sm text-muted-foreground">Loading…</p>
             ) : totpEnabled ? (
-              <div className="mt-3">
+              <div className="mt-3 flex gap-2 flex-wrap">
+                <Button variant="outline" onClick={handleViewBackupCodes} disabled={twoFABusy || backupCodesLoading}>
+                  {backupCodesLoading ? "Loading…" : "View Backup Codes"}
+                </Button>
                 <Button variant="outline" onClick={handleDisableTOTP} disabled={twoFABusy}>
                   Disable authenticator app
                 </Button>
@@ -703,6 +736,40 @@ export function UserSettingsPage() {
           </section>
         </div>
       </div>
+
+      <Dialog open={backupCodesOpen} onOpenChange={setBackupCodesOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Backup Codes</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Use these codes if your TOTP device is lost. Each code can only be used once. Generating new codes invalidates all previous ones.
+          </p>
+          <div className="grid grid-cols-2 gap-2 py-2">
+            {backupCodes.map(code => (
+              <code key={code} className="font-mono text-sm bg-muted rounded px-2 py-1 text-center select-all">
+                {code}
+              </code>
+            ))}
+          </div>
+          <DialogFooter className="justify-between">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                navigator.clipboard.writeText(backupCodes.join("\n"));
+                toast({ title: "Backup codes copied" });
+              }}
+            >
+              <Copy className="size-3.5 mr-1.5" />
+              Copy All
+            </Button>
+            <Button type="button" onClick={() => setBackupCodesOpen(false)}>
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {twoFADialog}
     </div>

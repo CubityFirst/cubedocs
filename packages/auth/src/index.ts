@@ -16,6 +16,7 @@ import { handleWebauthnAuthStart } from "./routes/webauthn-auth-start";
 import { handleWebauthnAuthFinish } from "./routes/webauthn-auth-finish";
 import { handleWebauthnCredentialsList } from "./routes/webauthn-credentials-list";
 import { handleWebauthnCredentialsDelete } from "./routes/webauthn-credentials-delete";
+import { handleTotpBackupCodesGenerate } from "./routes/totp-backup-codes-generate";
 
 export interface Env {
   DB: D1Database;
@@ -73,6 +74,8 @@ export default {
         response = await handleWebauthnCredentialsList(request, env);
       } else if (url.pathname === "/webauthn/credentials/delete" && request.method === "POST") {
         response = await handleWebauthnCredentialsDelete(request, env);
+      } else if (url.pathname === "/totp/backup-codes/generate" && request.method === "POST") {
+        response = await handleTotpBackupCodesGenerate(request, env);
       } else {
         response = errorResponse(Errors.NOT_FOUND);
       }

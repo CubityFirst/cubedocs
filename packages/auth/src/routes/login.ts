@@ -3,10 +3,17 @@ import { verifyPassword } from "../password";
 import { signJwt } from "../jwt";
 import { verifyTurnstile } from "../turnstile";
 import { verifyTOTP } from "../totp";
+import { validateAndConsumeBackupCode } from "../mfa";
 import type { Env } from "../index";
 
 export async function handleLogin(request: Request, env: Env): Promise<Response> {
-  const body = await request.json<{ email: string; password: string; turnstileToken: string; totpCode?: string }>();
+  const body = await request.json<{
+    email: string;
+    password: string;
+    turnstileToken: string;
+    totpCode?: string;
+    backupCode?: string;
+  }>();
 
   if (!body.email || !body.password) return errorResponse(Errors.BAD_REQUEST);
 
@@ -34,27 +41,23 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
   const hasTOTP = !!row.totp_secret;
 
   if (hasWebauthn && hasTOTP) {
-    // Both methods available: if totpCode supplied the user chose TOTP, otherwise prompt for choice
-    if (!body.totpCode) {
+    // Both methods available: if totpCode or backupCode supplied the user chose TOTP, otherwise prompt for choice
+    if (!body.totpCode && !body.backupCode) {
       return Response.json(
         { ok: false, error: "two_factor_required", methods: ["totp", "webauthn"], userId: row.id },
         { status: 200 },
       );
     }
-    const totpValid = await verifyTOTP(row.totp_secret!, body.totpCode);
-    if (!totpValid) {
-      return Response.json({ ok: false, error: "invalid_totp" }, { status: 401 });
-    }
+    const totpError = await verifyTotpOrBackup(env, row.id, row.totp_secret!, body.totpCode, body.backupCode);
+    if (totpError) return totpError;
   } else if (hasWebauthn) {
     return Response.json({ ok: false, error: "webauthn_required", userId: row.id }, { status: 200 });
   } else if (hasTOTP) {
-    if (!body.totpCode) {
+    if (!body.totpCode && !body.backupCode) {
       return Response.json({ ok: false, error: "totp_required" }, { status: 200 });
     }
-    const totpValid = await verifyTOTP(row.totp_secret!, body.totpCode);
-    if (!totpValid) {
-      return Response.json({ ok: false, error: "invalid_totp" }, { status: 401 });
-    }
+    const totpError = await verifyTotpOrBackup(env, row.id, row.totp_secret!, body.totpCode, body.backupCode);
+    if (totpError) return totpError;
   }
 
   const token = await signJwt(
@@ -63,6 +66,26 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
   );
 
   return okResponse({ token, user: { id: row.id, email: row.email, name: row.name, createdAt: row.created_at } });
+}
+
+async function verifyTotpOrBackup(
+  env: Env,
+  userId: string,
+  totpSecret: string,
+  totpCode?: string,
+  backupCode?: string,
+): Promise<Response | null> {
+  if (totpCode) {
+    const valid = await verifyTOTP(totpSecret, totpCode);
+    if (!valid) return Response.json({ ok: false, error: "invalid_totp" }, { status: 401 });
+    return null;
+  }
+  if (backupCode) {
+    const valid = await validateAndConsumeBackupCode(env, userId, backupCode);
+    if (!valid) return Response.json({ ok: false, error: "invalid_backup_code" }, { status: 401 });
+    return null;
+  }
+  return null;
 }
 
 // Returns a 403 response if the account is restricted, or null if active.

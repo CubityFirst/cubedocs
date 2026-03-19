@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { startAuthentication } from "@simplewebauthn/browser";
+import { KeyRound, Smartphone, Hash } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { Label } from "@/components/ui/label";
@@ -33,6 +34,8 @@ export function LoginPage() {
   const [step, setStep] = useState<LoginStep>("credentials");
   const [pendingUserId, setPendingUserId] = useState<string | null>(null);
   const [totpCode, setTotpCode] = useState("");
+  const [usingBackupCode, setUsingBackupCode] = useState(false);
+  const [backupCode, setBackupCode] = useState("");
   const handleTurnstileVerify = useCallback((token: string) => setTurnstileToken(token), []);
   const handleTurnstileExpire = useCallback(() => setTurnstileToken(null), []);
 
@@ -119,7 +122,8 @@ export function LoginPage() {
           email,
           password,
           turnstileToken,
-          ...(step === "totp" ? { totpCode } : {}),
+          ...(step === "totp" && !usingBackupCode ? { totpCode } : {}),
+          ...(step === "totp" && usingBackupCode ? { backupCode } : {}),
         }),
       });
       const json = await res.json() as {
@@ -145,6 +149,9 @@ export function LoginPage() {
       } else if (json.error === "two_factor_required" && json.userId) {
         setPendingUserId(json.userId);
         setStep("method_picker");
+      } else if (json.error === "invalid_backup_code") {
+        setError("Invalid or already-used backup code.");
+        setBackupCode("");
       } else if (json.error === "invalid_totp") {
         setError("Invalid authenticator code. Please try again.");
         setTotpCode("");
@@ -163,6 +170,8 @@ export function LoginPage() {
   function handleBack() {
     setStep("credentials");
     setTotpCode("");
+    setBackupCode("");
+    setUsingBackupCode(false);
     setPendingUserId(null);
     setError(null);
   }
@@ -186,26 +195,55 @@ export function LoginPage() {
           </button>
         }
       >
-        <div className="space-y-2 flex flex-col items-center">
-          <Label>Authenticator code</Label>
-          <InputOTP
-            maxLength={6}
-            value={totpCode}
-            onChange={setTotpCode}
-            autoComplete="one-time-code"
-            autoFocus
-          >
-            <InputOTPGroup>
-              <InputOTPSlot index={0} />
-              <InputOTPSlot index={1} />
-              <InputOTPSlot index={2} />
-              <InputOTPSlot index={3} />
-              <InputOTPSlot index={4} />
-              <InputOTPSlot index={5} />
-            </InputOTPGroup>
-          </InputOTP>
-          <p className="text-xs text-muted-foreground">Enter the 6-digit code from your authenticator app.</p>
-        </div>
+        {usingBackupCode ? (
+          <div className="space-y-2">
+            <Label htmlFor="backup-code">Backup code</Label>
+            <Input
+              id="backup-code"
+              type="text"
+              placeholder="XXXXX-XXXXX"
+              value={backupCode}
+              onChange={e => setBackupCode(e.target.value.toUpperCase())}
+              maxLength={11}
+              autoFocus
+              autoComplete="off"
+            />
+            <p className="text-xs text-muted-foreground">Enter one of your backup codes.</p>
+          </div>
+        ) : (
+          <div className="space-y-2 flex flex-col items-center">
+            <Label>Authenticator code</Label>
+            <InputOTP
+              maxLength={6}
+              value={totpCode}
+              onChange={setTotpCode}
+              autoComplete="one-time-code"
+              autoFocus
+            >
+              <InputOTPGroup>
+                <InputOTPSlot index={0} />
+                <InputOTPSlot index={1} />
+                <InputOTPSlot index={2} />
+                <InputOTPSlot index={3} />
+                <InputOTPSlot index={4} />
+                <InputOTPSlot index={5} />
+              </InputOTPGroup>
+            </InputOTP>
+            <p className="text-xs text-muted-foreground">Enter the 6-digit code from your authenticator app.</p>
+          </div>
+        )}
+        <button
+          type="button"
+          className="text-primary underline-offset-4 hover:underline text-xs self-center"
+          onClick={() => {
+            setUsingBackupCode(v => !v);
+            setError(null);
+            setTotpCode("");
+            setBackupCode("");
+          }}
+        >
+          {usingBackupCode ? "Use authenticator app instead" : "Use a backup code instead"}
+        </button>
         <Turnstile onVerify={handleTurnstileVerify} onExpire={handleTurnstileExpire} />
       </AuthForm>
     );
@@ -237,21 +275,34 @@ export function LoginPage() {
         <div className="flex flex-col gap-3 pt-1">
           <Button
             type="button"
-            variant="outline"
-            onClick={() => setStep("totp")}
-          >
-            Authenticator app
-          </Button>
-          <Button
-            type="button"
             disabled={loading}
+            className="justify-start"
             onClick={async () => {
               if (!pendingUserId) return;
               setStep("webauthn");
               await runWebauthnFlow(pendingUserId);
             }}
           >
+            <KeyRound className="size-4 mr-2" />
             {loading ? "Waiting for key…" : "Security key"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="justify-start"
+            onClick={() => setStep("totp")}
+          >
+            <Smartphone className="size-4 mr-2" />
+            Authenticator app
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="justify-start"
+            onClick={() => { setUsingBackupCode(true); setStep("totp"); }}
+          >
+            <Hash className="size-4 mr-2" />
+            Backup code
           </Button>
         </div>
       </AuthForm>
