@@ -4,7 +4,7 @@ import type { DocsLayoutContext } from "@/layouts/DocsLayout";
 
 export function ProjectPage() {
   const { projectId } = useParams<{ projectId: string }>();
-  const { projectName, addDoc, myRole } = useOutletContext<DocsLayoutContext>();
+  const { projectName, addDoc, myRole, aiEnabled } = useOutletContext<DocsLayoutContext>();
 
   if (!projectId) return null;
 
@@ -13,6 +13,7 @@ export function ProjectPage() {
       projectId={projectId}
       projectName={projectName || "Files"}
       myRole={myRole}
+      aiEnabled={aiEnabled}
       onDocCreated={doc => addDoc({ id: doc.id, title: doc.title })}
     />
   );

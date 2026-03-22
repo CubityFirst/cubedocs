@@ -71,9 +71,10 @@ export async function handleProjects(
     if (role === null) return errorResponse(Errors.NOT_FOUND);
     if (ROLE_RANK[role] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
 
-    const body = await request.json<{ name?: string; description?: string | null; publishedAt?: string | null; vaultEnabled?: boolean; changelogMode?: string; vanitySlug?: string | null; aiEnabled?: boolean; homeDocEnabled?: boolean }>();
+    const body = await request.json<{ name?: string; description?: string | null; publishedAt?: string | null; vaultEnabled?: boolean; changelogMode?: string; vanitySlug?: string | null; aiEnabled?: boolean; aiSummarizationType?: string; homeDocEnabled?: boolean }>();
     if (body.name !== undefined && !body.name.trim()) return errorResponse(Errors.BAD_REQUEST);
     if (body.changelogMode !== undefined && !["off", "on", "enforced"].includes(body.changelogMode)) return errorResponse(Errors.BAD_REQUEST);
+    if (body.aiSummarizationType !== undefined && !["automatic", "manual"].includes(body.aiSummarizationType)) return errorResponse(Errors.BAD_REQUEST);
     if (body.vanitySlug !== undefined && body.vanitySlug !== null) {
       if (!VANITY_SLUG_REGEX.test(body.vanitySlug) || body.vanitySlug.length < 3 || body.vanitySlug.length > 50) return errorResponse(Errors.BAD_REQUEST);
       const proj = await env.DB.prepare("SELECT features FROM projects WHERE id = ?").bind(projectId).first<{ features: number }>();
@@ -93,6 +94,7 @@ export async function handleProjects(
     if (body.changelogMode !== undefined) { fields.push("changelog_mode = ?"); values.push(body.changelogMode); }
     if (body.vanitySlug !== undefined) { fields.push("vanity_slug = ?"); values.push(body.vanitySlug ?? null); }
     if (body.aiEnabled !== undefined) { fields.push("ai_enabled = ?"); values.push(body.aiEnabled ? 1 : 0); }
+    if (body.aiSummarizationType !== undefined) { fields.push("ai_summarization_type = ?"); values.push(body.aiSummarizationType); }
     if (body.homeDocEnabled === true) {
       const proj = await env.DB.prepare("SELECT home_doc_id FROM projects WHERE id = ?").bind(projectId).first<{ home_doc_id: string | null }>();
       if (!proj?.home_doc_id) {
@@ -127,6 +129,37 @@ export async function handleProjects(
   if (projectId && request.method === "DELETE") {
     const role = await getCallerRole(env.DB, projectId, user.userId);
     if (role !== "owner") return errorResponse(Errors.NOT_FOUND);
+
+    // Collect all docs and their revisions for R2 cleanup
+    const docs = await env.DB.prepare("SELECT id FROM docs WHERE project_id = ?").bind(projectId).all<{ id: string }>();
+    const docIds = docs.results.map(d => d.id);
+
+    const revisions = docIds.length > 0
+      ? await env.DB.prepare(
+          `SELECT asset_id, id FROM asset_revisions WHERE asset_type = 'doc' AND asset_id IN (${docIds.map(() => "?").join(",")})`,
+        ).bind(...docIds).all<{ asset_id: string; id: string }>()
+      : { results: [] };
+
+    // Collect all files for R2 cleanup
+    const files = await env.DB.prepare("SELECT id FROM files WHERE project_id = ?").bind(projectId).all<{ id: string }>();
+
+    // Delete R2 assets in parallel
+    await Promise.all([
+      ...docIds.flatMap(docId => [
+        env.ASSETS.delete(`${projectId}/${docId}`),
+        env.ASSETS.delete(`${projectId}/${docId}.blame`),
+      ]),
+      ...revisions.results.map(r => env.ASSETS.delete(`${projectId}/${r.asset_id}/v/${r.id}`)),
+      ...files.results.map(f => env.ASSETS.delete(`files/${f.id}`)),
+    ]);
+
+    // Delete orphaned asset_revisions (no cascade on this table)
+    if (docIds.length > 0) {
+      await env.DB.prepare(
+        `DELETE FROM asset_revisions WHERE asset_type = 'doc' AND asset_id IN (${docIds.map(() => "?").join(",")})`,
+      ).bind(...docIds).run();
+    }
+
     await env.DB.prepare("DELETE FROM projects WHERE id = ?").bind(projectId).run();
     return okResponse({ deleted: true });
   }

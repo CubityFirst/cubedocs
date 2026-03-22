@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useLocation, useOutletContext } from "react-router-dom";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
-import { Folder, FileText, House, Plus, FolderPlus, Search, X, Download, Upload, Image, FileCode, FileArchive, File, Trash2, Pencil, Link } from "lucide-react";
+import { Folder, FileText, House, Plus, FolderPlus, Search, X, Download, Upload, Image, FileCode, FileArchive, File, Trash2, Pencil, Link, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ResizableTable, ResizableTableRow } from "@/components/ui/resizable-table";
@@ -12,6 +13,8 @@ import { Badge } from "@/components/ui/badge";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { useToast } from "@/hooks/use-toast";
 import { getToken } from "@/lib/auth";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface FolderItem {
   id: string;
@@ -100,10 +103,11 @@ interface Props {
   projectId: string;
   projectName: string;
   myRole?: string | null;
+  aiEnabled?: boolean;
   onDocCreated: (doc: DocItem) => void;
 }
 
-export function FileManager({ projectId, projectName, myRole, onDocCreated }: Props) {
+export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCreated }: Props) {
   const canEdit = myRole === "editor" || myRole === "admin" || myRole === "owner";
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -141,6 +145,10 @@ export function FileManager({ projectId, projectName, myRole, onDocCreated }: Pr
   const [newFolderName, setNewFolderName] = useState("");
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [creatingDoc, setCreatingDoc] = useState(false);
+
+  const [summaryDoc, setSummaryDoc] = useState<DocItem | null>(null);
+  const [summary, setSummary] = useState<string | null>(null);
+  const [summarizing, setSummarizing] = useState(false);
 
   // internal drag-to-reorder state
   const draggedItem = useRef<{ type: "doc" | "folder" | "file"; id: string } | null>(null);
@@ -329,6 +337,28 @@ export function FileManager({ projectId, projectName, myRole, onDocCreated }: Pr
   async function handleDownloadDoc(e: React.MouseEvent, doc: DocItem) {
     e.stopPropagation();
     await downloadDoc(doc);
+  }
+
+  async function handleSummarize(e: React.MouseEvent, doc: DocItem) {
+    e.stopPropagation();
+    setSummaryDoc(doc);
+    setSummary(null);
+    setSummarizing(true);
+    try {
+      const token = getToken();
+      const res = await fetch("/api/ai/summarize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ docId: doc.id }),
+      });
+      const json = await res.json() as { ok: boolean; data?: { summary: string } };
+      if (json.ok && json.data) setSummary(json.data.summary);
+      else setSummary("Failed to generate summary.");
+    } catch {
+      setSummary("Failed to generate summary.");
+    } finally {
+      setSummarizing(false);
+    }
   }
 
   function openFile(file: FileItem) {
@@ -665,13 +695,24 @@ export function FileManager({ projectId, projectName, myRole, onDocCreated }: Pr
                       content: (
                         <div className="flex items-center justify-between gap-2 w-full">
                           <span className="text-sm text-muted-foreground truncate">{formatRelativeTime(doc.updated_at)}</span>
-                          <button
-                            onClick={e => handleDownloadDoc(e, doc)}
-                            className="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
-                            title="Download as markdown"
-                          >
-                            <Download className="h-3.5 w-3.5" />
-                          </button>
+                          <div className="flex items-center gap-0.5">
+                            {aiEnabled && (
+                              <button
+                                onClick={e => handleSummarize(e, doc)}
+                                className="shrink-0 p-1 rounded text-violet-400 hover:text-violet-300 hover:bg-muted"
+                                title="Summarise with AI"
+                              >
+                                <Sparkles className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            <button
+                              onClick={e => handleDownloadDoc(e, doc)}
+                              className="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
+                              title="Download as markdown"
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                         </div>
                       ),
                     },
@@ -941,6 +982,32 @@ export function FileManager({ projectId, projectName, myRole, onDocCreated }: Pr
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* AI summary dialog */}
+      <Dialog open={!!summaryDoc} onOpenChange={open => { if (!open) { setSummaryDoc(null); setSummary(null); } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-violet-400" />
+              {summaryDoc?.title || "Document"}
+            </DialogTitle>
+            <DialogDescription className="sr-only">AI-generated summary</DialogDescription>
+          </DialogHeader>
+          <div className="text-sm leading-relaxed min-h-[60px]">
+            {summarizing ? (
+              <div className="space-y-2 pt-3">
+                <Skeleton className="h-3.5 w-full" />
+                <Skeleton className="h-3.5 w-5/6" />
+                <Skeleton className="h-3.5 w-4/6" />
+              </div>
+            ) : (
+              <div className="prose prose-sm dark:prose-invert max-w-none text-muted-foreground [&_ul]:my-1 [&_li]:my-0">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{summary ?? ""}</ReactMarkdown>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Context menu single-item delete confirmation */}
       <AlertDialog open={!!contextDeleteTarget} onOpenChange={open => { if (!open) setContextDeleteTarget(null); }}>

@@ -26,4 +26,5 @@ pattern = "api.docs.cubityfir.st"
 custom_domain = true
 
 # Secrets (set via `wrangler secret put`):
-#   JWT_SECRET  (same value as auth worker — used for local JWT verification)
+#   JWT_SECRET      (same value as auth worker — used for local JWT verification)
+#   OPENAI_API_KEY  (OpenAI API key for AI summarisation feature)

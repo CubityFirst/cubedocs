@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { BookOpen, Globe, KeyRound, Users } from "lucide-react";
+import { BookOpen, Globe, KeyRound, Sparkles, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -14,6 +14,7 @@ interface Project {
   member_count: number;
   password_count: number;
   published_at: string | null;
+  ai_enabled: number;
 }
 
 export function DashboardPage() {
@@ -101,6 +102,15 @@ export function DashboardPage() {
                     {project.password_count > 0 ? `Password vault (${project.password_count} ${project.password_count === 1 ? "entry" : "entries"})` : "No password vault"}
                   </TooltipContent>
                 </Tooltip>
+
+                {!!project.ai_enabled && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Sparkles className="h-[18px] w-[18px] text-violet-400" strokeWidth={1.5} />
+                    </TooltipTrigger>
+                    <TooltipContent>AI features enabled</TooltipContent>
+                  </Tooltip>
+                )}
 
                 <Tooltip>
                   <TooltipTrigger asChild>

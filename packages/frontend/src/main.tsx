@@ -8,6 +8,10 @@ if (import.meta.env.DEV) {
   document.documentElement.setAttribute("data-dev", "true");
 }
 
+if (import.meta.env.VITE_BRANCH === "dev") {
+  document.title = "CubeDocs (dev)";
+}
+
 createRoot(document.getElementById("app")!).render(
   <StrictMode>
     <BrowserRouter>

@@ -69,6 +69,7 @@ interface Project {
   vanity_slug: string | null;
   features: number;
   ai_enabled: number;
+  ai_summarization_type: string;
   home_doc_id: string | null;
 }
 
@@ -119,6 +120,7 @@ export function SiteSettingsPage() {
   const [togglingVault, setTogglingVault] = useState(false);
   const [togglingChangelog, setTogglingChangelog] = useState(false);
   const [togglingAi, setTogglingAi] = useState(false);
+  const [togglingAiType, setTogglingAiType] = useState(false);
   const [togglingHomeDoc, setTogglingHomeDoc] = useState(false);
 
   const [vanitySlug, setVanitySlug] = useState("");
@@ -349,6 +351,29 @@ export function SiteSettingsPage() {
       toast({ title: "Could not connect to the server.", variant: "destructive" });
     } finally {
       setTogglingAi(false);
+    }
+  }
+
+  async function handleAiSummarizationTypeChange(type: string) {
+    if (!projectId || !project) return;
+    setTogglingAiType(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ aiSummarizationType: type }),
+      });
+      const json = await res.json() as { ok: boolean; data?: Project };
+      if (json.ok && json.data) {
+        setProject(json.data);
+        toast({ title: "AI summarization type updated." });
+      } else {
+        toast({ title: "Failed to update AI summarization type.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Could not connect to the server.", variant: "destructive" });
+    } finally {
+      setTogglingAiType(false);
     }
   }
 
@@ -642,19 +667,44 @@ export function SiteSettingsPage() {
               />
             </div>
             {!!(project.features & 2) && (
-              <div className="flex items-center justify-between rounded-md border border-border px-4 py-3">
-                <div className="flex flex-col gap-0.5">
-                  <p className="text-sm font-medium flex items-center gap-2">AI Features <PremiumBadge /></p>
-                  <p className="text-xs text-muted-foreground">
-                    Enable AI-powered document summarization.
-                  </p>
+              <>
+                <div className="flex items-center justify-between rounded-md border border-border px-4 py-3">
+                  <div className="flex flex-col gap-0.5">
+                    <p className="text-sm font-medium flex items-center gap-2">AI Features <PremiumBadge /></p>
+                    <p className="text-xs text-muted-foreground">
+                      Enable AI-powered document summarization.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={project.ai_enabled === 1}
+                    onCheckedChange={handleToggleAi}
+                    disabled={togglingAi}
+                  />
                 </div>
-                <Switch
-                  checked={project.ai_enabled === 1}
-                  onCheckedChange={handleToggleAi}
-                  disabled={togglingAi}
-                />
-              </div>
+                {project.ai_enabled === 1 && (
+                  <div className="flex items-center justify-between rounded-md border border-border px-4 py-3">
+                    <div className="flex flex-col gap-0.5">
+                      <p className="text-sm font-medium">AI Summarization Type</p>
+                      <p className="text-xs text-muted-foreground">
+                        Automatic generates a summary when a page is loaded. Manual only summarizes when the sparkle button is pressed.
+                      </p>
+                    </div>
+                    <Select
+                      value={project.ai_summarization_type ?? "manual"}
+                      onValueChange={handleAiSummarizationTypeChange}
+                      disabled={togglingAiType}
+                    >
+                      <SelectTrigger className="w-36">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="automatic">Automatic</SelectItem>
+                        <SelectItem value="manual">Manual</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </>
             )}
             <div className="flex items-center justify-between rounded-md border border-border px-4 py-3">
               <div className="flex flex-col gap-0.5">

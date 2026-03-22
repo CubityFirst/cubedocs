@@ -1,2 +1,7 @@
 packages:
   - "packages/*"
+  - "packages/admin/frontend"
+allowBuilds:
+  esbuild: true
+  sharp: true
+  workerd: true

@@ -29,3 +29,7 @@ The Auth Worker handles all identity concerns (register, login, TOTP, WebAuthn).
 `packages/frontend/vite.config.ts` Vite + dev proxy to API
 `packages/api/wrangler.toml` API Worker bindings (D1, R2, service bindings)
 `packages/auth/wrangler.toml` Auth Worker bindings (D1)
+
+## CLI Notes
+
+- All wrangler commands must be prefixed with `npx` (e.g. `npx wrangler d1 execute ...`)

@@ -7,12 +7,14 @@ import { handleMembers } from "./routes/members";
 import { handlePublic } from "./routes/public";
 import { handlePasswords } from "./routes/passwords";
 import { handleFiles } from "./routes/files";
+import { handleAi } from "./routes/ai";
 
 export interface Env {
   DB: D1Database;
   ASSETS: R2Bucket;
   AUTH: Fetcher; // Service binding to cubedocs-auth
   JWT_SECRET: string;
+  OPENAI_API_KEY: string;
 }
 
 export default {
@@ -139,6 +141,10 @@ export default {
       } else if (url.pathname.startsWith("/files")) {
         const session = await authenticate(request, env);
         response = await handleFiles(request, env, session, url);
+      } else if (url.pathname.startsWith("/ai")) {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        response = await handleAi(request, env, session, url);
       } else {
         response = errorResponse(Errors.NOT_FOUND);
       }

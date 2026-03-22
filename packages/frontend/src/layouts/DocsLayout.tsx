@@ -31,6 +31,8 @@ interface Project {
   vault_enabled: number;
   published_at: string | null;
   changelog_mode: string;
+  ai_enabled: number;
+  ai_summarization_type: string;
 }
 
 interface Doc {
@@ -59,6 +61,8 @@ export interface DocsLayoutContext {
   projectPublishedAt: string | null;
   changelogMode: string;
   myRole: string | null;
+  aiEnabled: boolean;
+  aiSummarizationType: string;
   docs: { id: string; title: string }[];
   addDoc: (doc: { id: string; title: string }) => void;
   setBreadcrumbs: Dispatch<SetStateAction<BreadcrumbItem[]>>;
@@ -210,6 +214,8 @@ export function DocsLayout() {
     projectPublishedAt: currentProject?.published_at ?? null,
     changelogMode: currentProject?.changelog_mode ?? "off",
     myRole: currentProject?.role ?? null,
+    aiEnabled: !!(currentProject?.ai_enabled),
+    aiSummarizationType: currentProject?.ai_summarization_type ?? "manual",
     docs,
     addDoc,
     setBreadcrumbs,

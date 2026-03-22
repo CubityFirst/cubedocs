@@ -18,9 +18,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 import { HistorySheet, type RevisionMeta } from "@/components/HistorySheet";
 import { HistoryBanner } from "@/components/HistoryBanner";
-import { Pencil, X, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight } from "lucide-react";
+import { Pencil, X, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
 import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
 import { getToken } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
@@ -76,6 +77,12 @@ interface BlameEntry {
 
 function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, max) + "…" : s;
+}
+
+function calcReadingTime(text: string): string {
+  const words = text.trim().split(/\s+/).filter(Boolean).length;
+  const mins = Math.max(1, Math.round(words / 200));
+  return `${mins} min read`;
 }
 
 function timeAgo(iso: string): string {
@@ -189,6 +196,8 @@ interface Doc {
   hide_title?: boolean | null;
   myRole?: string;
   blame?: (BlameEntry | null)[];
+  ai_summary?: string | null;
+  ai_summary_version?: string | null;
 }
 
 interface RevisionDetail extends RevisionMeta {
@@ -199,7 +208,7 @@ export function DocPage() {
   const { projectId, docId } = useParams<{ projectId: string; docId: string }>();
   const location = useLocation();
   const navigate = useNavigate();
-  const { updateDocTitle, setBreadcrumbs, projectPublishedAt, changelogMode, docs: allDocs } = useOutletContext<DocsLayoutContext>();
+  const { updateDocTitle, setBreadcrumbs, projectPublishedAt, changelogMode, docs: allDocs, aiEnabled, aiSummarizationType } = useOutletContext<DocsLayoutContext>();
   const { toast } = useToast();
 
   const markdownComponents = useMemo(() => ({
@@ -224,7 +233,8 @@ export function DocPage() {
   const [reverting, setReverting] = useState(false);
   const [changelogDialogOpen, setChangelogDialogOpen] = useState(false);
   const [changelogText, setChangelogText] = useState("");
-const [editorScrollTop, setEditorScrollTop] = useState(0);
+  const [editorScrollTop, setEditorScrollTop] = useState(0);
+  const [aiSummaryLoading, setAiSummaryLoading] = useState(false);
   const [markdownHelpOpen, setMarkdownHelpOpen] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -267,6 +277,33 @@ const [editorScrollTop, setEditorScrollTop] = useState(0);
       .finally(() => setLoading(false));
     return () => setBreadcrumbs([]);
   }, [docId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function generateSummary() {
+    if (!doc || aiSummaryLoading) return;
+    const token = getToken();
+    setAiSummaryLoading(true);
+    fetch("/api/ai/summarize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ docId: doc.id }),
+    })
+      .then(r => r.json())
+      .then((json: { ok: boolean; data?: { summary?: string } }) => {
+        if (json.ok && json.data?.summary) {
+          setDoc(prev => prev ? { ...prev, ai_summary: json.data!.summary, ai_summary_version: prev.updated_at } : prev);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setAiSummaryLoading(false));
+  }
+
+  useEffect(() => {
+    if (!doc || !aiEnabled || viewingRevision) return;
+    if (aiSummarizationType !== "automatic") return;
+    // If cached summary is up-to-date, no need to re-fetch
+    if (doc.ai_summary && doc.ai_summary_version === doc.updated_at) return;
+    generateSummary();
+  }, [doc?.id, aiEnabled, aiSummarizationType, viewingRevision]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function startEditing() {
     if (!doc) return;
@@ -645,9 +682,15 @@ const [editorScrollTop, setEditorScrollTop] = useState(0);
       {/* Article */}
       <div className="flex-1 min-w-0 px-6 py-10">
         <div className="mx-auto max-w-3xl relative">
-          {/* Top-right editor actions */}
+          {/* Top-right actions */}
+          <div className="absolute top-0 right-0 flex items-center gap-1">
+            {!viewingRevision && aiEnabled && aiSummarizationType === "manual" && (
+              <Button variant="ghost" size="icon" title="Generate AI summary" onClick={generateSummary} disabled={aiSummaryLoading}>
+                <Sparkles className="h-4 w-4 text-violet-500" />
+              </Button>
+            )}
           {isEditor && (
-            <div className="absolute top-0 right-0 flex items-center gap-1">
+            <>
               <Button variant="ghost" size="icon" onClick={startEditing} title="Edit document">
                 <Pencil className="h-4 w-4" />
               </Button>
@@ -758,8 +801,9 @@ const [editorScrollTop, setEditorScrollTop] = useState(0);
                   </div>
                 </DialogContent>
               </Dialog>
-            </div>
+            </>
           )}
+          </div>
 
           {viewingRevision && (
             <HistoryBanner
@@ -780,8 +824,29 @@ const [editorScrollTop, setEditorScrollTop] = useState(0);
             })()}
             {!viewingRevision && doc.show_last_updated !== 0 && (
               <p className="not-prose -mt-2 mb-6 text-sm text-muted-foreground">
-                Last updated {timeAgo(doc.updated_at)}
+                Last updated {timeAgo(doc.updated_at)} · {calcReadingTime(doc.content)}
               </p>
+            )}
+            {!viewingRevision && aiEnabled && (aiSummaryLoading || doc.ai_summary) && (
+              <div className="not-prose mb-6 rounded-lg border border-violet-200 bg-violet-50 px-4 py-3 dark:border-violet-900 dark:bg-violet-950/30">
+                <p className="mb-1 flex items-center gap-1.5 text-xs font-medium text-violet-600 dark:text-violet-400">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  AI Summary
+                </p>
+                {aiSummaryLoading ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-3.5 w-full bg-violet-200/60 dark:bg-violet-800/40" />
+                    <Skeleton className="h-3.5 w-5/6 bg-violet-200/60 dark:bg-violet-800/40" />
+                    <Skeleton className="h-3.5 w-4/6 bg-violet-200/60 dark:bg-violet-800/40" />
+                  </div>
+                ) : (
+                  <div className="prose prose-sm prose-violet dark:prose-invert max-w-none text-violet-900/80 dark:text-violet-200/80 [&_ul]:my-1 [&_li]:my-0">
+                    <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>
+                      {doc.ai_summary ?? ""}
+                    </ReactMarkdown>
+                  </div>
+                )}
+              </div>
             )}
             {(viewingRevision ? viewingRevision.content : doc.content).trim() ? (
               <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>
