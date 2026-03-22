@@ -7,6 +7,7 @@
     "build": "concurrently \"pnpm --filter frontend build\" \"pnpm --filter api build\" \"pnpm --filter auth build\" \"pnpm --filter @cubedocs/admin build\"",
     "deploy": "concurrently \"pnpm --filter frontend deploy\" \"pnpm --filter api deploy\" \"pnpm --filter auth deploy\" \"pnpm --filter @cubedocs/admin deploy\"",
     "typecheck": "concurrently \"pnpm --filter frontend typecheck\" \"pnpm --filter api typecheck\" \"pnpm --filter auth typecheck\" \"pnpm --filter @cubedocs/admin typecheck\"",
+"migrate": "pnpm --filter api migrate && pnpm --filter auth migrate",
     "test": "concurrently \"pnpm --filter api test\" \"pnpm --filter auth test\""
   },
   "devDependencies": {

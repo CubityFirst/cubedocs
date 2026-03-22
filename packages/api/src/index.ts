@@ -14,7 +14,7 @@ export interface Env {
   ASSETS: R2Bucket;
   AUTH: Fetcher; // Service binding to cubedocs-auth
   JWT_SECRET: string;
-  OPENAI_API_KEY: string;
+  OPENAI_API_KEY?: string;
 }
 
 export default {
