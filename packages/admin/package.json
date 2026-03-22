@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "dev": "wrangler dev --port 8788",
+    "dev": "cd frontend && pnpm build && cd .. && wrangler dev --port 8788",
     "build": "cd frontend && pnpm build",
     "deploy": "pnpm build && wrangler deploy",
     "typecheck": "tsc --noEmit"
