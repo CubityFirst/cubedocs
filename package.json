@@ -8,7 +8,7 @@
     "deploy": "concurrently \"pnpm --filter frontend deploy\" \"pnpm --filter api deploy\" \"pnpm --filter auth deploy\" \"pnpm --filter @cubedocs/admin deploy\"",
     "typecheck": "concurrently \"pnpm --filter frontend typecheck\" \"pnpm --filter api typecheck\" \"pnpm --filter auth typecheck\" \"pnpm --filter @cubedocs/admin typecheck\"",
 "migrate": "pnpm --filter api migrate && pnpm --filter auth migrate",
-    "test": "concurrently \"pnpm --filter api test\" \"pnpm --filter auth test\""
+    "test": "concurrently \"pnpm --filter api test\" \"pnpm --filter auth test\" \"pnpm --filter @cubedocs/admin test\" \"pnpm --filter @cubedocs/admin-frontend test\""
   },
   "devDependencies": {
     "concurrently": "^9.0.0",

@@ -6,7 +6,8 @@
     "dev": "concurrently \"cd frontend && pnpm dev\" \"pnpm exec wrangler dev --port 8789 --persist-to ../../.wrangler/state\"",
     "build": "cd frontend && pnpm build",
     "deploy": "pnpm build && pnpm exec wrangler deploy",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run src/routes/users.test.ts"
   },
   "dependencies": {
     "fflate": "^0.8.2",
@@ -15,6 +16,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.0.0",
     "concurrently": "^9.2.1",
-    "typescript": "^5.5.0"
+    "typescript": "^5.5.0",
+    "vitest": "^2.1.9"
   }
 }

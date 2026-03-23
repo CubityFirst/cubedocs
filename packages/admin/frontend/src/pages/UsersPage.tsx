@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { format } from "date-fns";
-import { toast } from "sonner";
 import { CalendarDays, ChevronDown, ChevronRight, Download, Search, X } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -32,6 +32,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
+import { Textarea } from "@/components/ui/textarea";
 import { type AdminUser, searchUsers, updateUserModeration, forceUserPasswordChange, exportUserData } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -57,6 +58,13 @@ function formatModerationUntil(until: number): string {
   });
 }
 
+function formatModerationAction(action: AdminUser["latest_moderation_action"]): string {
+  if (action === "disabled") return "Disabled";
+  if (action === "suspended") return "Suspended";
+  if (action === "re_enabled") return "Re-enabled";
+  return "Unknown";
+}
+
 function createDefaultDisableDate(): Date {
   const date = new Date();
   date.setDate(date.getDate() + 1);
@@ -77,6 +85,15 @@ function mergeDateAndTime(date: Date, timeValue: string): Date {
   return merged;
 }
 
+function latestModerationSummary(user: AdminUser): string | null {
+  if (!user.latest_moderation_action || !user.latest_moderation_created_at) return null;
+  const when = new Date(user.latest_moderation_created_at).toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+  return `${formatModerationAction(user.latest_moderation_action)} on ${when}`;
+}
+
 interface UserRowProps {
   user: AdminUser;
   onUpdated: (id: string, updates: Partial<AdminUser>) => void;
@@ -92,7 +109,10 @@ function UserRow({ user, onUpdated }: UserRowProps) {
   const [disableMode, setDisableMode] = useState<DisableMode>("indefinitely");
   const [disableDate, setDisableDate] = useState<Date | undefined>(() => createDefaultDisableDate());
   const [disableTime, setDisableTime] = useState(() => formatTimeInput(createDefaultDisableDate()));
+  const [disableReason, setDisableReason] = useState("");
   const moderationState = getModerationState(user.moderation);
+  const isReasonRequired = disableMode === "indefinitely" || disableMode === "until";
+  const canSubmitDisable = !pending && disableReason.trim().length > 0;
 
   function resetDisableForm() {
     const nextDate = createDefaultDisableDate();
@@ -100,6 +120,7 @@ function UserRow({ user, onUpdated }: UserRowProps) {
     setDisableMode("indefinitely");
     setDisableDate(nextDate);
     setDisableTime(formatTimeInput(nextDate));
+    setDisableReason("");
   }
 
   function handleDisableDialogChange(open: boolean) {
@@ -141,7 +162,12 @@ function UserRow({ user, onUpdated }: UserRowProps) {
     setPending(true);
     try {
       await updateUserModeration(user.id, 0);
-      onUpdated(user.id, { moderation: 0 });
+      onUpdated(user.id, {
+        moderation: 0,
+        latest_moderation_action: "re_enabled",
+        latest_moderation_reason: null,
+        latest_moderation_created_at: new Date().toISOString(),
+      });
       toast.success("Account re-enabled");
     } catch {
       toast.error("Failed to update user");
@@ -151,6 +177,12 @@ function UserRow({ user, onUpdated }: UserRowProps) {
   }
 
   async function handleDisableAccount() {
+    const trimmedReason = disableReason.trim();
+    if (!trimmedReason) {
+      toast.error("Enter a moderation reason");
+      return;
+    }
+
     let moderation = -1;
 
     if (disableMode === "until") {
@@ -170,8 +202,13 @@ function UserRow({ user, onUpdated }: UserRowProps) {
 
     setPending(true);
     try {
-      await updateUserModeration(user.id, moderation);
-      onUpdated(user.id, { moderation });
+      await updateUserModeration(user.id, moderation, trimmedReason);
+      onUpdated(user.id, {
+        moderation,
+        latest_moderation_action: moderation === -1 ? "disabled" : "suspended",
+        latest_moderation_reason: trimmedReason,
+        latest_moderation_created_at: new Date().toISOString(),
+      });
       toast.success(
         moderation === -1
           ? "Account disabled indefinitely"
@@ -184,6 +221,9 @@ function UserRow({ user, onUpdated }: UserRowProps) {
       setPending(false);
     }
   }
+
+  const latestSummary = latestModerationSummary(user);
+  const currentReason = moderationState.kind === "active" ? null : user.latest_moderation_reason;
 
   return (
     <>
@@ -207,12 +247,25 @@ function UserRow({ user, onUpdated }: UserRowProps) {
         </TableCell>
       </TableRow>
       {expanded && (
-        <TableRow className="hover:bg-transparent bg-muted/20">
+        <TableRow className="bg-muted/20 hover:bg-transparent">
           <TableCell colSpan={5} className="py-3 pl-10 pr-6">
             <div className="flex flex-col gap-3" onClick={e => e.stopPropagation()}>
               {moderationState.kind === "suspended" && (
                 <p className="text-xs text-muted-foreground">
                   This account will be re-enabled automatically on {formatModerationUntil(moderationState.until)}.
+                </p>
+              )}
+
+              {currentReason && (
+                <p className="text-sm">
+                  <span className="font-medium">Current moderation reason:</span> {currentReason}
+                </p>
+              )}
+
+              {!currentReason && latestSummary && (
+                <p className="text-xs text-muted-foreground">
+                  Last moderation event: {latestSummary}
+                  {user.latest_moderation_reason ? ` - ${user.latest_moderation_reason}` : ""}
                 </p>
               )}
 
@@ -334,21 +387,33 @@ function UserRow({ user, onUpdated }: UserRowProps) {
                                     onChange={e => setDisableTime(e.target.value)}
                                   />
                                 </div>
-
-                                <p className="text-xs text-muted-foreground">
-                                  The account will be re-enabled automatically at the selected local time.
-                                </p>
                               </div>
                             )}
                           </div>
                         </label>
+
+                        <div className="flex flex-col gap-2">
+                          <Label htmlFor={`disable-reason-${user.id}`}>
+                            Moderation reason
+                          </Label>
+                          <Textarea
+                            id={`disable-reason-${user.id}`}
+                            value={disableReason}
+                            onChange={e => setDisableReason(e.target.value)}
+                            placeholder="Explain why this account is being disabled or suspended."
+                            required={isReasonRequired}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            This reason is stored in admin moderation history and included in user export data.
+                          </p>
+                        </div>
                       </div>
 
                       <DialogFooter>
                         <Button type="button" variant="outline" onClick={() => handleDisableDialogChange(false)} disabled={pending}>
                           Cancel
                         </Button>
-                        <Button type="button" variant="destructive" onClick={handleDisableAccount} disabled={pending}>
+                        <Button type="button" variant="destructive" onClick={handleDisableAccount} disabled={!canSubmitDisable}>
                           Disable
                         </Button>
                       </DialogFooter>
@@ -396,7 +461,7 @@ export function UsersPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold">Users</h1>
-        <p className="text-sm text-muted-foreground mt-1">Search and moderate user accounts.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Search and moderate user accounts.</p>
       </div>
 
       <Card>
@@ -406,7 +471,7 @@ export function UsersPage() {
         <CardContent>
           <form onSubmit={handleSearch} className="flex gap-2">
             <div className="relative max-w-sm w-full">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Email or user ID..."
                 value={query}
@@ -417,7 +482,7 @@ export function UsersPage() {
                 <button
                   type="button"
                   onClick={() => setQuery("")}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -432,7 +497,7 @@ export function UsersPage() {
 
       {loading && (
         <Card>
-          <CardContent className="pt-5 space-y-2">
+          <CardContent className="space-y-2 pt-5">
             {Array.from({ length: 3 }).map((_, i) => (
               <Skeleton key={i} className="h-10 w-full" />
             ))}
@@ -444,7 +509,7 @@ export function UsersPage() {
         <Card>
           <CardContent className="pt-5">
             {users.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-6">No users found.</p>
+              <p className="py-6 text-center text-sm text-muted-foreground">No users found.</p>
             ) : (
               <Table>
                 <TableHeader>

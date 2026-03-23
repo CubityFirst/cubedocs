@@ -5,6 +5,9 @@ export interface AdminUser {
   created_at: string;
   moderation: number;
   force_password_change: number;
+  latest_moderation_action: "disabled" | "suspended" | "re_enabled" | null;
+  latest_moderation_reason: string | null;
+  latest_moderation_created_at: string | null;
 }
 
 export interface AdminProject {
@@ -28,11 +31,11 @@ export async function forceUserPasswordChange(id: string): Promise<void> {
   if (!json.ok) throw new Error("Failed to force password change");
 }
 
-export async function updateUserModeration(id: string, moderation: number): Promise<void> {
+export async function updateUserModeration(id: string, moderation: number, reason?: string): Promise<void> {
   const res = await fetch(`/api/users/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ moderation }),
+    body: JSON.stringify({ moderation, reason }),
   });
   const json = (await res.json()) as { ok: boolean };
   if (!json.ok) throw new Error("Failed to update user");
