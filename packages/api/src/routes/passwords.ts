@@ -129,7 +129,7 @@ export async function handlePasswords(
     if (role === null) return errorResponse(Errors.FORBIDDEN);
     if (ROLE_RANK[role] < ROLE_RANK["editor"]) return errorResponse(Errors.FORBIDDEN);
 
-    const key = await deriveKey(env.JWT_SECRET, body.projectId);
+    const key = await deriveKey(env.VAULT_SECRET, body.projectId);
     const passwordEnc = await encryptField(key, body.password);
     const totpEnc = body.totp ? await encryptField(key, body.totp) : null;
     const notesEnc = body.notes ? await encryptField(key, body.notes) : null;
@@ -156,7 +156,7 @@ export async function handlePasswords(
     if (!revision) return errorResponse(Errors.NOT_FOUND);
     type Snap = { title: string; username: string | null; password_enc: string; totp_enc: string | null; url: string | null; notes_enc: string | null };
     const snap = JSON.parse(revision.data) as Snap;
-    const key = await deriveKey(env.JWT_SECRET, meta.project_id);
+    const key = await deriveKey(env.VAULT_SECRET, meta.project_id);
     const password = await decryptField(key, snap.password_enc);
     const totp = snap.totp_enc ? await decryptField(key, snap.totp_enc) : null;
     const notes = snap.notes_enc ? await decryptField(key, snap.notes_enc) : null;
@@ -184,7 +184,7 @@ export async function handlePasswords(
     const role = await getCallerRole(env.DB, row.project_id, user.userId);
     if (role === null) return errorResponse(Errors.FORBIDDEN);
 
-    const key = await deriveKey(env.JWT_SECRET, row.project_id);
+    const key = await deriveKey(env.VAULT_SECRET, row.project_id);
     const password = await decryptField(key, row.password_enc);
     const totp = row.totp_enc ? await decryptField(key, row.totp_enc) : null;
     const notes = row.notes_enc ? await decryptField(key, row.notes_enc) : null;
@@ -213,7 +213,7 @@ export async function handlePasswords(
     }>>();
 
     const now = new Date().toISOString();
-    const key = await deriveKey(env.JWT_SECRET, existing.project_id);
+    const key = await deriveKey(env.VAULT_SECRET, existing.project_id);
     const set: string[] = ["updated_at = ?"];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const vals: any[] = [now];
