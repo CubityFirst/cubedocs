@@ -15,15 +15,23 @@ usersRouter.get("/search", async (c) => {
   return c.json({ ok: true, data: rows.results });
 });
 
-// PATCH /api/users/:id — { moderation: 0 | -1 }
+// PATCH /api/users/:id - { moderation: 0 | -1 | unix timestamp }
 usersRouter.patch("/:id", async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json<{ moderation: number }>();
-  if (body.moderation !== 0 && body.moderation !== -1) {
+  const moderation = body.moderation;
+  const nowSeconds = Math.floor(Date.now() / 1000);
+
+  if (!Number.isInteger(moderation) || (moderation !== 0 && moderation !== -1 && moderation <= 0)) {
     return c.json({ ok: false, error: "Invalid moderation value" }, 400);
   }
+
+  if (moderation > 0 && moderation <= nowSeconds) {
+    return c.json({ ok: false, error: "Suspension time must be in the future" }, 400);
+  }
+
   await c.env.AUTH_DB.prepare("UPDATE users SET moderation = ? WHERE id = ?")
-    .bind(body.moderation, id)
+    .bind(moderation, id)
     .run();
   return c.json({ ok: true });
 });
@@ -37,43 +45,42 @@ usersRouter.post("/:id/force-password-change", async (c) => {
   return c.json({ ok: true });
 });
 
-// GET /api/users/:id/export — GDPR-style data export as .zip
+// GET /api/users/:id/export - GDPR-style data export as .zip
 usersRouter.get("/:id/export", async (c) => {
   const id = c.req.param("id");
 
-  // Auth DB: profile
   const profile = await c.env.AUTH_DB.prepare(
     "SELECT id, email, name, created_at, moderation, force_password_change FROM users WHERE id = ?",
   ).bind(id).first<{ id: string; email: string; name: string; created_at: string; moderation: number; force_password_change: number }>();
 
   if (!profile) return c.json({ ok: false, error: "User not found" }, 404);
 
-  // Auth DB: has TOTP enabled
   const totpRow = await c.env.AUTH_DB.prepare(
     "SELECT totp_secret IS NOT NULL AS has_totp FROM users WHERE id = ?",
   ).bind(id).first<{ has_totp: number }>();
 
-  // Auth DB: WebAuthn credentials (name + registered date only, no keys)
   const webauthn = await c.env.AUTH_DB.prepare(
     "SELECT id, name, created_at FROM webauthn_credentials WHERE user_id = ?",
   ).bind(id).all<{ id: string; name: string; created_at: string }>();
 
-  // Main DB: owned projects
   const ownedProjects = await c.env.DB.prepare(
     "SELECT id, name, created_at FROM projects WHERE owner_id = ?",
   ).bind(id).all<{ id: string; name: string; created_at: string }>();
 
-  // Main DB: project memberships (where they were invited as a member)
   const memberships = await c.env.DB.prepare(
     "SELECT p.id, p.name, pm.role, pm.created_at FROM project_members pm JOIN projects p ON pm.project_id = p.id WHERE pm.user_id = ?",
   ).bind(id).all<{ id: string; name: string; role: string; created_at: string }>();
+
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const isSuspended = profile.moderation > 0 && nowSeconds < profile.moderation;
 
   const profileData = {
     id: profile.id,
     email: profile.email,
     display_name: profile.name,
     account_created_at: profile.created_at,
-    account_status: profile.moderation === -1 ? "disabled" : "active",
+    account_status: profile.moderation === -1 ? "disabled" : isSuspended ? "suspended" : "active",
+    ...(isSuspended ? { account_suspended_until: profile.moderation } : {}),
   };
 
   const securityData = {
@@ -91,10 +98,11 @@ usersRouter.get("/:id/export", async (c) => {
     "security.json": strToU8(JSON.stringify(securityData, null, 2)),
     "projects.json": strToU8(JSON.stringify(projectsData, null, 2)),
   });
+  const zipBuffer = Uint8Array.from(zip).buffer;
 
   const safeEmail = profile.email.replace(/[^a-z0-9]/gi, "_");
   const date = new Date().toISOString().slice(0, 10);
-  return new Response(zip, {
+  return new Response(zipBuffer, {
     headers: {
       "Content-Type": "application/zip",
       "Content-Disposition": `attachment; filename="userdata_${safeEmail}_${date}.zip"`,

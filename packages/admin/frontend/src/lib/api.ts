@@ -28,7 +28,7 @@ export async function forceUserPasswordChange(id: string): Promise<void> {
   if (!json.ok) throw new Error("Failed to force password change");
 }
 
-export async function updateUserModeration(id: string, moderation: 0 | -1): Promise<void> {
+export async function updateUserModeration(id: string, moderation: number): Promise<void> {
   const res = await fetch(`/api/users/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
