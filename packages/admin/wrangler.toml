@@ -4,6 +4,7 @@ compatibility_date = "2024-12-30"
 
 [assets]
 directory = "./dist"
+binding = "SITE_ASSETS"
 html_handling = "auto-trailing-slash"
 not_found_handling = "single-page-application"
 
@@ -16,6 +17,10 @@ database_id = "267490be-7141-4d00-ab23-152742f2f6ef"
 binding = "AUTH_DB"
 database_name = "cubedocs-auth"
 database_id = "db327d85-b8c2-4fed-adaa-25e748778c86"
+
+[[r2_buckets]]
+binding = "ASSETS"
+bucket_name = "cubedocs-assets"
 
 [[routes]]
 pattern = "admin.cubityfir.st"

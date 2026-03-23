@@ -3,9 +3,9 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "dev": "cd frontend && pnpm build && cd .. && wrangler dev --port 8789 --persist-to ../../.wrangler/state",
+    "dev": "cd frontend && pnpm build && cd .. && pnpm exec wrangler dev --port 8789 --persist-to ../../.wrangler/state",
     "build": "cd frontend && pnpm build",
-    "deploy": "pnpm build && wrangler deploy",
+    "deploy": "pnpm build && pnpm exec wrangler deploy",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -13,7 +13,6 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.0.0",
-    "typescript": "^5.5.0",
-    "wrangler": "^4.0.0"
+    "typescript": "^5.5.0"
   }
 }

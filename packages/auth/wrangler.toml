@@ -2,6 +2,7 @@ name = "cubedocs-auth"
 main = "src/index.ts"
 compatibility_date = "2026-02-24"
 compatibility_flags = ["nodejs_compat"]
+workers_dev = false
 
 [[d1_databases]]
 binding = "DB"
@@ -14,10 +15,6 @@ JWT_ISSUER = "https://auth.cubedocs.com"
 WEBAUTHN_RP_ID = "docs.cubityfir.st"
 WEBAUTHN_RP_NAME = "CubeDocs"
 WEBAUTHN_ORIGIN = "https://docs.cubityfir.st"
-
-[[routes]]
-pattern = "auth.docs.cubityfir.st"
-custom_domain = true
 
 # Secrets (set via `wrangler secret put`):
 #   JWT_SECRET

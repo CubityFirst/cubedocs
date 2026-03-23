@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { Search } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -70,14 +70,25 @@ export function UsersPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSearch} className="flex gap-2">
-            <Input
-              placeholder="Email or user ID..."
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              className="max-w-sm"
-            />
+            <div className="relative max-w-sm w-full">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+              <Input
+                placeholder="Email or user ID..."
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                className="pl-8 pr-8"
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
             <Button type="submit" disabled={loading}>
-              <Search className="h-4 w-4" />
               Search
             </Button>
           </form>

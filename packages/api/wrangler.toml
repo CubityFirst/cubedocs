@@ -2,6 +2,7 @@ name = "cubedocs-api"
 main = "src/index.ts"
 compatibility_date = "2026-02-24"
 compatibility_flags = ["nodejs_compat"]
+workers_dev = false
 
 [[d1_databases]]
 binding = "DB"
@@ -20,10 +21,6 @@ service = "cubedocs-auth"
 
 [vars]
 ENVIRONMENT = "production"
-
-[[routes]]
-pattern = "api.docs.cubityfir.st"
-custom_domain = true
 
 # Secrets (set via `wrangler secret put`):
 #   JWT_SECRET      (same value as auth worker — used for local JWT verification)

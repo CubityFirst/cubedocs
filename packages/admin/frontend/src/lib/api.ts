@@ -47,3 +47,9 @@ export async function updateProjectFeatures(id: string, features: number): Promi
   const json = (await res.json()) as { ok: boolean };
   if (!json.ok) throw new Error("Failed to update project features");
 }
+
+export async function deleteProject(id: string): Promise<void> {
+  const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
+  const json = (await res.json()) as { ok: boolean };
+  if (!json.ok) throw new Error("Failed to delete project");
+}
