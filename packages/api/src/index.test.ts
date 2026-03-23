@@ -28,6 +28,7 @@ function makeEnv(authSession?: Session | null) {
     ASSETS: {} as unknown as R2Bucket,
     AUTH: { fetch: authFetch } as unknown as Fetcher,
     JWT_SECRET: "test-secret",
+    VAULT_SECRET: "test-vault-secret",
   };
 }
 

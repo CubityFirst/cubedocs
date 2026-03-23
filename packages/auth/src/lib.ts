@@ -11,6 +11,7 @@ export const Errors = {
   CONFLICT:     { error: "Already exists", status: 409 },
   BAD_REQUEST:  { error: "Bad request", status: 400 },
   INTERNAL:     { error: "Internal server error", status: 500 },
+  RATE_LIMITED: { error: "rate_limited", status: 429 },
 } as const;
 
 export function errorResponse(err: typeof Errors[keyof typeof Errors]): Response {

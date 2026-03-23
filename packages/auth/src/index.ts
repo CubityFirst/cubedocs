@@ -26,6 +26,8 @@ export interface Env {
   WEBAUTHN_RP_ID: string;
   WEBAUTHN_RP_NAME: string;
   WEBAUTHN_ORIGIN: string;
+  RATE_LIMITER_LOOKUP: { limit(opts: { key: string }): Promise<{ success: boolean }> };
+  RATE_LIMITER_AUTH: { limit(opts: { key: string }): Promise<{ success: boolean }> };
 }
 
 export default {
@@ -37,16 +39,23 @@ export default {
       return new Response(null, { status: 204, headers: corsHeaders() });
     }
 
+    const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
     let response: Response;
 
     try {
       if (url.pathname === "/register" && request.method === "POST") {
+        const { success } = await env.RATE_LIMITER_AUTH.limit({ key: ip });
+        if (!success) return addCorsHeaders(errorResponse(Errors.RATE_LIMITED));
         response = await handleRegister(request, env);
       } else if (url.pathname === "/login" && request.method === "POST") {
+        const { success } = await env.RATE_LIMITER_AUTH.limit({ key: ip });
+        if (!success) return addCorsHeaders(errorResponse(Errors.RATE_LIMITED));
         response = await handleLogin(request, env);
       } else if (url.pathname === "/verify" && request.method === "GET") {
         response = await handleVerify(request, env);
       } else if (url.pathname === "/lookup" && request.method === "POST") {
+        const { success } = await env.RATE_LIMITER_LOOKUP.limit({ key: ip });
+        if (!success) return addCorsHeaders(errorResponse(Errors.RATE_LIMITED));
         response = await handleLookup(request, env);
       } else if (url.pathname === "/lookup-by-id" && request.method === "POST") {
         response = await handleLookupById(request, env);
@@ -67,8 +76,12 @@ export default {
       } else if (url.pathname === "/webauthn/register/finish" && request.method === "POST") {
         response = await handleWebauthnRegisterFinish(request, env);
       } else if (url.pathname === "/webauthn/auth/start" && request.method === "POST") {
+        const { success } = await env.RATE_LIMITER_AUTH.limit({ key: ip });
+        if (!success) return addCorsHeaders(errorResponse(Errors.RATE_LIMITED));
         response = await handleWebauthnAuthStart(request, env);
       } else if (url.pathname === "/webauthn/auth/finish" && request.method === "POST") {
+        const { success } = await env.RATE_LIMITER_AUTH.limit({ key: ip });
+        if (!success) return addCorsHeaders(errorResponse(Errors.RATE_LIMITED));
         response = await handleWebauthnAuthFinish(request, env);
       } else if (url.pathname === "/webauthn/credentials" && request.method === "POST") {
         response = await handleWebauthnCredentialsList(request, env);
