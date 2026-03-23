@@ -834,7 +834,7 @@ export function DocPage() {
                   AI Summary
                 </p>
                 {aiSummaryLoading ? (
-                  <div className="space-y-2">
+                  <div className="space-y-2 pt-0.5">
                     <Skeleton className="h-3.5 w-full bg-violet-200/60 dark:bg-violet-800/40" />
                     <Skeleton className="h-3.5 w-5/6 bg-violet-200/60 dark:bg-violet-800/40" />
                     <Skeleton className="h-3.5 w-4/6 bg-violet-200/60 dark:bg-violet-800/40" />
