@@ -1,3 +1,5 @@
+import { toArrayBuffer } from "./crypto";
+
 const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
 export function base32Encode(bytes: Uint8Array): string {
@@ -38,7 +40,7 @@ export function base32Decode(str: string): Uint8Array {
 
 async function hotp(secretBytes: Uint8Array, counter: bigint): Promise<number> {
   const key = await crypto.subtle.importKey(
-    "raw", secretBytes,
+    "raw", toArrayBuffer(secretBytes),
     { name: "HMAC", hash: "SHA-1" },
     false, ["sign"],
   );
@@ -59,7 +61,7 @@ export async function verifyTOTP(secret: string, code: string, timeMs: number = 
   if (!/^\d{6}$/.test(code)) return false;
   const secretBytes = base32Decode(secret);
   const counter = Math.floor(timeMs / 1000 / 30);
-  // Allow ±1 time step to account for clock drift
+  // Allow +/-1 time step to account for clock drift.
   for (let delta = -1; delta <= 1; delta++) {
     const expected = await hotp(secretBytes, BigInt(counter + delta));
     if (expected.toString().padStart(6, "0") === code) return true;

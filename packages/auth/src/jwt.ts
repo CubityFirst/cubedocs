@@ -1,10 +1,11 @@
+import { toArrayBuffer } from "./crypto";
 import type { Session } from "./lib";
 
 const ALG = { name: "HMAC", hash: "SHA-256" };
 
 async function importKey(secret: string): Promise<CryptoKey> {
   const enc = new TextEncoder();
-  return crypto.subtle.importKey("raw", enc.encode(secret), ALG, false, ["sign", "verify"]);
+  return crypto.subtle.importKey("raw", toArrayBuffer(enc.encode(secret)), ALG, false, ["sign", "verify"]);
 }
 
 function b64url(buf: ArrayBuffer): string {
@@ -13,7 +14,7 @@ function b64url(buf: ArrayBuffer): string {
 }
 
 function encodeJSON(obj: unknown): string {
-  return b64url(new TextEncoder().encode(JSON.stringify(obj)));
+  return b64url(toArrayBuffer(new TextEncoder().encode(JSON.stringify(obj))));
 }
 
 export async function signJwt(payload: Session, secret: string): Promise<string> {
@@ -32,8 +33,8 @@ export async function verifyJwt(token: string, secret: string): Promise<Session 
   const valid = await crypto.subtle.verify(
     ALG,
     key,
-    Uint8Array.from(atob(parts[2].replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0)),
-    new TextEncoder().encode(`${parts[0]}.${parts[1]}`),
+    toArrayBuffer(Uint8Array.from(atob(parts[2].replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0))),
+    toArrayBuffer(new TextEncoder().encode(`${parts[0]}.${parts[1]}`)),
   );
   if (!valid) return null;
 

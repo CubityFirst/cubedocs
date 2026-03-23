@@ -1,4 +1,6 @@
-// Uses PBKDF2 via WebCrypto — available in all Workers runtimes.
+import { toArrayBuffer } from "./crypto";
+
+// Uses PBKDF2 via WebCrypto - available in all Workers runtimes.
 
 const ITERATIONS = 100_000;
 const HASH = "SHA-256";
@@ -20,10 +22,10 @@ export async function verifyPassword(password: string, stored: string): Promise<
 
 async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
   const base = await crypto.subtle.importKey(
-    "raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits", "deriveKey"],
+    "raw", toArrayBuffer(new TextEncoder().encode(password)), "PBKDF2", false, ["deriveBits", "deriveKey"],
   );
   return crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt, iterations: ITERATIONS, hash: HASH },
+    { name: "PBKDF2", salt: toArrayBuffer(salt), iterations: ITERATIONS, hash: HASH },
     base,
     { name: "HMAC", hash: HASH, length: 256 },
     true,
