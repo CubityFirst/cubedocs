@@ -1,4 +1,5 @@
 const TOKEN_STORAGE_KEY = "admin_token";
+export const ADMIN_AUTH_INVALIDATED_EVENT = "admin-auth-invalidated";
 
 function getStorage(): Storage | null {
   try {
@@ -18,4 +19,9 @@ export function setToken(token: string): void {
 
 export function clearToken(): void {
   getStorage()?.removeItem(TOKEN_STORAGE_KEY);
+}
+
+export function invalidateAdminSession(): void {
+  clearToken();
+  window.dispatchEvent(new CustomEvent(ADMIN_AUTH_INVALIDATED_EVENT));
 }

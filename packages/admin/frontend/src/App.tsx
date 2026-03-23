@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { clearToken, getToken } from "@/lib/auth";
+import { ADMIN_AUTH_INVALIDATED_EVENT, clearToken, getToken } from "@/lib/auth";
 import { buildDocsAdminLoginUrl } from "@/lib/handoff";
 import { type AdminAuthSession, verifyAdminSession } from "@/lib/api";
 import { AuthCallbackPage } from "./pages/AuthCallbackPage";
@@ -93,6 +93,27 @@ export function App() {
   useEffect(() => {
     void refreshSession();
   }, [refreshSession]);
+
+  useEffect(() => {
+    function handleAdminAuthInvalidated() {
+      setSession(null);
+      setChecking(false);
+
+      if (location.pathname === "/login" || location.pathname === "/auth/callback") {
+        return;
+      }
+
+      navigate("/login", {
+        replace: true,
+        state: { from: `${location.pathname}${location.search}` || "/" },
+      });
+    }
+
+    window.addEventListener(ADMIN_AUTH_INVALIDATED_EVENT, handleAdminAuthInvalidated);
+    return () => {
+      window.removeEventListener(ADMIN_AUTH_INVALIDATED_EVENT, handleAdminAuthInvalidated);
+    };
+  }, [location.pathname, location.search, navigate]);
 
   function handleLogout() {
     clearToken();

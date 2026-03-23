@@ -1,4 +1,4 @@
-import { getToken } from "@/lib/auth";
+import { getToken, invalidateAdminSession } from "@/lib/auth";
 
 export interface AdminUser {
   id: string;
@@ -90,10 +90,16 @@ async function authFetch(input: string, init: RequestInit = {}): Promise<Respons
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  return fetch(input, {
+  const response = await fetch(input, {
     ...init,
     headers,
   });
+
+  if (token && (response.status === 401 || response.status === 403)) {
+    invalidateAdminSession();
+  }
+
+  return response;
 }
 
 export async function searchUsers(q: string): Promise<AdminUser[]> {
@@ -169,11 +175,11 @@ export async function verifyAdminSession(): Promise<AdminAuthSession> {
   return json.data;
 }
 
-export async function exchangeAdminHandoff(code: string): Promise<AdminHandoffExchange> {
+export async function exchangeAdminHandoff(code: string, callbackUrl: string): Promise<AdminHandoffExchange> {
   const res = await fetch("/api/auth/handoff/exchange", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code }),
+    body: JSON.stringify({ code, callbackUrl }),
   });
   const json = (await res.json()) as { ok: boolean; data?: AdminHandoffExchange };
   if (!json.ok || !json.data) throw new Error("Failed to exchange admin handoff");

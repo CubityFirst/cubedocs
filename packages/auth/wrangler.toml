@@ -12,6 +12,7 @@ migrations_dir = "migrations"
 
 [vars]
 JWT_ISSUER = "https://auth.cubedocs.com"
+ADMIN_APP_ORIGIN = "https://admin.cubityfir.st"
 WEBAUTHN_RP_ID = "docs.cubityfir.st"
 WEBAUTHN_RP_NAME = "CubeDocs"
 WEBAUTHN_ORIGIN = "https://docs.cubityfir.st"

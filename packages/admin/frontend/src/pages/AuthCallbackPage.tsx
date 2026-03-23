@@ -7,6 +7,12 @@ import { exchangeAdminHandoff } from "@/lib/api";
 import { setToken } from "@/lib/auth";
 import { buildDocsAdminLoginUrl, normalizeAdminNextPath } from "@/lib/handoff";
 
+function buildNormalizedCallbackUrl(location: Location): string {
+  const url = new URL(location.href);
+  url.searchParams.delete("code");
+  return url.toString();
+}
+
 interface AuthCallbackPageProps {
   onAuthenticated: () => Promise<void> | void;
 }
@@ -27,11 +33,12 @@ export function AuthCallbackPage({ onAuthenticated }: AuthCallbackPageProps) {
     }
 
     const handoffCode = code;
+    const callbackUrl = buildNormalizedCallbackUrl(window.location);
     let cancelled = false;
 
     async function exchange() {
       try {
-        const { token } = await exchangeAdminHandoff(handoffCode);
+        const { token } = await exchangeAdminHandoff(handoffCode, callbackUrl);
         setToken(token);
         await onAuthenticated();
 

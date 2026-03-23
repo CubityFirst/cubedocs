@@ -1,16 +1,24 @@
+import { normalizeAdminCallbackUrl } from "../admin-handoff";
 import { signJwt } from "../jwt";
 import { errorResponse, Errors, okResponse } from "../lib";
 import { checkModeration } from "./login";
 import type { Env } from "../index";
 
 export async function handleAdminHandoffExchange(request: Request, env: Env): Promise<Response> {
-  const body = await request.json<{ code?: string }>();
-  if (!body.code) return errorResponse(Errors.BAD_REQUEST);
+  const body = await request.json<{ code?: string; callbackUrl?: string }>();
+  if (!body.code || !body.callbackUrl) return errorResponse(Errors.BAD_REQUEST);
+
+  const normalizedCallbackUrl = normalizeAdminCallbackUrl(
+    body.callbackUrl,
+    env,
+    request.headers.get("Origin"),
+  );
+  if (!normalizedCallbackUrl) return errorResponse(Errors.BAD_REQUEST);
 
   const now = Date.now();
   const handoff = await env.DB.prepare(
-    "SELECT id, user_id FROM admin_handoffs WHERE id = ? AND consumed_at IS NULL AND expires_at > ?",
-  ).bind(body.code, now).first<{ id: string; user_id: string }>();
+    "SELECT id, user_id FROM admin_handoffs WHERE id = ? AND return_to = ? AND consumed_at IS NULL AND expires_at > ?",
+  ).bind(body.code, normalizedCallbackUrl, now).first<{ id: string; user_id: string }>();
 
   if (!handoff) return errorResponse(Errors.UNAUTHORIZED);
 

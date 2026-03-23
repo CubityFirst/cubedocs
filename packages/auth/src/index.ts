@@ -25,6 +25,7 @@ export interface Env {
   DB: D1Database;
   JWT_SECRET: string;
   JWT_ISSUER: string;
+  ADMIN_APP_ORIGIN: string;
   TURNSTILE_SECRET: string;
   WEBAUTHN_RP_ID: string;
   WEBAUTHN_RP_NAME: string;

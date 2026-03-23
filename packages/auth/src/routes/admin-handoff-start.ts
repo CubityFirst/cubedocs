@@ -1,35 +1,9 @@
 import { requireAuthenticatedSession } from "../auth-session";
+import { normalizeAdminCallbackUrl } from "../admin-handoff";
 import { errorResponse, Errors, okResponse } from "../lib";
 import type { Env } from "../index";
 
-const ADMIN_HOSTNAME = "admin.cubityfir.st";
 const HANDOFF_TTL_MS = 5 * 60 * 1000;
-
-function isLocalAdminHostname(hostname: string): boolean {
-  return hostname === "localhost" || hostname === "127.0.0.1";
-}
-
-function normalizeAdminReturnTo(returnTo: string): string | null {
-  try {
-    const url = new URL(returnTo);
-    const isLocal = isLocalAdminHostname(url.hostname);
-    const isAllowedHostname =
-      url.hostname === ADMIN_HOSTNAME ||
-      url.hostname.endsWith(`.${ADMIN_HOSTNAME}`) ||
-      isLocal;
-    const isAllowedProtocol = isLocal
-      ? url.protocol === "http:" || url.protocol === "https:"
-      : url.protocol === "https:";
-
-    if (!isAllowedHostname || !isAllowedProtocol) {
-      return null;
-    }
-
-    return url.toString();
-  } catch {
-    return null;
-  }
-}
 
 export async function handleAdminHandoffStart(request: Request, env: Env): Promise<Response> {
   const session = await requireAuthenticatedSession(request, env);
@@ -42,7 +16,11 @@ export async function handleAdminHandoffStart(request: Request, env: Env): Promi
   const body = await request.json<{ returnTo?: string }>();
   if (!body.returnTo) return errorResponse(Errors.BAD_REQUEST);
 
-  const normalizedReturnTo = normalizeAdminReturnTo(body.returnTo);
+  const normalizedReturnTo = normalizeAdminCallbackUrl(
+    body.returnTo,
+    env,
+    request.headers.get("Origin"),
+  );
   if (!normalizedReturnTo) return errorResponse(Errors.BAD_REQUEST);
 
   const now = Date.now();
