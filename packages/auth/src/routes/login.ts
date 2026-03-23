@@ -21,9 +21,9 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
   if (!turnstileValid) return errorResponse(Errors.BAD_REQUEST);
 
   const row = await env.DB.prepare(
-    "SELECT id, email, name, password_hash, created_at, moderation, totp_secret FROM users WHERE email = ?",
+    "SELECT id, email, name, password_hash, created_at, moderation, totp_secret, force_password_change FROM users WHERE email = ?",
   ).bind(body.email.toLowerCase()).first<{
-    id: string; email: string; name: string; password_hash: string; created_at: string; moderation: number; totp_secret: string | null;
+    id: string; email: string; name: string; password_hash: string; created_at: string; moderation: number; totp_secret: string | null; force_password_change: number;
   }>();
 
   if (!row) return errorResponse(Errors.UNAUTHORIZED);
@@ -58,6 +58,14 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
     }
     const totpError = await verifyTotpOrBackup(env, row.id, row.totp_secret!, body.totpCode, body.backupCode);
     if (totpError) return totpError;
+  }
+
+  if (row.force_password_change) {
+    const changeToken = await signJwt(
+      { userId: row.id, email: row.email, expiresAt: Date.now() + 15 * 60 * 1000, forcePasswordChange: true },
+      env.JWT_SECRET,
+    );
+    return Response.json({ ok: false, error: "password_change_required", changeToken }, { status: 200 });
   }
 
   const token = await signJwt(

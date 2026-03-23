@@ -10,6 +10,7 @@ import { handleTotpEnable } from "./routes/totp-enable";
 import { handleTotpDisable } from "./routes/totp-disable";
 import { handleTotpStatus } from "./routes/totp-status";
 import { handleChangePassword } from "./routes/change-password";
+import { handleForceChangePassword } from "./routes/force-change-password";
 import { handleWebauthnRegisterStart } from "./routes/webauthn-register-start";
 import { handleWebauthnRegisterFinish } from "./routes/webauthn-register-finish";
 import { handleWebauthnAuthStart } from "./routes/webauthn-auth-start";
@@ -71,6 +72,8 @@ export default {
         response = await handleTotpStatus(request, env);
       } else if (url.pathname === "/change-password" && request.method === "POST") {
         response = await handleChangePassword(request, env);
+      } else if (url.pathname === "/force-change-password" && request.method === "POST") {
+        response = await handleForceChangePassword(request, env);
       } else if (url.pathname === "/webauthn/register/start" && request.method === "POST") {
         response = await handleWebauthnRegisterStart(request, env);
       } else if (url.pathname === "/webauthn/register/finish" && request.method === "POST") {

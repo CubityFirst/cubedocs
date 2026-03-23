@@ -30,7 +30,7 @@ export default {
 
     try {
       // Proxy auth routes to the auth worker
-      if (url.pathname === "/register" || url.pathname === "/login") {
+      if (url.pathname === "/register" || url.pathname === "/login" || url.pathname === "/force-change-password") {
         return env.AUTH.fetch(new Request(`https://auth${url.pathname}`, request));
       }
 

@@ -19,6 +19,16 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Sheet,
+  SheetTrigger,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+  SheetBody,
+  SheetFooter,
+} from "@/components/ui/sheet";
 import { type AdminProject, listProjects, updateProjectFeatures, deleteProject } from "@/lib/api";
 
 const ProjectFeatures = {
@@ -27,8 +37,16 @@ const ProjectFeatures = {
 } as const;
 
 const FEATURE_FLAGS = [
-  { bit: ProjectFeatures.CUSTOM_LINK, label: "Custom Link" },
-  { bit: ProjectFeatures.AI_FEATURES, label: "AI Features" },
+  {
+    bit: ProjectFeatures.CUSTOM_LINK,
+    label: "Custom Link",
+    description: "Enables a custom slug, making this site accessible at /s/SLUG",
+  },
+  {
+    bit: ProjectFeatures.AI_FEATURES,
+    label: "AI Features",
+    description: "Enables AI-generated summaries for documents in this project.",
+  },
 ] as const;
 
 function hasFlag(features: number, bit: number): boolean {
@@ -47,20 +65,30 @@ interface ProjectRowProps {
 
 function ProjectRow({ project, onSaved, onDeleted }: ProjectRowProps) {
   const [expanded, setExpanded] = useState(false);
-  const [features, setFeatures] = useState(project.features);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [savedFeatures, setSavedFeatures] = useState(project.features);
+  const [pendingFeatures, setPendingFeatures] = useState(project.features);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    setFeatures(project.features);
+    setSavedFeatures(project.features);
+    setPendingFeatures(project.features);
   }, [project.features]);
 
-  async function handleSave() {
+  function handleSheetOpen(open: boolean) {
+    setSheetOpen(open);
+    if (open) setPendingFeatures(savedFeatures);
+  }
+
+  async function handleApply() {
     setSaving(true);
     try {
-      await updateProjectFeatures(project.id, features);
-      onSaved(project.id, features);
-      toast.success("Features saved");
+      await updateProjectFeatures(project.id, pendingFeatures);
+      setSavedFeatures(pendingFeatures);
+      onSaved(project.id, pendingFeatures);
+      setSheetOpen(false);
+      toast.success("Feature flags saved");
     } catch {
       toast.error("Failed to save features");
     } finally {
@@ -80,76 +108,88 @@ function ProjectRow({ project, onSaved, onDeleted }: ProjectRowProps) {
     }
   }
 
-  const dirty = features !== project.features;
+  const dirty = pendingFeatures !== savedFeatures;
 
   return (
     <>
-      <TableRow>
-        <TableCell>
-          <button
-            onClick={() => setExpanded(e => !e)}
-            className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
-          >
-            {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-          </button>
+      <TableRow className="cursor-pointer" onClick={() => setExpanded(e => !e)}>
+        <TableCell className="w-8 pr-0">
+          {expanded
+            ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
         </TableCell>
         <TableCell className="font-medium">{project.name}</TableCell>
         <TableCell className="font-mono text-xs text-muted-foreground">{project.id}</TableCell>
         <TableCell className="text-xs text-muted-foreground">
           {new Date(project.created_at).toLocaleDateString()}
         </TableCell>
-        <TableCell className="text-xs text-muted-foreground font-mono">{project.features}</TableCell>
       </TableRow>
       {expanded && (
-        <TableRow className="hover:bg-transparent">
-          <TableCell colSpan={5} className="pb-4 pt-2">
-            <div className="ml-6 rounded-lg border border-border bg-muted/30 p-4 space-y-4">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Feature Flags
-              </p>
-              <div className="space-y-3">
-                {FEATURE_FLAGS.map(({ bit, label }) => (
-                  <div key={bit} className="flex items-center gap-2">
-                    <Checkbox
-                      id={`${project.id}-${bit}`}
-                      checked={hasFlag(features, bit)}
-                      onCheckedChange={checked =>
-                        setFeatures(f => setFlag(f, bit, !!checked))
-                      }
-                    />
-                    <Label htmlFor={`${project.id}-${bit}`} className="cursor-pointer">
-                      {label}
-                    </Label>
-                  </div>
-                ))}
-              </div>
-              <div className="flex items-center gap-2">
-                <Button size="sm" onClick={handleSave} disabled={saving || !dirty}>
-                  {saving ? "Saving..." : "Save"}
-                </Button>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button size="sm" variant="destructive" disabled={deleting}>
-                      <Trash2 className="h-3.5 w-3.5 mr-1" />
-                      {deleting ? "Deleting..." : "Delete"}
+        <TableRow className="hover:bg-transparent bg-muted/20">
+          <TableCell colSpan={4} className="py-3 pl-10 pr-6">
+            <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+              <Sheet open={sheetOpen} onOpenChange={handleSheetOpen}>
+                <SheetTrigger asChild>
+                  <Button size="sm" variant="outline">
+                    Feature flags
+                  </Button>
+                </SheetTrigger>
+                <SheetContent>
+                  <SheetHeader>
+                    <SheetTitle>Feature Flags</SheetTitle>
+                    <SheetDescription>{project.name}</SheetDescription>
+                    <p className="text-sm text-muted-foreground pt-1">These flags grant access to features, they don't force-enable anything. Users can toggle each feature themselves within their project settings.</p>
+                  </SheetHeader>
+                  <SheetBody className="space-y-5">
+                    {FEATURE_FLAGS.map(({ bit, label, description }) => (
+                      <div key={bit} className="flex items-start gap-3">
+                        <Checkbox
+                          id={`sheet-${project.id}-${bit}`}
+                          checked={hasFlag(pendingFeatures, bit)}
+                          onCheckedChange={checked =>
+                            setPendingFeatures(f => setFlag(f, bit, !!checked))
+                          }
+                          className="mt-0.5"
+                        />
+                        <div>
+                          <Label htmlFor={`sheet-${project.id}-${bit}`} className="cursor-pointer font-medium">
+                            {label}
+                          </Label>
+                          <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </SheetBody>
+                  <SheetFooter>
+                    <Button className="w-full" onClick={handleApply} disabled={saving || !dirty}>
+                      {saving ? "Applying..." : "Apply"}
                     </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Delete project?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        This will permanently delete <strong>{project.name}</strong> and all associated docs, files, and assets. This action cannot be undone.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                        Delete
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              </div>
+                  </SheetFooter>
+                </SheetContent>
+              </Sheet>
+
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button size="sm" variant="destructive" disabled={deleting}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                    {deleting ? "Deleting..." : "Delete project"}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete project?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will permanently delete <strong>{project.name}</strong> and all associated docs, files, and assets. This action cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction variant="destructive" onClick={handleDelete}>
+                      Delete
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
           </TableCell>
         </TableRow>
@@ -248,7 +288,6 @@ export function ProjectsPage() {
                   <TableHead>Name</TableHead>
                   <TableHead>ID</TableHead>
                   <TableHead>Created</TableHead>
-                  <TableHead>Features</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

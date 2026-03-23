@@ -2,6 +2,7 @@ export interface Session {
   userId: string;
   email: string;
   expiresAt: number;
+  forcePasswordChange?: true;
 }
 
 export const Errors = {

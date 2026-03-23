@@ -33,3 +33,17 @@ The Auth Worker handles all identity concerns (register, login, TOTP, WebAuthn).
 ## CLI Notes
 
 - All wrangler commands must be prefixed with `npx` (e.g. `npx wrangler d1 execute ...`)
+
+## Local D1 State
+
+The dev servers use a shared wrangler state at the **monorepo root** (`/.wrangler/state`), not inside each package. This is set via `--persist-to ../../.wrangler/state` in each package's dev script.
+
+When running local D1 migrations or queries, always pass `--persist-to ../../.wrangler/state` from the package directory, otherwise the command hits the package-local `.wrangler/state` which the dev server never reads.
+
+```
+# Correct — targets the shared dev state
+cd packages/auth && npx wrangler d1 execute cubedocs-auth --local --persist-to ../../.wrangler/state --command "..."
+
+# Wrong — targets packages/auth/.wrangler/state, ignored by dev server
+cd packages/auth && npx wrangler d1 execute cubedocs-auth --local --command "..."
+```

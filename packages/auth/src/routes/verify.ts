@@ -9,6 +9,7 @@ export async function handleVerify(request: Request, env: Env): Promise<Response
   const token = authHeader.slice(7);
   const session = await verifyJwt(token, env.JWT_SECRET);
   if (!session) return errorResponse(Errors.UNAUTHORIZED);
+  if (session.forcePasswordChange) return errorResponse(Errors.UNAUTHORIZED);
 
   return okResponse(session);
 }
