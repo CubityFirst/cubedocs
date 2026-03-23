@@ -18,6 +18,8 @@ import { handleWebauthnAuthFinish } from "./routes/webauthn-auth-finish";
 import { handleWebauthnCredentialsList } from "./routes/webauthn-credentials-list";
 import { handleWebauthnCredentialsDelete } from "./routes/webauthn-credentials-delete";
 import { handleTotpBackupCodesGenerate } from "./routes/totp-backup-codes-generate";
+import { handleAdminHandoffStart } from "./routes/admin-handoff-start";
+import { handleAdminHandoffExchange } from "./routes/admin-handoff-exchange";
 
 export interface Env {
   DB: D1Database;
@@ -74,6 +76,10 @@ export default {
         response = await handleChangePassword(request, env);
       } else if (url.pathname === "/force-change-password" && request.method === "POST") {
         response = await handleForceChangePassword(request, env);
+      } else if (url.pathname === "/admin/handoff/start" && request.method === "POST") {
+        response = await handleAdminHandoffStart(request, env);
+      } else if (url.pathname === "/admin/handoff/exchange" && request.method === "POST") {
+        response = await handleAdminHandoffExchange(request, env);
       } else if (url.pathname === "/webauthn/register/start" && request.method === "POST") {
         response = await handleWebauthnRegisterStart(request, env);
       } else if (url.pathname === "/webauthn/register/finish" && request.method === "POST") {

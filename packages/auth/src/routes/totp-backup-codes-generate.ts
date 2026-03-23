@@ -1,3 +1,4 @@
+import { requireAuthenticatedSession } from "../auth-session";
 import { okResponse, errorResponse, Errors } from "../lib";
 import { requireMFA, hashCode } from "../mfa";
 import type { Env } from "../index";
@@ -16,23 +17,23 @@ function generateCode(): string {
 
 export async function handleTotpBackupCodesGenerate(request: Request, env: Env): Promise<Response> {
   const body = await request.json<{
-    userId: string;
     totpCode?: string;
     challengeId?: string;
     webauthnResponse?: unknown;
     backupCode?: string;
   }>();
 
-  if (!body.userId) return errorResponse(Errors.BAD_REQUEST);
+  const session = await requireAuthenticatedSession(request, env);
+  if (session instanceof Response) return session;
 
   const user = await env.DB.prepare(
     "SELECT totp_secret FROM users WHERE id = ?",
-  ).bind(body.userId).first<{ totp_secret: string | null }>();
+  ).bind(session.userId).first<{ totp_secret: string | null }>();
 
   if (!user) return errorResponse(Errors.UNAUTHORIZED);
   if (!user.totp_secret) return Response.json({ ok: false, error: "totp_not_enabled" }, { status: 400 });
 
-  const mfaError = await requireMFA(env, body.userId, {
+  const mfaError = await requireMFA(env, session.userId, {
     totpCode: body.totpCode,
     challengeId: body.challengeId,
     webauthnResponse: body.webauthnResponse,
@@ -41,7 +42,7 @@ export async function handleTotpBackupCodesGenerate(request: Request, env: Env):
   if (mfaError) return mfaError;
 
   // Delete all existing backup codes
-  await env.DB.prepare("DELETE FROM backup_codes WHERE user_id = ?").bind(body.userId).run();
+  await env.DB.prepare("DELETE FROM backup_codes WHERE user_id = ?").bind(session.userId).run();
 
   // Generate 8 new codes
   const codes: string[] = [];
@@ -55,7 +56,7 @@ export async function handleTotpBackupCodesGenerate(request: Request, env: Env):
     inserts.push(
       env.DB.prepare(
         "INSERT INTO backup_codes (id, user_id, code_hash) VALUES (?, ?, ?)",
-      ).bind(id, body.userId, hash).run(),
+      ).bind(id, session.userId, hash).run(),
     );
   }
 

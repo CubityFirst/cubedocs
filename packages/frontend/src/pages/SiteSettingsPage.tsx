@@ -65,6 +65,7 @@ interface Project {
   owner_id: string;
   published_at: string | null;
   vault_enabled: number;
+  systems_enabled: number;
   changelog_mode: string;
   vanity_slug: string | null;
   features: number;
@@ -118,6 +119,7 @@ export function SiteSettingsPage() {
 
   const [togglingPublish, setTogglingPublish] = useState(false);
   const [togglingVault, setTogglingVault] = useState(false);
+  const [togglingSystems, setTogglingSystems] = useState(false);
   const [togglingChangelog, setTogglingChangelog] = useState(false);
   const [togglingAi, setTogglingAi] = useState(false);
   const [togglingAiType, setTogglingAiType] = useState(false);
@@ -305,6 +307,29 @@ export function SiteSettingsPage() {
       toast({ title: "Could not connect to the server.", variant: "destructive" });
     } finally {
       setTogglingVault(false);
+    }
+  }
+
+  async function handleToggleSystems(enabled: boolean) {
+    if (!projectId || !project) return;
+    setTogglingSystems(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ systemsEnabled: enabled }),
+      });
+      const json = await res.json() as { ok: boolean; data?: Project };
+      if (json.ok && json.data) {
+        setProject(json.data);
+        toast({ title: enabled ? "Systems enabled." : "Systems disabled." });
+      } else {
+        toast({ title: "Failed to update systems setting.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Could not connect to the server.", variant: "destructive" });
+    } finally {
+      setTogglingSystems(false);
     }
   }
 
@@ -664,6 +689,19 @@ export function SiteSettingsPage() {
                 checked={project.vault_enabled === 1}
                 onCheckedChange={handleToggleVault}
                 disabled={togglingVault}
+              />
+            </div>
+            <div className="flex items-center justify-between rounded-md border border-border px-4 py-3">
+              <div className="flex flex-col gap-0.5">
+                <p className="text-sm font-medium">Systems</p>
+                <p className="text-xs text-muted-foreground">
+                  Track systems and services with linked docs, passwords, and files.
+                </p>
+              </div>
+              <Switch
+                checked={project.systems_enabled === 1}
+                onCheckedChange={handleToggleSystems}
+                disabled={togglingSystems}
               />
             </div>
             {!!(project.features & 2) && (

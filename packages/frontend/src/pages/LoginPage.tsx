@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { startAuthentication } from "@simplewebauthn/browser";
 import { KeyRound, Smartphone, Hash } from "lucide-react";
@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { AuthForm } from "@/components/AuthForm";
 import { Turnstile } from "@/components/Turnstile";
-import { getToken, setToken } from "@/lib/auth";
+import { clearToken, getToken, setToken } from "@/lib/auth";
 
 type LoginStep = "credentials" | "totp" | "webauthn" | "method_picker" | "force_password_change";
 
@@ -21,10 +21,31 @@ function moderationMessage(error?: string, until?: number): string {
   return `Your account has been disabled. ${contact}`;
 }
 
+function normalizeAdminReturnTo(returnTo: string | null): string | null {
+  if (!returnTo) return null;
+
+  try {
+    return new URL(returnTo).toString();
+  } catch {
+    return null;
+  }
+}
+
+function adminHandoffErrorMessage(error?: string): string {
+  if (error === "not_admin") {
+    return "This CubeDocs account is signed in, but it does not have admin access.";
+  }
+
+  return "Could not continue to the admin panel. Please try again.";
+}
+
 export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const from = (location.state as { from?: string } | null)?.from ?? "/dashboard";
+  const searchParams = new URLSearchParams(location.search);
+  const adminReturnTo = normalizeAdminReturnTo(searchParams.get("returnTo"));
+  const logoutRequested = searchParams.get("logout") === "1";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
@@ -39,14 +60,78 @@ export function LoginPage() {
   const [changeToken, setChangeToken] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const existingSessionHandledRef = useRef(false);
+  const logoutHandledRef = useRef(false);
   const handleTurnstileVerify = useCallback((token: string) => setTurnstileToken(token), []);
   const handleTurnstileExpire = useCallback(() => setTurnstileToken(null), []);
 
+  const startAdminHandoff = useCallback(async (token: string): Promise<boolean> => {
+    if (!adminReturnTo) return false;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/admin/handoff/start", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ returnTo: adminReturnTo }),
+      });
+
+      const json = await response.json() as {
+        ok: boolean;
+        data?: { redirectTo?: string };
+        error?: string;
+      };
+
+      if (json.ok && json.data?.redirectTo) {
+        window.location.assign(json.data.redirectTo);
+        return true;
+      }
+
+      setError(adminHandoffErrorMessage(json.error));
+      return false;
+    } catch {
+      setError("Could not continue to the admin panel. Please try again.");
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }, [adminReturnTo]);
+
+  const completeAuthentication = useCallback(async (token: string) => {
+    setToken(token);
+
+    if (adminReturnTo) {
+      const redirected = await startAdminHandoff(token);
+      if (redirected) return;
+    }
+
+    navigate(from, { replace: true });
+  }, [adminReturnTo, from, navigate, startAdminHandoff]);
+
   useEffect(() => {
-    if (getToken()) {
+    if (logoutRequested && !logoutHandledRef.current) {
+      logoutHandledRef.current = true;
+      clearToken();
+    }
+
+    if (existingSessionHandledRef.current) return;
+
+    const token = getToken();
+    if (!token) return;
+
+    existingSessionHandledRef.current = true;
+
+    if (adminReturnTo) {
+      void startAdminHandoff(token);
+    } else {
       navigate(from, { replace: true });
     }
-  }, [navigate, from]);
+  }, [adminReturnTo, from, logoutRequested, navigate, startAdminHandoff]);
 
   const runWebauthnFlow = useCallback(async function runWebauthnFlow(userId: string) {
     setLoading(true);
@@ -95,8 +180,7 @@ export function LoginPage() {
       };
 
       if (finishJson.ok && finishJson.data) {
-        setToken(finishJson.data.token);
-        navigate(from, { replace: true });
+        await completeAuthentication(finishJson.data.token);
       } else if (finishJson.error === "password_change_required" && finishJson.changeToken) {
         setChangeToken(finishJson.changeToken);
         setStep("force_password_change");
@@ -144,8 +228,7 @@ export function LoginPage() {
       };
 
       if (json.ok && json.data) {
-        setToken(json.data.token);
-        navigate(from, { replace: true });
+        await completeAuthentication(json.data.token);
       } else if (json.error === "password_change_required" && json.changeToken) {
         setChangeToken(json.changeToken);
         setStep("force_password_change");
@@ -211,8 +294,7 @@ export function LoginPage() {
         error?: string;
       };
       if (json.ok && json.data) {
-        setToken(json.data.token);
-        navigate(from, { replace: true });
+        await completeAuthentication(json.data.token);
       } else if (json.error === "password_too_weak") {
         setError("Password is too weak. Please choose a stronger password.");
       } else {
@@ -437,18 +519,20 @@ export function LoginPage() {
   return (
     <AuthForm
       title="CubeDocs"
-      subtitle="Sign in to your account"
+      subtitle={adminReturnTo ? "Sign in to continue to CubeDocs Admin" : "Sign in to your account"}
       submitLabel="Sign in"
       loading={loading}
       error={error}
       onSubmit={handleSubmit}
       footer={
-        <>
-          Don&apos;t have an account?{" "}
-          <a href="/register" className="text-primary underline-offset-4 hover:underline">
-            Sign up
-          </a>
-        </>
+        adminReturnTo ? "Your admin session will continue after sign-in." : (
+          <>
+            Don&apos;t have an account?{" "}
+            <a href="/register" className="text-primary underline-offset-4 hover:underline">
+              Sign up
+            </a>
+          </>
+        )
       }
     >
       <div className="space-y-2">

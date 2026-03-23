@@ -38,7 +38,7 @@ export async function handleRegister(request: Request, env: Env): Promise<Respon
   ).bind(id, body.email.toLowerCase(), body.name, passwordHash, now).run();
 
   const token = await signJwt(
-    { userId: id, email: body.email.toLowerCase(), expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 },
+    { userId: id, email: body.email.toLowerCase(), expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000, isAdmin: false },
     env.JWT_SECRET,
   );
 

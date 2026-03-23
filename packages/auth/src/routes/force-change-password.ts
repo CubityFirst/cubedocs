@@ -24,8 +24,8 @@ export async function handleForceChangePassword(request: Request, env: Env): Pro
   }
 
   const user = await env.DB.prepare(
-    "SELECT id, email, name, created_at FROM users WHERE id = ? AND force_password_change = 1",
-  ).bind(session.userId).first<{ id: string; email: string; name: string; created_at: string }>();
+    "SELECT id, email, name, created_at, is_admin FROM users WHERE id = ? AND force_password_change = 1",
+  ).bind(session.userId).first<{ id: string; email: string; name: string; created_at: string; is_admin: number }>();
   if (!user) return errorResponse(Errors.NOT_FOUND);
 
   const newHash = await hashPassword(body.newPassword);
@@ -34,7 +34,7 @@ export async function handleForceChangePassword(request: Request, env: Env): Pro
   ).bind(newHash, user.id).run();
 
   const token = await signJwt(
-    { userId: user.id, email: user.email, expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 },
+    { userId: user.id, email: user.email, expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000, isAdmin: Boolean(user.is_admin) },
     env.JWT_SECRET,
   );
 

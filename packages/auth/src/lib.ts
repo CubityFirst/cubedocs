@@ -2,6 +2,7 @@ export interface Session {
   userId: string;
   email: string;
   expiresAt: number;
+  isAdmin?: boolean;
   forcePasswordChange?: true;
 }
 

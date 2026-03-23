@@ -1,12 +1,13 @@
+import { requireAuthenticatedSession } from "../auth-session";
 import { okResponse, errorResponse, Errors } from "../lib";
 import type { Env } from "../index";
 
 export async function handleTotpStatus(request: Request, env: Env): Promise<Response> {
-  const body = await request.json<{ userId: string }>();
-  if (!body.userId) return errorResponse(Errors.BAD_REQUEST);
+  const session = await requireAuthenticatedSession(request, env);
+  if (session instanceof Response) return session;
 
   const user = await env.DB.prepare("SELECT totp_secret FROM users WHERE id = ?")
-    .bind(body.userId)
+    .bind(session.userId)
     .first<{ totp_secret: string | null }>();
   if (!user) return errorResponse(Errors.NOT_FOUND);
 

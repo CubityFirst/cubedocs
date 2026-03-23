@@ -1,3 +1,5 @@
+import { getToken } from "@/lib/auth";
+
 export interface AdminUser {
   id: string;
   email: string;
@@ -10,6 +12,57 @@ export interface AdminUser {
   latest_moderation_created_at: string | null;
 }
 
+export interface AdminUserDetails {
+  profile: {
+    id: string;
+    email: string;
+    display_name: string;
+    account_created_at: string;
+    account_status: "active" | "disabled" | "suspended";
+    account_suspended_until?: number;
+    force_password_change: boolean;
+  };
+  moderation: {
+    current_status: "active" | "disabled" | "suspended";
+    current_moderation_value: number;
+    current_reason: string | null;
+    history: Array<{
+      action: "disabled" | "suspended" | "re_enabled";
+      moderation_value: number;
+      reason: string | null;
+      created_at: string;
+      actor_user_id: string | null;
+      actor_email: string | null;
+    }>;
+  };
+  security: {
+    totp_enabled: boolean;
+    passkeys: Array<{
+      id: string;
+      name: string;
+      registered_at: string;
+    }>;
+    backup_codes: {
+      total: number;
+      active: number;
+      used: number;
+    };
+  };
+  projects: {
+    owned_projects: Array<{
+      id: string;
+      name: string;
+      created_at: string;
+    }>;
+    project_memberships: Array<{
+      project_id: string;
+      project_name: string;
+      role: string;
+      joined_at: string;
+    }>;
+  };
+}
+
 export interface AdminProject {
   id: string;
   name: string;
@@ -18,21 +71,53 @@ export interface AdminProject {
   created_at: string;
 }
 
+export interface AdminAuthSession {
+  userId: string;
+  email: string;
+  expiresAt: number;
+  isAdmin: true;
+}
+
+interface AdminHandoffExchange {
+  token: string;
+}
+
+async function authFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  const token = getToken();
+  const headers = new Headers(init.headers);
+
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  return fetch(input, {
+    ...init,
+    headers,
+  });
+}
+
 export async function searchUsers(q: string): Promise<AdminUser[]> {
-  const res = await fetch(`/api/users/search?q=${encodeURIComponent(q)}`);
+  const res = await authFetch(`/api/users/search?q=${encodeURIComponent(q)}`);
   const json = (await res.json()) as { ok: boolean; data?: AdminUser[] };
   if (!json.ok || !json.data) throw new Error("Failed to search users");
   return json.data;
 }
 
+export async function getUserDetails(id: string): Promise<AdminUserDetails> {
+  const res = await authFetch(`/api/users/${id}`);
+  const json = (await res.json()) as { ok: boolean; data?: AdminUserDetails };
+  if (!json.ok || !json.data) throw new Error("Failed to load user details");
+  return json.data;
+}
+
 export async function forceUserPasswordChange(id: string): Promise<void> {
-  const res = await fetch(`/api/users/${id}/force-password-change`, { method: "POST" });
+  const res = await authFetch(`/api/users/${id}/force-password-change`, { method: "POST" });
   const json = (await res.json()) as { ok: boolean };
   if (!json.ok) throw new Error("Failed to force password change");
 }
 
 export async function updateUserModeration(id: string, moderation: number, reason?: string): Promise<void> {
-  const res = await fetch(`/api/users/${id}`, {
+  const res = await authFetch(`/api/users/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ moderation, reason }),
@@ -42,14 +127,14 @@ export async function updateUserModeration(id: string, moderation: number, reaso
 }
 
 export async function listProjects(q: string): Promise<AdminProject[]> {
-  const res = await fetch(`/api/projects?q=${encodeURIComponent(q)}`);
+  const res = await authFetch(`/api/projects?q=${encodeURIComponent(q)}`);
   const json = (await res.json()) as { ok: boolean; data?: AdminProject[] };
   if (!json.ok || !json.data) throw new Error("Failed to list projects");
   return json.data;
 }
 
 export async function updateProjectFeatures(id: string, features: number): Promise<void> {
-  const res = await fetch(`/api/projects/${id}/features`, {
+  const res = await authFetch(`/api/projects/${id}/features`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ features }),
@@ -59,13 +144,13 @@ export async function updateProjectFeatures(id: string, features: number): Promi
 }
 
 export async function deleteProject(id: string): Promise<void> {
-  const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
+  const res = await authFetch(`/api/projects/${id}`, { method: "DELETE" });
   const json = (await res.json()) as { ok: boolean };
   if (!json.ok) throw new Error("Failed to delete project");
 }
 
 export async function exportUserData(id: string, email: string): Promise<void> {
-  const res = await fetch(`/api/users/${id}/export`);
+  const res = await authFetch(`/api/users/${id}/export`);
   if (!res.ok) throw new Error("Failed to export user data");
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
@@ -75,4 +160,22 @@ export async function exportUserData(id: string, email: string): Promise<void> {
   a.download = `userdata_${email.replace(/[^a-z0-9]/gi, "_")}_${date}.zip`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+export async function verifyAdminSession(): Promise<AdminAuthSession> {
+  const res = await authFetch("/api/verify");
+  const json = (await res.json()) as { ok: boolean; data?: AdminAuthSession };
+  if (!json.ok || !json.data) throw new Error("Failed to verify admin session");
+  return json.data;
+}
+
+export async function exchangeAdminHandoff(code: string): Promise<AdminHandoffExchange> {
+  const res = await fetch("/api/auth/handoff/exchange", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code }),
+  });
+  const json = (await res.json()) as { ok: boolean; data?: AdminHandoffExchange };
+  if (!json.ok || !json.data) throw new Error("Failed to exchange admin handoff");
+  return json.data;
 }

@@ -8,6 +8,7 @@ import { handlePublic } from "./routes/public";
 import { handlePasswords } from "./routes/passwords";
 import { handleFiles } from "./routes/files";
 import { handleAi } from "./routes/ai";
+import { handleSystems } from "./routes/systems";
 
 export interface Env {
   DB: D1Database;
@@ -30,7 +31,12 @@ export default {
 
     try {
       // Proxy auth routes to the auth worker
-      if (url.pathname === "/register" || url.pathname === "/login" || url.pathname === "/force-change-password") {
+      if (
+        url.pathname === "/register" ||
+        url.pathname === "/login" ||
+        url.pathname === "/force-change-password" ||
+        url.pathname === "/admin/handoff/start"
+      ) {
         return env.AUTH.fetch(new Request(`https://auth${url.pathname}`, request));
       }
 
@@ -40,10 +46,11 @@ export default {
         if (session instanceof Response) return session;
         const totpPath = url.pathname.replace("/me/totp", "/totp");
         const body = request.method !== "GET" ? await request.json<Record<string, unknown>>() : {};
+        const authHeader = request.headers.get("Authorization");
         const authRes = await env.AUTH.fetch(`https://auth${totpPath}`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...body, userId: session.userId }),
+          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
+          body: JSON.stringify(body),
         });
         return addCorsHeaders(authRes);
       }
@@ -54,10 +61,11 @@ export default {
         if (session instanceof Response) return session;
         const webauthnPath = url.pathname.replace("/me/webauthn", "/webauthn");
         const body = await request.json<Record<string, unknown>>();
+        const authHeader = request.headers.get("Authorization");
         const authRes = await env.AUTH.fetch(`https://auth${webauthnPath}`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...body, userId: session.userId }),
+          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
+          body: JSON.stringify(body),
         });
         return addCorsHeaders(authRes);
       }
@@ -74,10 +82,11 @@ export default {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
         const body = await request.json<Record<string, unknown>>();
+        const authHeader = request.headers.get("Authorization");
         const authRes = await env.AUTH.fetch("https://auth/change-password", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...body, userId: session.userId }),
+          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
+          body: JSON.stringify(body),
         });
         return addCorsHeaders(authRes);
       }
@@ -86,10 +95,11 @@ export default {
       if (url.pathname === "/me" && request.method === "GET") {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
+        const authHeader = request.headers.get("Authorization");
         const lookupRes = await env.AUTH.fetch("https://auth/lookup-by-id", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId: session.userId }),
+          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
+          body: JSON.stringify({}),
         });
         if (!lookupRes.ok) return addCorsHeaders(errorResponse(Errors.INTERNAL));
         const data = await lookupRes.json<{ ok: boolean; data?: { name: string; email: string } }>();
@@ -103,10 +113,11 @@ export default {
         if (session instanceof Response) return session;
         const body = await request.json<{ name?: string }>();
         if (!body.name?.trim()) return addCorsHeaders(errorResponse(Errors.BAD_REQUEST));
+        const authHeader = request.headers.get("Authorization");
         const updateRes = await env.AUTH.fetch("https://auth/update-name", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId: session.userId, name: body.name.trim() }),
+          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
+          body: JSON.stringify({ name: body.name.trim() }),
         });
         if (!updateRes.ok) return addCorsHeaders(errorResponse(Errors.INTERNAL));
         const trimmedName = body.name.trim();
@@ -139,6 +150,10 @@ export default {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
         response = await handlePasswords(request, env, session, url);
+      } else if (url.pathname.startsWith("/systems")) {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        response = await handleSystems(request, env, session, url);
       } else if (url.pathname.startsWith("/files")) {
         const session = await authenticate(request, env);
         response = await handleFiles(request, env, session, url);

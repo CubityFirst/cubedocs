@@ -12,8 +12,10 @@ interface FileRecord {
   name: string;
   mime_type: string;
   size: number;
+  type: "docs" | "systems";
   project_id: string;
   folder_id: string | null;
+  system_id: string | null;
   uploaded_by: string;
   created_at: string;
 }
@@ -58,10 +60,11 @@ export function FilePage() {
         if (json.ok && json.data) {
           setFile(json.data);
           const rawPath: { id: string | null; name: string }[] = location.state?.folderPath ?? [];
+          const basePath = location.state?.basePath ?? `/projects/${projectId}`;
           const folderCrumbs: BreadcrumbItem[] = rawPath.map((crumb, i) => ({
             id: crumb.id,
             name: crumb.name,
-            onClick: () => navigate(`/projects/${projectId}`, { state: { restorePath: rawPath.slice(0, i + 1) } }),
+            onClick: () => navigate(basePath, { state: { restorePath: rawPath.slice(0, i + 1) } }),
           }));
           setBreadcrumbs([...folderCrumbs, { id: fileId ?? null, name: json.data.name }]);
         }

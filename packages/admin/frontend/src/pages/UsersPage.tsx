@@ -32,8 +32,26 @@ import {
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
+import {
+  Sheet,
+  SheetBody,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
-import { type AdminUser, searchUsers, updateUserModeration, forceUserPasswordChange, exportUserData } from "@/lib/api";
+import {
+  type AdminUser,
+  type AdminUserDetails,
+  exportUserData,
+  forceUserPasswordChange,
+  getUserDetails,
+  searchUsers,
+  updateUserModeration,
+} from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 type ModerationState =
@@ -94,6 +112,213 @@ function latestModerationSummary(user: AdminUser): string | null {
   return `${formatModerationAction(user.latest_moderation_action)} on ${when}`;
 }
 
+function formatDateTime(value: string): string {
+  return new Date(value).toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
+function StatusBadge({ status }: { status: "active" | "disabled" | "suspended" }) {
+  if (status === "disabled") return <Badge variant="destructive">Disabled</Badge>;
+  if (status === "suspended") return <Badge variant="secondary">Suspended</Badge>;
+  return <Badge variant="default">Active</Badge>;
+}
+
+function DetailField({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      <div className="text-sm">{value}</div>
+    </div>
+  );
+}
+
+function DetailsLoadingState() {
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="grid gap-4 md:grid-cols-2">
+        {Array.from({ length: 2 }).map((_, index) => (
+          <Card key={index}>
+            <CardHeader>
+              <CardTitle><Skeleton className="h-4 w-28" /></CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-3/4" />
+              <Skeleton className="h-4 w-5/6" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle><Skeleton className="h-4 w-36" /></CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function UserDetailsPanel({ details }: { details: AdminUserDetails }) {
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Account</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <DetailField label="Status" value={<StatusBadge status={details.profile.account_status} />} />
+            <DetailField label="User ID" value={<span className="font-mono text-xs">{details.profile.id}</span>} />
+            <DetailField label="Email" value={<span className="font-mono text-xs">{details.profile.email}</span>} />
+            <DetailField label="Created" value={formatDateTime(details.profile.account_created_at)} />
+            {details.profile.account_status === "suspended" && details.profile.account_suspended_until && (
+              <DetailField
+                label="Suspended Until"
+                value={formatModerationUntil(details.profile.account_suspended_until)}
+              />
+            )}
+            <DetailField
+              label="Password Reset"
+              value={details.profile.force_password_change ? "Required on next sign in" : "Not required"}
+            />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Security</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <DetailField
+              label="TOTP"
+              value={details.security.totp_enabled ? <Badge variant="default">Enabled</Badge> : <Badge variant="outline">Disabled</Badge>}
+            />
+            <DetailField
+              label="Passkeys"
+              value={`${details.security.passkeys.length} registered`}
+            />
+            <DetailField
+              label="Backup Codes"
+              value={`${details.security.backup_codes.active} active of ${details.security.backup_codes.total}`}
+            />
+            <DetailField
+              label="Used Backup Codes"
+              value={String(details.security.backup_codes.used)}
+            />
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Passkeys</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          {details.security.passkeys.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No passkeys registered.</p>
+          ) : (
+            details.security.passkeys.map(passkey => (
+              <div key={passkey.id} className="rounded-lg border p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-medium">{passkey.name}</p>
+                  <p className="text-xs text-muted-foreground">{formatDateTime(passkey.registered_at)}</p>
+                </div>
+                <p className="mt-2 font-mono text-xs text-muted-foreground">{passkey.id}</p>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Moderation History</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <DetailField
+            label="Current Reason"
+            value={details.moderation.current_reason ?? "No active moderation reason"}
+          />
+          {details.moderation.history.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No moderation events recorded.</p>
+          ) : (
+            details.moderation.history.map((event, index) => (
+              <div key={`${event.created_at}-${index}`} className="rounded-lg border p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Badge variant={event.action === "disabled" ? "destructive" : event.action === "suspended" ? "secondary" : "outline"}>
+                      {formatModerationAction(event.action)}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">{formatDateTime(event.created_at)}</span>
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {event.actor_email ?? event.actor_user_id ?? "System"}
+                  </span>
+                </div>
+                {event.reason && <p className="mt-2 text-sm">{event.reason}</p>}
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Stored moderation value: {event.moderation_value}
+                  {event.moderation_value > 0 ? ` (${formatModerationUntil(event.moderation_value)})` : ""}
+                </p>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Owned Projects</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            {details.projects.owned_projects.length === 0 ? (
+              <p className="text-sm text-muted-foreground">This user does not own any projects.</p>
+            ) : (
+              details.projects.owned_projects.map(project => (
+                <div key={project.id} className="rounded-lg border p-3">
+                  <p className="font-medium">{project.name}</p>
+                  <p className="mt-1 font-mono text-xs text-muted-foreground">{project.id}</p>
+                  <p className="mt-2 text-xs text-muted-foreground">Created {formatDateTime(project.created_at)}</p>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Project Memberships</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            {details.projects.project_memberships.length === 0 ? (
+              <p className="text-sm text-muted-foreground">This user has no project memberships.</p>
+            ) : (
+              details.projects.project_memberships.map(membership => (
+                <div key={`${membership.project_id}-${membership.role}`} className="rounded-lg border p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="font-medium">{membership.project_name}</p>
+                    <Badge variant="outline">{membership.role}</Badge>
+                  </div>
+                  <p className="mt-1 font-mono text-xs text-muted-foreground">{membership.project_id}</p>
+                  <p className="mt-2 text-xs text-muted-foreground">Joined {formatDateTime(membership.joined_at)}</p>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 interface UserRowProps {
   user: AdminUser;
   onUpdated: (id: string, updates: Partial<AdminUser>) => void;
@@ -104,6 +329,9 @@ function UserRow({ user, onUpdated }: UserRowProps) {
   const [pending, setPending] = useState(false);
   const [forcingPasswordChange, setForcingPasswordChange] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [details, setDetails] = useState<AdminUserDetails | null>(null);
   const [disableDialogOpen, setDisableDialogOpen] = useState(false);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [disableMode, setDisableMode] = useState<DisableMode>("indefinitely");
@@ -133,11 +361,31 @@ function UserRow({ user, onUpdated }: UserRowProps) {
     if (date) setDatePickerOpen(false);
   }
 
+  async function loadDetails(force = false, showError = true) {
+    if (detailsLoading) return;
+    if (!force && details) return;
+
+    setDetailsLoading(true);
+    try {
+      setDetails(await getUserDetails(user.id));
+    } catch {
+      if (showError) toast.error("Failed to load user details");
+    } finally {
+      setDetailsLoading(false);
+    }
+  }
+
+  function handleDetailsOpenChange(open: boolean) {
+    setDetailsOpen(open);
+    if (open) void loadDetails();
+  }
+
   async function handleForcePasswordChange() {
     setForcingPasswordChange(true);
     try {
       await forceUserPasswordChange(user.id);
       onUpdated(user.id, { force_password_change: 1 });
+      if (detailsOpen || details) void loadDetails(true, false);
       toast.success(`${user.name} will be required to change their password on next sign in`);
     } catch {
       toast.error("Failed to force password change");
@@ -168,6 +416,7 @@ function UserRow({ user, onUpdated }: UserRowProps) {
         latest_moderation_reason: null,
         latest_moderation_created_at: new Date().toISOString(),
       });
+      if (detailsOpen || details) void loadDetails(true, false);
       toast.success("Account re-enabled");
     } catch {
       toast.error("Failed to update user");
@@ -209,6 +458,7 @@ function UserRow({ user, onUpdated }: UserRowProps) {
         latest_moderation_reason: trimmedReason,
         latest_moderation_created_at: new Date().toISOString(),
       });
+      if (detailsOpen || details) void loadDetails(true, false);
       toast.success(
         moderation === -1
           ? "Account disabled indefinitely"
@@ -270,6 +520,36 @@ function UserRow({ user, onUpdated }: UserRowProps) {
               )}
 
               <div className="flex flex-wrap items-center gap-2">
+                <Sheet open={detailsOpen} onOpenChange={handleDetailsOpenChange}>
+                  <SheetTrigger asChild>
+                    <Button size="sm" variant="secondary">
+                      User details
+                    </Button>
+                  </SheetTrigger>
+                  <SheetContent className="max-w-3xl">
+                    <SheetHeader>
+                      <SheetTitle>{user.name}</SheetTitle>
+                      <SheetDescription>{user.email}</SheetDescription>
+                    </SheetHeader>
+                    <SheetBody>
+                      {detailsLoading && !details
+                        ? <DetailsLoadingState />
+                        : details
+                          ? <UserDetailsPanel details={details} />
+                          : <p className="text-sm text-muted-foreground">User details could not be loaded.</p>}
+                    </SheetBody>
+                    <SheetFooter className="flex flex-row justify-end gap-2">
+                      <Button type="button" variant="outline" disabled={detailsLoading} onClick={() => void loadDetails(true)}>
+                        Refresh details
+                      </Button>
+                      <Button type="button" variant="outline" disabled={exporting} onClick={handleExport}>
+                        <Download className="h-3.5 w-3.5" />
+                        Export data
+                      </Button>
+                    </SheetFooter>
+                  </SheetContent>
+                </Sheet>
+
                 <Button size="sm" variant="outline" disabled={exporting} onClick={handleExport}>
                   <Download className="h-3.5 w-3.5" />
                   Export data

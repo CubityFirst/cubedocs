@@ -22,6 +22,10 @@ database_id = "db327d85-b8c2-4fed-adaa-25e748778c86"
 binding = "ASSETS"
 bucket_name = "cubedocs-assets"
 
+[[services]]
+binding = "AUTH"
+service = "cubedocs-auth"
+
 [[routes]]
 pattern = "admin.cubityfir.st"
 custom_domain = true

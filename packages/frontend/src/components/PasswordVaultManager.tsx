@@ -198,6 +198,7 @@ interface Props {
 
 export function PasswordVaultManager({ projectId, projectName }: Props) {
   const location = useLocation();
+  const openEntryId = location.state?.openEntryId as string | undefined;
   const { setBreadcrumbs } = useOutletContext<DocsLayoutContext>();
   const { toast } = useToast();
 
@@ -246,6 +247,7 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
   // Drag state
   const draggedItem = useRef<{ type: "entry" | "folder"; id: string } | null>(null);
   const [dropTarget, setDropTarget] = useState<string | "root" | null>(null);
+  const autoOpenedEntryId = useRef<string | null>(null);
 
   // 2FA status
   const [twoFAStatus, setTwoFAStatus] = useState({ totpEnabled: false, webauthnEnabled: false });
@@ -326,6 +328,12 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
     return () => clearTimeout(timer);
   }, [searchQuery, projectId, currentFolderId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (!openEntryId || autoOpenedEntryId.current === openEntryId) return;
+    autoOpenedEntryId.current = openEntryId;
+    openDetailById(openEntryId).catch(() => {});
+  }, [openEntryId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function loadContents() {
     const token = getToken();
     if (!token) return;
@@ -372,6 +380,10 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
   }
 
   async function openDetail(entry: PasswordEntry) {
+    await openDetailById(entry.id);
+  }
+
+  async function openDetailById(entryId: string) {
     setDetailEntry(null);
     setLoadingDetail(true);
     setRevealPassword(false);
@@ -380,7 +392,7 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
     setDialog("view");
     try {
       const token = getToken();
-      const res = await fetch(`/api/passwords/${entry.id}`, {
+      const res = await fetch(`/api/passwords/${entryId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const json = await res.json() as { ok: boolean; data?: PasswordDetail };

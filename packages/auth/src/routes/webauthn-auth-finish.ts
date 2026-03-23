@@ -17,10 +17,10 @@ export async function handleWebauthnAuthFinish(request: Request, env: Env): Prom
   }
 
   const user = await env.DB.prepare(
-    "SELECT id, email, name, created_at, moderation, force_password_change FROM users WHERE id = ? AND email = ?",
+    "SELECT id, email, name, created_at, moderation, force_password_change, is_admin FROM users WHERE id = ? AND email = ?",
   )
     .bind(body.userId, body.email.toLowerCase())
-    .first<{ id: string; email: string; name: string; created_at: string; moderation: number; force_password_change: number }>();
+    .first<{ id: string; email: string; name: string; created_at: string; moderation: number; force_password_change: number; is_admin: number }>();
   if (!user) return errorResponse(Errors.UNAUTHORIZED);
 
   const moderationResponse = checkModeration(user.moderation);
@@ -31,14 +31,14 @@ export async function handleWebauthnAuthFinish(request: Request, env: Env): Prom
 
   if (user.force_password_change) {
     const changeToken = await signJwt(
-      { userId: user.id, email: user.email, expiresAt: Date.now() + 15 * 60 * 1000, forcePasswordChange: true },
+      { userId: user.id, email: user.email, expiresAt: Date.now() + 15 * 60 * 1000, isAdmin: Boolean(user.is_admin), forcePasswordChange: true },
       env.JWT_SECRET,
     );
     return Response.json({ ok: false, error: "password_change_required", changeToken }, { status: 200 });
   }
 
   const token = await signJwt(
-    { userId: user.id, email: user.email, expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 },
+    { userId: user.id, email: user.email, expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000, isAdmin: Boolean(user.is_admin) },
     env.JWT_SECRET,
   );
 

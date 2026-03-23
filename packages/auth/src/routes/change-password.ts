@@ -1,4 +1,5 @@
 import zxcvbn from "zxcvbn";
+import { requireAuthenticatedSession } from "../auth-session";
 import { okResponse, errorResponse, Errors } from "../lib";
 import { verifyPassword, hashPassword } from "../password";
 import { requireMFA } from "../mfa";
@@ -6,7 +7,6 @@ import type { Env } from "../index";
 
 export async function handleChangePassword(request: Request, env: Env): Promise<Response> {
   const body = await request.json<{
-    userId: string;
     currentPassword: string;
     newPassword: string;
     totpCode?: string;
@@ -14,9 +14,12 @@ export async function handleChangePassword(request: Request, env: Env): Promise<
     webauthnResponse?: unknown;
   }>();
 
-  if (!body.userId || !body.currentPassword || !body.newPassword) {
+  if (!body.currentPassword || !body.newPassword) {
     return errorResponse(Errors.BAD_REQUEST);
   }
+
+  const session = await requireAuthenticatedSession(request, env);
+  if (session instanceof Response) return session;
 
   if (zxcvbn(body.newPassword).score < 3) {
     return Response.json({ ok: false, error: "password_too_weak" }, { status: 400 });
@@ -24,13 +27,13 @@ export async function handleChangePassword(request: Request, env: Env): Promise<
 
   const user = await env.DB.prepare(
     "SELECT password_hash FROM users WHERE id = ?",
-  ).bind(body.userId).first<{ password_hash: string }>();
+  ).bind(session.userId).first<{ password_hash: string }>();
   if (!user) return errorResponse(Errors.NOT_FOUND);
 
   const valid = await verifyPassword(body.currentPassword, user.password_hash);
   if (!valid) return errorResponse(Errors.UNAUTHORIZED);
 
-  const mfaError = await requireMFA(env, body.userId, {
+  const mfaError = await requireMFA(env, session.userId, {
     totpCode: body.totpCode,
     challengeId: body.challengeId,
     webauthnResponse: body.webauthnResponse,
@@ -39,7 +42,7 @@ export async function handleChangePassword(request: Request, env: Env): Promise<
 
   const newHash = await hashPassword(body.newPassword);
   await env.DB.prepare("UPDATE users SET password_hash = ? WHERE id = ?")
-    .bind(newHash, body.userId)
+    .bind(newHash, session.userId)
     .run();
 
   return okResponse({});
