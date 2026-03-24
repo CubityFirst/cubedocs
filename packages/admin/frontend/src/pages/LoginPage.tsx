@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -12,10 +11,6 @@ export function LoginPage() {
     fromState ?? new URLSearchParams(location.search).get("next"),
   );
   const loginUrl = buildDocsAdminLoginUrl(nextPath);
-
-  useEffect(() => {
-    window.location.replace(loginUrl);
-  }, [loginUrl]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4 py-12 text-foreground">

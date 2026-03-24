@@ -209,6 +209,7 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
   const currentFolderId = path[path.length - 1].id;
 
   const [selectedEntries, setSelectedEntries] = useState<Set<string>>(new Set());
+  const lastCheckedEntryIndex = useRef<number | null>(null);
   const [deletingSelected, setDeletingSelected] = useState(false);
   const [folderCounts, setFolderCounts] = useState<Map<string, { files: number; folders: number }>>(new Map());
 
@@ -763,7 +764,7 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
               </ContextMenu>
             );
             })}
-          {entryRows.map(entry => {
+          {entryRows.map((entry, entryIdx) => {
             const entryRow = (
               <ResizableTableRow
                 columns={VAULT_COLUMNS}
@@ -773,13 +774,28 @@ export function PasswordVaultManager({ projectId, projectName }: Props) {
                   checkboxCell={
                     <Checkbox
                       checked={selectedEntries.has(entry.id)}
-                      onCheckedChange={checked => {
-                        setSelectedEntries(prev => {
-                          const next = new Set(prev);
-                          if (checked) next.add(entry.id);
-                          else next.delete(entry.id);
-                          return next;
-                        });
+                      onClick={(e) => {
+                        const willBeChecked = !selectedEntries.has(entry.id);
+                        if (e.shiftKey && lastCheckedEntryIndex.current !== null) {
+                          const from = Math.min(lastCheckedEntryIndex.current, entryIdx);
+                          const to = Math.max(lastCheckedEntryIndex.current, entryIdx);
+                          setSelectedEntries(prev => {
+                            const next = new Set(prev);
+                            for (let i = from; i <= to; i++) {
+                              if (willBeChecked) next.add(entryRows[i].id);
+                              else next.delete(entryRows[i].id);
+                            }
+                            return next;
+                          });
+                        } else {
+                          setSelectedEntries(prev => {
+                            const next = new Set(prev);
+                            if (willBeChecked) next.add(entry.id);
+                            else next.delete(entry.id);
+                            return next;
+                          });
+                        }
+                        lastCheckedEntryIndex.current = entryIdx;
                       }}
                     />
                   }

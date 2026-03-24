@@ -129,6 +129,8 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
 
   const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+  const lastCheckedDocIndex = useRef<number | null>(null);
+  const lastCheckedFileIndex = useRef<number | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<{ type: "folder" | "doc" | "file"; id: string; currentName: string } | null>(null);
@@ -636,7 +638,7 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
               </ContextMenu>
             );
             })}
-          {docRows.map(doc => {
+          {docRows.map((doc, docIdx) => {
             const isHome = doc.is_home === 1;
             const navToDoc = () => navigate(`/projects/${projectId}/docs/${doc.id}`, { state: { folderPath: path } });
             const docRow = (
@@ -648,13 +650,29 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
                   checkboxCell={!canEdit ? undefined : isHome ? null : (
                     <Checkbox
                       checked={selectedDocs.has(doc.id)}
-                      onCheckedChange={checked => {
-                        setSelectedDocs(prev => {
-                          const next = new Set(prev);
-                          if (checked) next.add(doc.id);
-                          else next.delete(doc.id);
-                          return next;
-                        });
+                      onClick={(e) => {
+                        const willBeChecked = !selectedDocs.has(doc.id);
+                        if (e.shiftKey && lastCheckedDocIndex.current !== null) {
+                          const from = Math.min(lastCheckedDocIndex.current, docIdx);
+                          const to = Math.max(lastCheckedDocIndex.current, docIdx);
+                          setSelectedDocs(prev => {
+                            const next = new Set(prev);
+                            for (let i = from; i <= to; i++) {
+                              if (docRows[i].is_home === 1) continue;
+                              if (willBeChecked) next.add(docRows[i].id);
+                              else next.delete(docRows[i].id);
+                            }
+                            return next;
+                          });
+                        } else {
+                          setSelectedDocs(prev => {
+                            const next = new Set(prev);
+                            if (willBeChecked) next.add(doc.id);
+                            else next.delete(doc.id);
+                            return next;
+                          });
+                        }
+                        lastCheckedDocIndex.current = docIdx;
                       }}
                     />
                   )}
@@ -748,7 +766,7 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
               </ContextMenu>
             );
           })}
-          {fileRows.map(file => {
+          {fileRows.map((file, fileIdx) => {
             const fileRow = (
               <ResizableTableRow
                 columns={FILE_COLUMNS}
@@ -758,13 +776,28 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
                 checkboxCell={canEdit ? (
                   <Checkbox
                     checked={selectedFiles.has(file.id)}
-                    onCheckedChange={checked => {
-                      setSelectedFiles(prev => {
-                        const next = new Set(prev);
-                        if (checked) next.add(file.id);
-                        else next.delete(file.id);
-                        return next;
-                      });
+                    onClick={(e) => {
+                      const willBeChecked = !selectedFiles.has(file.id);
+                      if (e.shiftKey && lastCheckedFileIndex.current !== null) {
+                        const from = Math.min(lastCheckedFileIndex.current, fileIdx);
+                        const to = Math.max(lastCheckedFileIndex.current, fileIdx);
+                        setSelectedFiles(prev => {
+                          const next = new Set(prev);
+                          for (let i = from; i <= to; i++) {
+                            if (willBeChecked) next.add(fileRows[i].id);
+                            else next.delete(fileRows[i].id);
+                          }
+                          return next;
+                        });
+                      } else {
+                        setSelectedFiles(prev => {
+                          const next = new Set(prev);
+                          if (willBeChecked) next.add(file.id);
+                          else next.delete(file.id);
+                          return next;
+                        });
+                      }
+                      lastCheckedFileIndex.current = fileIdx;
                     }}
                   />
                 ) : undefined}
