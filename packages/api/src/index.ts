@@ -7,7 +7,6 @@ import { handleMembers } from "./routes/members";
 import { handlePublic } from "./routes/public";
 import { handleFiles } from "./routes/files";
 import { handleAi } from "./routes/ai";
-import { handleSystems } from "./routes/systems";
 
 export interface Env {
   DB: D1Database;
@@ -144,10 +143,6 @@ export default {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
         response = await handleFolders(request, env, session, url);
-      } else if (url.pathname.startsWith("/systems")) {
-        const session = await getSession(request, env);
-        if (session instanceof Response) return session;
-        response = await handleSystems(request, env, session, url);
       } else if (url.pathname.startsWith("/files")) {
         const session = await authenticate(request, env);
         response = await handleFiles(request, env, session, url);

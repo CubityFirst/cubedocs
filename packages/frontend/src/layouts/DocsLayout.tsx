@@ -21,14 +21,12 @@ import {
   ChevronRight,
   FileText,
   SlidersHorizontal,
-  Server,
 } from "lucide-react";
 
 interface Project {
   id: string;
   name: string;
   role: string;
-  systems_enabled: number;
   published_at: string | null;
   changelog_mode: string;
   ai_enabled: number;
@@ -42,7 +40,6 @@ interface Doc {
 
 const SECTIONS = [
   { id: "documents", label: "Documents", icon: FileText },
-  { id: "systems", label: "Systems", icon: Server },
 ] as const;
 
 export interface BreadcrumbItem {
@@ -263,9 +260,7 @@ export function DocsLayout() {
           <ScrollArea className="flex-1 px-2 py-3">
             {/* Sections */}
             <nav className="flex flex-col gap-1">
-              {SECTIONS.filter(section =>
-                (section.id !== "systems" || currentProject?.systems_enabled === 1)
-              ).map(section => (
+              {SECTIONS.map(section => (
                 <NavLink
                   key={section.id}
                   to={section.id === "documents" ? `/projects/${projectId}` : `/projects/${projectId}/${section.id}`}

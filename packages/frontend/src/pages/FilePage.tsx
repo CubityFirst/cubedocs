@@ -12,10 +12,8 @@ interface FileRecord {
   name: string;
   mime_type: string;
   size: number;
-  type: "docs" | "systems";
   project_id: string;
   folder_id: string | null;
-  system_id: string | null;
   uploaded_by: string;
   created_at: string;
 }

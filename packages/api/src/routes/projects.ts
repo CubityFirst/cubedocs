@@ -72,7 +72,7 @@ export async function handleProjects(
     if (role === null) return errorResponse(Errors.NOT_FOUND);
     if (ROLE_RANK[role] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
 
-    const body = await request.json<{ name?: string; description?: string | null; publishedAt?: string | null; systemsEnabled?: boolean; changelogMode?: string; vanitySlug?: string | null; aiEnabled?: boolean; aiSummarizationType?: string; homeDocEnabled?: boolean }>();
+    const body = await request.json<{ name?: string; description?: string | null; publishedAt?: string | null; changelogMode?: string; vanitySlug?: string | null; aiEnabled?: boolean; aiSummarizationType?: string; homeDocEnabled?: boolean }>();
     if (body.name !== undefined && !body.name.trim()) return errorResponse(Errors.BAD_REQUEST);
     if (body.changelogMode !== undefined && !["off", "on", "enforced"].includes(body.changelogMode)) return errorResponse(Errors.BAD_REQUEST);
     if (body.aiSummarizationType !== undefined && !["automatic", "manual"].includes(body.aiSummarizationType)) return errorResponse(Errors.BAD_REQUEST);
@@ -91,7 +91,6 @@ export async function handleProjects(
     if (body.name !== undefined) { fields.push("name = ?"); values.push(body.name.trim()); }
     if (body.description !== undefined) { fields.push("description = ?"); values.push(body.description ?? null); }
     if (body.publishedAt !== undefined) { fields.push("published_at = ?"); values.push(body.publishedAt ?? null); }
-    if (body.systemsEnabled !== undefined) { fields.push("systems_enabled = ?"); values.push(body.systemsEnabled ? 1 : 0); }
     if (body.changelogMode !== undefined) { fields.push("changelog_mode = ?"); values.push(body.changelogMode); }
     if (body.vanitySlug !== undefined) { fields.push("vanity_slug = ?"); values.push(body.vanitySlug ?? null); }
     if (body.aiEnabled !== undefined) { fields.push("ai_enabled = ?"); values.push(body.aiEnabled ? 1 : 0); }

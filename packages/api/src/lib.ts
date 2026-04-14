@@ -40,31 +40,9 @@ export interface Project {
   features: number;
   ai_enabled: number;
   home_doc_id: string | null;
-  systems_enabled: number;
-}
-
-export interface SystemRecord {
-  id: string;
-  name: string;
-  category: SystemCategory;
-  category_label: string | null;
-  status: SystemStatus;
-  environment: SystemEnvironment | null;
-  owner: string | null;
-  primary_url: string | null;
-  notes: string | null;
-  renewal_date: string | null;
-  project_id: string;
-  folder_id: string | null;
-  created_by: string;
-  created_at: string;
-  updated_at: string;
 }
 
 export type Role = "viewer" | "editor" | "admin" | "owner";
-export type SystemCategory = "app" | "service" | "server" | "vendor" | "environment" | "domain" | "database" | "internal_tool";
-export type SystemStatus = "active" | "planned" | "maintenance" | "deprecated";
-export type SystemEnvironment = "production" | "staging" | "development" | "test" | "other";
 
 export interface Member {
   id: string;

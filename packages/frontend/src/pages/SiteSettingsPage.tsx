@@ -64,7 +64,6 @@ interface Project {
   description: string | null;
   owner_id: string;
   published_at: string | null;
-  systems_enabled: number;
   changelog_mode: string;
   vanity_slug: string | null;
   features: number;
@@ -117,7 +116,6 @@ export function SiteSettingsPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [togglingPublish, setTogglingPublish] = useState(false);
-  const [togglingSystems, setTogglingSystems] = useState(false);
   const [togglingChangelog, setTogglingChangelog] = useState(false);
   const [togglingAi, setTogglingAi] = useState(false);
   const [togglingAiType, setTogglingAiType] = useState(false);
@@ -282,29 +280,6 @@ export function SiteSettingsPage() {
       toast({ title: "Could not connect to the server.", variant: "destructive" });
     } finally {
       setTogglingPublish(false);
-    }
-  }
-
-  async function handleToggleSystems(enabled: boolean) {
-    if (!projectId || !project) return;
-    setTogglingSystems(true);
-    try {
-      const res = await fetch(`/api/projects/${projectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ systemsEnabled: enabled }),
-      });
-      const json = await res.json() as { ok: boolean; data?: Project };
-      if (json.ok && json.data) {
-        setProject(json.data);
-        toast({ title: enabled ? "Systems enabled." : "Systems disabled." });
-      } else {
-        toast({ title: "Failed to update systems setting.", variant: "destructive" });
-      }
-    } catch {
-      toast({ title: "Could not connect to the server.", variant: "destructive" });
-    } finally {
-      setTogglingSystems(false);
     }
   }
 
@@ -652,19 +627,6 @@ export function SiteSettingsPage() {
               <p className="mt-1 text-sm text-muted-foreground">
                 Enable or disable features for this site.
               </p>
-            </div>
-            <div className="flex items-center justify-between rounded-md border border-border px-4 py-3">
-              <div className="flex flex-col gap-0.5">
-                <p className="text-sm font-medium">Systems</p>
-                <p className="text-xs text-muted-foreground">
-                  Track systems and services with linked docs and files.
-                </p>
-              </div>
-              <Switch
-                checked={project.systems_enabled === 1}
-                onCheckedChange={handleToggleSystems}
-                disabled={togglingSystems}
-              />
             </div>
             {!!(project.features & 2) && (
               <>

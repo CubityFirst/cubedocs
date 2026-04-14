@@ -14,25 +14,12 @@ export interface FileRecord {
   name: string;
   mime_type: string;
   size: number;
-  type: "docs" | "systems";
   project_id: string;
   folder_id: string | null;
-  system_id: string | null;
   uploaded_by: string;
   created_at: string;
   uploader_name?: string;
   uploader_role?: string;
-}
-
-async function ensureSystem(db: D1Database, projectId: string, systemId: string | null | undefined): Promise<boolean> {
-  if (systemId === undefined || systemId === null) return true;
-  const row = await db.prepare("SELECT id FROM systems WHERE id = ? AND project_id = ?")
-    .bind(systemId, projectId).first<{ id: string }>();
-  return !!row;
-}
-
-function normalizeFileType(value: string | null): "docs" | "systems" {
-  return value === "systems" ? "systems" : "docs";
 }
 
 export async function handleFiles(
@@ -50,12 +37,12 @@ export async function handleFiles(
   if (fileId && subResource === "content" && request.method === "GET") {
     const contextProjectId = url.searchParams.get("projectId");
     const meta = await env.DB.prepare(
-      "SELECT f.name, f.mime_type, f.project_id, f.type, p.published_at FROM files f JOIN projects p ON p.id = f.project_id WHERE f.id = ?" +
+      "SELECT f.name, f.mime_type, f.project_id, p.published_at FROM files f JOIN projects p ON p.id = f.project_id WHERE f.id = ?" +
         (contextProjectId ? " AND f.project_id = ?" : ""),
-    ).bind(...(contextProjectId ? [fileId, contextProjectId] : [fileId])).first<{ name: string; mime_type: string; project_id: string; type: "docs" | "systems"; published_at: string | null }>();
+    ).bind(...(contextProjectId ? [fileId, contextProjectId] : [fileId])).first<{ name: string; mime_type: string; project_id: string; published_at: string | null }>();
     if (!meta) return errorResponse(Errors.NOT_FOUND);
 
-    const canUsePublishedAccess = meta.type === "docs" && !!meta.published_at;
+    const canUsePublishedAccess = !!meta.published_at;
 
     if (!canUsePublishedAccess) {
       if (!user) return errorResponse(Errors.UNAUTHORIZED);
@@ -100,28 +87,23 @@ export async function handleFiles(
     if (role === null) return errorResponse(Errors.FORBIDDEN);
 
     const folderId = url.searchParams.get("folderId");
-    const systemId = url.searchParams.get("systemId");
-    const type = normalizeFileType(url.searchParams.get("type"));
     const baseSelect = `
-      SELECT f.id, f.name, f.mime_type, f.size, f.type, f.project_id, f.folder_id, f.system_id, f.uploaded_by, f.created_at,
+      SELECT f.id, f.name, f.mime_type, f.size, f.project_id, f.folder_id, f.uploaded_by, f.created_at,
         COALESCE(pm.name, f.uploaded_by) AS uploader_name,
         pm.role AS uploader_role
       FROM files f
       LEFT JOIN project_members pm ON pm.project_id = f.project_id AND pm.user_id = f.uploaded_by
     `;
     let rows;
-    if (systemId) {
-      rows = await env.DB.prepare(`${baseSelect} WHERE f.project_id = ? AND f.type = ? AND f.system_id = ? ORDER BY f.name ASC`)
-        .bind(projectId, type, systemId).all<FileRecord>();
-    } else if (folderId) {
-      rows = await env.DB.prepare(`${baseSelect} WHERE f.project_id = ? AND f.type = ? AND f.folder_id = ? ORDER BY f.name ASC`)
-        .bind(projectId, type, folderId).all<FileRecord>();
+    if (folderId) {
+      rows = await env.DB.prepare(`${baseSelect} WHERE f.project_id = ? AND f.folder_id = ? ORDER BY f.name ASC`)
+        .bind(projectId, folderId).all<FileRecord>();
     } else if (url.searchParams.has("folderId")) {
-      rows = await env.DB.prepare(`${baseSelect} WHERE f.project_id = ? AND f.type = ? AND f.folder_id IS NULL ORDER BY f.name ASC`)
-        .bind(projectId, type).all<FileRecord>();
+      rows = await env.DB.prepare(`${baseSelect} WHERE f.project_id = ? AND f.folder_id IS NULL ORDER BY f.name ASC`)
+        .bind(projectId).all<FileRecord>();
     } else {
-      rows = await env.DB.prepare(`${baseSelect} WHERE f.project_id = ? AND f.type = ? ORDER BY f.created_at DESC`)
-        .bind(projectId, type).all<FileRecord>();
+      rows = await env.DB.prepare(`${baseSelect} WHERE f.project_id = ? ORDER BY f.created_at DESC`)
+        .bind(projectId).all<FileRecord>();
     }
 
     return okResponse(rows.results);
@@ -136,8 +118,6 @@ export async function handleFiles(
     const file = form.get("file") as File | null;
     const projectId = form.get("projectId") as string | null;
     const folderId = form.get("folderId") as string | null;
-    const type = normalizeFileType((form.get("type") as string | null) ?? null);
-    const systemId = form.get("systemId") as string | null;
     if (!file || !projectId) return errorResponse(Errors.BAD_REQUEST);
 
     if (file.size > MAX_SIZE) {
@@ -147,8 +127,6 @@ export async function handleFiles(
     const role = await getCallerRole(env.DB, projectId, user.userId);
     if (role === null) return errorResponse(Errors.FORBIDDEN);
     if (ROLE_RANK[role] < ROLE_RANK["editor"]) return errorResponse(Errors.FORBIDDEN);
-    if (!(await ensureSystem(env.DB, projectId, type === "systems" ? systemId : null))) return errorResponse(Errors.BAD_REQUEST);
-    if (type !== "systems" && systemId) return errorResponse(Errors.BAD_REQUEST);
 
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
@@ -159,10 +137,10 @@ export async function handleFiles(
     });
 
     await env.DB.prepare(
-      "INSERT INTO files (id, name, mime_type, size, type, project_id, folder_id, system_id, uploaded_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    ).bind(id, file.name, mimeType, file.size, type, projectId, folderId ?? null, type === "systems" ? systemId ?? null : null, user.userId, now).run();
+      "INSERT INTO files (id, name, mime_type, size, project_id, folder_id, uploaded_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    ).bind(id, file.name, mimeType, file.size, projectId, folderId ?? null, user.userId, now).run();
 
-    const record: FileRecord = { id, name: file.name, mime_type: mimeType, size: file.size, type, project_id: projectId, folder_id: folderId ?? null, system_id: type === "systems" ? systemId ?? null : null, uploaded_by: user.userId, created_at: now };
+    const record: FileRecord = { id, name: file.name, mime_type: mimeType, size: file.size, project_id: projectId, folder_id: folderId ?? null, uploaded_by: user.userId, created_at: now };
     return okResponse(record, 201);
   }
 
@@ -176,15 +154,7 @@ export async function handleFiles(
     if (role === null) return errorResponse(Errors.FORBIDDEN);
     if (ROLE_RANK[role] < ROLE_RANK["editor"]) return errorResponse(Errors.FORBIDDEN);
 
-    const file = await env.DB.prepare("SELECT project_id, type FROM files WHERE id = ?")
-      .bind(fileId).first<{ project_id: string; type: "docs" | "systems" }>();
-    if (!file) return errorResponse(Errors.NOT_FOUND);
-
-    const body = await request.json<{ folderId?: string | null; name?: string; systemId?: string | null }>();
-    if (body.systemId !== undefined) {
-      if (file.type !== "systems") return errorResponse(Errors.BAD_REQUEST);
-      if (!(await ensureSystem(env.DB, meta.project_id, body.systemId ?? null))) return errorResponse(Errors.BAD_REQUEST);
-    }
+    const body = await request.json<{ folderId?: string | null; name?: string }>();
     if (body.name !== undefined) {
       await env.DB.prepare("UPDATE files SET name = ? WHERE id = ?")
         .bind(body.name, fileId).run();
@@ -192,10 +162,6 @@ export async function handleFiles(
     if (body.folderId !== undefined) {
       await env.DB.prepare("UPDATE files SET folder_id = ? WHERE id = ?")
         .bind(body.folderId ?? null, fileId).run();
-    }
-    if (body.systemId !== undefined) {
-      await env.DB.prepare("UPDATE files SET system_id = ? WHERE id = ?")
-        .bind(body.systemId ?? null, fileId).run();
     }
     return okResponse({ updated: true });
   }
