@@ -4,7 +4,6 @@ CREATE TABLE IF NOT EXISTS projects (
   description   TEXT,
   owner_id      TEXT NOT NULL,
   published_at    TEXT,
-  vault_enabled   INTEGER NOT NULL DEFAULT 0,
   systems_enabled INTEGER NOT NULL DEFAULT 0,
   changelog_mode  TEXT NOT NULL DEFAULT 'off' CHECK(changelog_mode IN ('off', 'on', 'enforced')),
   home_doc_id     TEXT,
@@ -52,25 +51,6 @@ CREATE INDEX IF NOT EXISTS idx_members_project ON project_members(project_id);
 CREATE INDEX IF NOT EXISTS idx_members_user ON project_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_folders_project ON folders(project_id);
 
-CREATE TABLE IF NOT EXISTS passwords (
-  id               TEXT PRIMARY KEY,
-  title            TEXT NOT NULL,
-  username         TEXT,
-  password_enc     TEXT NOT NULL,
-  totp_enc         TEXT,
-  url              TEXT,
-  notes_enc        TEXT,
-  last_change_date TEXT NOT NULL,
-  project_id       TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  folder_id        TEXT REFERENCES folders(id) ON DELETE SET NULL,
-  author_id        TEXT NOT NULL,
-  created_at       TEXT NOT NULL,
-  updated_at       TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_passwords_project ON passwords(project_id);
-CREATE INDEX IF NOT EXISTS idx_passwords_folder ON passwords(folder_id);
-
 CREATE TABLE IF NOT EXISTS systems (
   id            TEXT PRIMARY KEY,
   name          TEXT NOT NULL,
@@ -94,7 +74,7 @@ CREATE INDEX IF NOT EXISTS idx_systems_folder ON systems(folder_id);
 
 CREATE TABLE IF NOT EXISTS asset_revisions (
   id          TEXT PRIMARY KEY,
-  asset_type  TEXT NOT NULL CHECK(asset_type IN ('doc', 'password')),
+  asset_type  TEXT NOT NULL CHECK(asset_type IN ('doc')),
   asset_id    TEXT NOT NULL,
   project_id  TEXT NOT NULL,
   editor_id   TEXT NOT NULL,
@@ -132,10 +112,3 @@ CREATE TABLE IF NOT EXISTS system_doc_links (
 
 CREATE INDEX IF NOT EXISTS idx_system_doc_links_doc ON system_doc_links(doc_id);
 
-CREATE TABLE IF NOT EXISTS system_password_links (
-  system_id     TEXT NOT NULL REFERENCES systems(id) ON DELETE CASCADE,
-  password_id   TEXT NOT NULL REFERENCES passwords(id) ON DELETE CASCADE,
-  PRIMARY KEY (system_id, password_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_system_password_links_password ON system_password_links(password_id);

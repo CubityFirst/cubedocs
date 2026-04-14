@@ -26,7 +26,6 @@ function makeEnv(db: ReturnType<typeof makeDB>): Env {
     ASSETS: {} as unknown as R2Bucket,
     AUTH: {} as unknown as Fetcher,
     JWT_SECRET: "secret",
-    VAULT_SECRET: "test-vault-secret",
   };
 }
 

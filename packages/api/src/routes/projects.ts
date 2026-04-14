@@ -21,8 +21,8 @@ export async function handleProjects(
   // GET /projects — list projects where user is a member (includes owned)
   if (!projectId && request.method === "GET") {
     const rows = await env.DB.prepare(
-      "SELECT p.*, pm.role, (SELECT COUNT(*) FROM docs WHERE project_id = p.id) as doc_count, (SELECT COUNT(*) FROM project_members WHERE project_id = p.id) as member_count, (SELECT COUNT(*) FROM passwords WHERE project_id = p.id) as password_count FROM projects p INNER JOIN project_members pm ON pm.project_id = p.id WHERE pm.user_id = ? ORDER BY p.created_at DESC",
-    ).bind(user.userId).all<Project & { role: Role; doc_count: number; member_count: number; password_count: number }>();
+      "SELECT p.*, pm.role, (SELECT COUNT(*) FROM docs WHERE project_id = p.id) as doc_count, (SELECT COUNT(*) FROM project_members WHERE project_id = p.id) as member_count FROM projects p INNER JOIN project_members pm ON pm.project_id = p.id WHERE pm.user_id = ? ORDER BY p.created_at DESC",
+    ).bind(user.userId).all<Project & { role: Role; doc_count: number; member_count: number }>();
     return okResponse(rows.results);
   }
 
@@ -72,7 +72,7 @@ export async function handleProjects(
     if (role === null) return errorResponse(Errors.NOT_FOUND);
     if (ROLE_RANK[role] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
 
-    const body = await request.json<{ name?: string; description?: string | null; publishedAt?: string | null; vaultEnabled?: boolean; systemsEnabled?: boolean; changelogMode?: string; vanitySlug?: string | null; aiEnabled?: boolean; aiSummarizationType?: string; homeDocEnabled?: boolean }>();
+    const body = await request.json<{ name?: string; description?: string | null; publishedAt?: string | null; systemsEnabled?: boolean; changelogMode?: string; vanitySlug?: string | null; aiEnabled?: boolean; aiSummarizationType?: string; homeDocEnabled?: boolean }>();
     if (body.name !== undefined && !body.name.trim()) return errorResponse(Errors.BAD_REQUEST);
     if (body.changelogMode !== undefined && !["off", "on", "enforced"].includes(body.changelogMode)) return errorResponse(Errors.BAD_REQUEST);
     if (body.aiSummarizationType !== undefined && !["automatic", "manual"].includes(body.aiSummarizationType)) return errorResponse(Errors.BAD_REQUEST);
@@ -91,7 +91,6 @@ export async function handleProjects(
     if (body.name !== undefined) { fields.push("name = ?"); values.push(body.name.trim()); }
     if (body.description !== undefined) { fields.push("description = ?"); values.push(body.description ?? null); }
     if (body.publishedAt !== undefined) { fields.push("published_at = ?"); values.push(body.publishedAt ?? null); }
-    if (body.vaultEnabled !== undefined) { fields.push("vault_enabled = ?"); values.push(body.vaultEnabled ? 1 : 0); }
     if (body.systemsEnabled !== undefined) { fields.push("systems_enabled = ?"); values.push(body.systemsEnabled ? 1 : 0); }
     if (body.changelogMode !== undefined) { fields.push("changelog_mode = ?"); values.push(body.changelogMode); }
     if (body.vanitySlug !== undefined) { fields.push("vanity_slug = ?"); values.push(body.vanitySlug ?? null); }

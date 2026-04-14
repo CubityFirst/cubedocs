@@ -88,13 +88,11 @@ interface SystemItem {
   created_at: string;
   updated_at: string;
   linked_doc_count?: number;
-  linked_password_count?: number;
   attached_file_count?: number;
 }
 
 interface SystemDetail extends SystemItem {
   linked_doc_ids: string[];
-  linked_password_ids: string[];
   linked_file_ids: string[];
 }
 
@@ -116,12 +114,6 @@ interface DocOption {
   title: string;
 }
 
-interface PasswordOption {
-  id: string;
-  title: string;
-  username: string | null;
-}
-
 interface SystemForm {
   name: string;
   category: string;
@@ -132,7 +124,6 @@ interface SystemForm {
   notes: string;
   renewalDate: string;
   linkedDocIds: string[];
-  linkedPasswordIds: string[];
   linkedFileIds: string[];
 }
 
@@ -150,7 +141,6 @@ const BLANK_FORM: SystemForm = {
   notes: "",
   renewalDate: "",
   linkedDocIds: [],
-  linkedPasswordIds: [],
   linkedFileIds: [],
 };
 
@@ -243,7 +233,6 @@ export function SystemsManager({
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>(null);
   const [deleting, setDeleting] = useState(false);
   const [docOptions, setDocOptions] = useState<DocOption[]>([]);
-  const [passwordOptions, setPasswordOptions] = useState<PasswordOption[]>([]);
   const [allSystemFiles, setAllSystemFiles] = useState<FileItem[]>([]);
 
   const {
@@ -357,16 +346,13 @@ export function SystemsManager({
   async function loadProjectOptions() {
     const token = getToken();
     if (!token) return;
-    const [docsRes, passwordsRes, filesRes] = await Promise.all([
+    const [docsRes, filesRes] = await Promise.all([
       fetch(`/api/docs?projectId=${projectId}`, { headers: { Authorization: `Bearer ${token}` } }),
-      fetch(`/api/passwords?projectId=${projectId}`, { headers: { Authorization: `Bearer ${token}` } }),
       fetch(`/api/files?projectId=${projectId}&type=systems`, { headers: { Authorization: `Bearer ${token}` } }),
     ]);
     const docsJson = await docsRes.json() as { ok: boolean; data?: DocOption[] };
-    const passwordsJson = await passwordsRes.json() as { ok: boolean; data?: PasswordOption[] };
     const filesJson = await filesRes.json() as { ok: boolean; data?: FileItem[] };
     if (docsJson.ok && docsJson.data) setDocOptions(docsJson.data);
-    if (passwordsJson.ok && passwordsJson.data) setPasswordOptions(passwordsJson.data);
     if (filesJson.ok && filesJson.data) setAllSystemFiles(filesJson.data);
   }
 
@@ -404,7 +390,6 @@ export function SystemsManager({
       notes: detailSystem.notes ?? "",
       renewalDate: detailSystem.renewal_date ?? "",
       linkedDocIds: detailSystem.linked_doc_ids,
-      linkedPasswordIds: detailSystem.linked_password_ids,
       linkedFileIds: detailSystem.linked_file_ids,
     });
     setDialog("edit");
@@ -415,7 +400,7 @@ export function SystemsManager({
   }
 
   function toggleLinkedId(
-    key: "linkedDocIds" | "linkedPasswordIds" | "linkedFileIds",
+    key: "linkedDocIds" | "linkedFileIds",
     id: string,
     checked: boolean,
   ) {
@@ -444,7 +429,6 @@ export function SystemsManager({
         renewalDate: form.renewalDate || null,
         folderId: currentFolderId,
         linkedDocIds: form.linkedDocIds,
-        linkedPasswordIds: form.linkedPasswordIds,
         linkedFileIds: form.linkedFileIds,
       };
       if (dialog === "new") {
@@ -641,10 +625,6 @@ export function SystemsManager({
     navigate(`/projects/${projectId}/docs/${docId}`);
   }
 
-  function openLinkedPassword(passwordId: string) {
-    navigate(`/projects/${projectId}/passwords`, { state: { openEntryId: passwordId } });
-  }
-
   function openLinkedFile(fileId: string) {
     navigate(`/projects/${projectId}/files/${fileId}`, {
       state: {
@@ -656,7 +636,6 @@ export function SystemsManager({
   }
 
   const docLabelById = new Map(docOptions.map(doc => [doc.id, doc.title || "Untitled"]));
-  const passwordLabelById = new Map(passwordOptions.map(password => [password.id, password.title]));
   const fileLabelById = new Map(allSystemFiles.map(file => [file.id, file.name]));
 
   const SYSTEM_COLUMNS = [
@@ -1165,7 +1144,7 @@ export function SystemsManager({
                     </div>
                   )}
 
-                  <div className="grid gap-4 sm:grid-cols-3">
+                  <div className="grid gap-4 sm:grid-cols-2">
                     <div className="flex flex-col gap-2">
                       <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Linked docs</span>
                       {detailSystem.linked_doc_ids.length === 0 ? (
@@ -1174,18 +1153,6 @@ export function SystemsManager({
                         detailSystem.linked_doc_ids.map(docId => (
                           <Button key={docId} variant="outline" size="sm" className="justify-start" onClick={() => openLinkedDoc(docId)}>
                             {docLabelById.get(docId) ?? "Document"}
-                          </Button>
-                        ))
-                      )}
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Linked passwords</span>
-                      {detailSystem.linked_password_ids.length === 0 ? (
-                        <span className="text-sm text-muted-foreground">None</span>
-                      ) : (
-                        detailSystem.linked_password_ids.map(passwordId => (
-                          <Button key={passwordId} variant="outline" size="sm" className="justify-start" onClick={() => openLinkedPassword(passwordId)}>
-                            {passwordLabelById.get(passwordId) ?? "Password"}
                           </Button>
                         ))
                       )}
@@ -1385,15 +1352,6 @@ export function SystemsManager({
                       items={docOptions.map(doc => ({ id: doc.id, label: doc.title || "Untitled" }))}
                       selectedIds={new Set(form.linkedDocIds)}
                       onToggle={(id, checked) => toggleLinkedId("linkedDocIds", id, checked)}
-                    />
-                    <LinkSelector
-                      title="Passwords"
-                      items={passwordOptions.map(password => ({
-                        id: password.id,
-                        label: password.username ? `${password.title} (${password.username})` : password.title,
-                      }))}
-                      selectedIds={new Set(form.linkedPasswordIds)}
-                      onToggle={(id, checked) => toggleLinkedId("linkedPasswordIds", id, checked)}
                     />
                     <LinkSelector
                       title="Files"

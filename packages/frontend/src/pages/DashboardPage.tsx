@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { BookOpen, Globe, KeyRound, Sparkles, Users } from "lucide-react";
+import { BookOpen, Globe, Sparkles, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -12,7 +12,6 @@ interface Project {
   description: string | null;
   doc_count: number;
   member_count: number;
-  password_count: number;
   published_at: string | null;
   ai_enabled: number;
 }
@@ -88,18 +87,6 @@ export function DashboardPage() {
                   </TooltipTrigger>
                   <TooltipContent>
                     {project.published_at ? "View public site" : "Site is private"}
-                  </TooltipContent>
-                </Tooltip>
-
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <KeyRound
-                      className={`h-[18px] w-[18px] ${project.password_count > 0 ? "text-muted-foreground/60" : "text-muted-foreground/20"}`}
-                      strokeWidth={1.5}
-                    />
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {project.password_count > 0 ? `Password vault (${project.password_count} ${project.password_count === 1 ? "entry" : "entries"})` : "No password vault"}
                   </TooltipContent>
                 </Tooltip>
 

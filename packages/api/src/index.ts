@@ -5,7 +5,6 @@ import { handleDocs } from "./routes/docs";
 import { handleFolders } from "./routes/folders";
 import { handleMembers } from "./routes/members";
 import { handlePublic } from "./routes/public";
-import { handlePasswords } from "./routes/passwords";
 import { handleFiles } from "./routes/files";
 import { handleAi } from "./routes/ai";
 import { handleSystems } from "./routes/systems";
@@ -15,7 +14,6 @@ export interface Env {
   ASSETS: R2Bucket;
   AUTH: Fetcher; // Service binding to cubedocs-auth
   JWT_SECRET: string;
-  VAULT_SECRET: string;
   OPENAI_API_KEY?: string;
 }
 
@@ -146,10 +144,6 @@ export default {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
         response = await handleFolders(request, env, session, url);
-      } else if (url.pathname.startsWith("/passwords")) {
-        const session = await getSession(request, env);
-        if (session instanceof Response) return session;
-        response = await handlePasswords(request, env, session, url);
       } else if (url.pathname.startsWith("/systems")) {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;

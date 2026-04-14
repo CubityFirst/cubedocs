@@ -22,7 +22,7 @@ export async function handleFolders(
   const folderId = parts[0] || null;
   const params = url.searchParams;
 
-  // GET /folders?projectId=xxx[&parentId=yyy|&rootFolderId=zzz][&type=docs|passwords]
+  // GET /folders?projectId=xxx[&parentId=yyy|&rootFolderId=zzz]
   if (!folderId && request.method === "GET") {
     const projectId = params.get("projectId");
     if (!projectId) return errorResponse(Errors.BAD_REQUEST);
@@ -59,7 +59,7 @@ export async function handleFolders(
     return okResponse(rows.results);
   }
 
-  // GET /folders/counts?projectId=xxx[&type=docs|passwords]
+  // GET /folders/counts?projectId=xxx
   // Returns { [folderId]: { docs: number; folders: number } } with recursive subtree counts.
   if (folderId === "counts" && request.method === "GET") {
     const projectId = params.get("projectId");
@@ -69,11 +69,11 @@ export async function handleFolders(
     if (role === null) return errorResponse(Errors.FORBIDDEN);
 
     const type = params.get("type") ?? "docs";
-    const itemTable = type === "passwords" ? "passwords" : "docs";
+    const itemTable = "docs";
 
     // Build a (ancestor_id, folder_id) mapping for every folder in the project, then
     // aggregate: distinct non-self folder_ids = recursive subfolder count,
-    // joined item rows = recursive doc/password count.
+    // joined item rows = recursive doc count.
     const rows = await env.DB.prepare(`
       WITH RECURSIVE subtree(ancestor_id, folder_id) AS (
         SELECT id, id FROM folders WHERE project_id = ? AND type = ?

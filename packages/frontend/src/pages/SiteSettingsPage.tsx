@@ -64,7 +64,6 @@ interface Project {
   description: string | null;
   owner_id: string;
   published_at: string | null;
-  vault_enabled: number;
   systems_enabled: number;
   changelog_mode: string;
   vanity_slug: string | null;
@@ -118,7 +117,6 @@ export function SiteSettingsPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [togglingPublish, setTogglingPublish] = useState(false);
-  const [togglingVault, setTogglingVault] = useState(false);
   const [togglingSystems, setTogglingSystems] = useState(false);
   const [togglingChangelog, setTogglingChangelog] = useState(false);
   const [togglingAi, setTogglingAi] = useState(false);
@@ -284,29 +282,6 @@ export function SiteSettingsPage() {
       toast({ title: "Could not connect to the server.", variant: "destructive" });
     } finally {
       setTogglingPublish(false);
-    }
-  }
-
-  async function handleToggleVault(enabled: boolean) {
-    if (!projectId || !project) return;
-    setTogglingVault(true);
-    try {
-      const res = await fetch(`/api/projects/${projectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ vaultEnabled: enabled }),
-      });
-      const json = await res.json() as { ok: boolean; data?: Project };
-      if (json.ok && json.data) {
-        setProject(json.data);
-        toast({ title: enabled ? "Password vault enabled." : "Password vault disabled." });
-      } else {
-        toast({ title: "Failed to update vault setting.", variant: "destructive" });
-      }
-    } catch {
-      toast({ title: "Could not connect to the server.", variant: "destructive" });
-    } finally {
-      setTogglingVault(false);
     }
   }
 
@@ -680,22 +655,9 @@ export function SiteSettingsPage() {
             </div>
             <div className="flex items-center justify-between rounded-md border border-border px-4 py-3">
               <div className="flex flex-col gap-0.5">
-                <p className="text-sm font-medium">Password Vault</p>
-                <p className="text-xs text-muted-foreground">
-                  Store and manage encrypted credentials for this site.
-                </p>
-              </div>
-              <Switch
-                checked={project.vault_enabled === 1}
-                onCheckedChange={handleToggleVault}
-                disabled={togglingVault}
-              />
-            </div>
-            <div className="flex items-center justify-between rounded-md border border-border px-4 py-3">
-              <div className="flex flex-col gap-0.5">
                 <p className="text-sm font-medium">Systems</p>
                 <p className="text-xs text-muted-foreground">
-                  Track systems and services with linked docs, passwords, and files.
+                  Track systems and services with linked docs and files.
                 </p>
               </div>
               <Switch

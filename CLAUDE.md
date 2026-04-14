@@ -3,7 +3,7 @@
 pnpm + Turbo monorepo 
 
 - `packages/frontend` — React 19 SPA (Vite, Tailwind CSS 4, shadcn/ui)
-- `packages/api` — Core Cloudflare Worker (projects, docs, files, passwords)
+- `packages/api` — Core Cloudflare Worker (projects, docs, files)
 - `packages/auth` — Auth Cloudflare Worker (login, register, TOTP, WebAuthn)
 
 ### API Response Shape
@@ -16,7 +16,7 @@ The Auth Worker handles all identity concerns (register, login, TOTP, WebAuthn).
 
 ### Database Schemas
 
-- **API DB** (`cubedocs-main`): projects, docs, doc_revisions, folders, files, members, passwords — see `packages/api/migrations/`
+- **API DB** (`cubedocs-main`): projects, docs, doc_revisions, folders, files, members — see `packages/api/migrations/`
 - **Auth DB** (`cubedocs-auth`): users, sessions, totp, webauthn_credentials — see `packages/auth/migrations/`
 
 ## Frontend Notes

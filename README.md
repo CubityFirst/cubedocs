@@ -8,7 +8,7 @@ A documentation hosting and management platform. Create projects, write markdown
 
 ## What is this?
 
-CubeDocs is a lightweight platform for hosting and organizing markdown-based documentation, with a built-in password vault. Think a simpler, self-hosted alternative to Notion or Confluence — focused on technical docs, clean URLs, and a no-fuss editing experience.
+CubeDocs is a lightweight platform for hosting and organizing markdown-based documentation. Think a simpler, self-hosted alternative to Notion or Confluence — focused on technical docs, clean URLs, and a no-fuss editing experience.
 
 Built as a monorepo with a React frontend and Cloudflare Workers backend, backed by Cloudflare D1 (SQLite) and R2 storage.
 
@@ -31,7 +31,6 @@ Built as a monorepo with a React frontend and Cloudflare Workers backend, backed
 - Invite and manage members per project
 - Publish projects publicly with a clean URL
 - Vanity slugs (custom URLs) for published projects
-- Enable/disable vault per project
 - Changelog mode: off / on / enforced
 
 ### Documents
@@ -54,21 +53,10 @@ Built as a monorepo with a React frontend and Cloudflare Workers backend, backed
 - Image preview support
 - File type icons (image, PDF, archive, code, etc.)
 
-### Password Vault
-- AES-GCM encrypted password storage per project
-- Fields: title, username, password, URL, notes
-- Encrypted TOTP secret storage with live code generation
-- Password generator
-- Password strength indicator
-- Folder organization
-- Password revision history
-- Search passwords by title, username, or URL
-- Copy fields to clipboard
-
 ### Folders
-- Hierarchical folders for both documents and passwords
+- Hierarchical folders for documents
 - Create, rename, move, and delete folders
-- Recursive content counts (docs, passwords, subfolders)
+- Recursive content counts (docs, subfolders)
 
 ### Public Docs
 - Publish a project site with a clean public URL
@@ -79,7 +67,7 @@ Built as a monorepo with a React frontend and Cloudflare Workers backend, backed
 
 ### Settings
 - **User settings** — display name, password, TOTP, security keys
-- **Site settings** — name, description, publishing, vault toggle, changelog mode, vanity slug, member management, danger zone
+- **Site settings** — name, description, publishing, changelog mode, vanity slug, member management, danger zone
 
 ---
 
@@ -100,7 +88,7 @@ Built as a monorepo with a React frontend and Cloudflare Workers backend, backed
 ```
 packages/
   frontend/   # React app
-  api/        # Core API worker (projects, docs, files, vault)
+  api/        # Core API worker (projects, docs, files)
   auth/       # Auth worker (register, login, JWT, 2FA)
   shared/     # Shared types and utilities
 ```

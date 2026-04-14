@@ -20,7 +20,6 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText,
-  KeyRound,
   SlidersHorizontal,
   Server,
 } from "lucide-react";
@@ -29,7 +28,6 @@ interface Project {
   id: string;
   name: string;
   role: string;
-  vault_enabled: number;
   systems_enabled: number;
   published_at: string | null;
   changelog_mode: string;
@@ -44,7 +42,6 @@ interface Doc {
 
 const SECTIONS = [
   { id: "documents", label: "Documents", icon: FileText },
-  { id: "passwords", label: "Passwords", icon: KeyRound },
   { id: "systems", label: "Systems", icon: Server },
 ] as const;
 
@@ -267,7 +264,6 @@ export function DocsLayout() {
             {/* Sections */}
             <nav className="flex flex-col gap-1">
               {SECTIONS.filter(section =>
-                (section.id !== "passwords" || currentProject?.vault_enabled === 1) &&
                 (section.id !== "systems" || currentProject?.systems_enabled === 1)
               ).map(section => (
                 <NavLink

@@ -40,7 +40,6 @@ const SYSTEM_ENVIRONMENTS = new Set<SystemEnvironment>([
 
 type SystemListRow = SystemRecord & {
   linked_doc_count?: number;
-  linked_password_count?: number;
   attached_file_count?: number;
 };
 
@@ -63,7 +62,7 @@ async function ensureFolder(
 
 async function ensureProjectScopedIds(
   db: D1Database,
-  table: "docs" | "passwords",
+  table: "docs",
   projectId: string,
   ids: string[],
 ): Promise<boolean> {
@@ -134,7 +133,6 @@ export async function handleSystems(
       SELECT
         s.*,
         (SELECT COUNT(*) FROM system_doc_links sdl WHERE sdl.system_id = s.id) AS linked_doc_count,
-        (SELECT COUNT(*) FROM system_password_links spl WHERE spl.system_id = s.id) AS linked_password_count,
         (SELECT COUNT(*) FROM files f WHERE f.system_id = s.id AND f.type = 'systems') AS attached_file_count
       FROM systems s
     `;
@@ -206,7 +204,6 @@ export async function handleSystems(
       projectId: string;
       folderId?: string | null;
       linkedDocIds?: string[];
-      linkedPasswordIds?: string[];
       linkedFileIds?: string[];
     }>();
     const normalizedCategory = normalizeCategory(body.category);
@@ -226,10 +223,8 @@ export async function handleSystems(
     if (!(await ensureFolder(env.DB, body.projectId, body.folderId))) return errorResponse(Errors.BAD_REQUEST);
 
     const linkedDocIds = [...new Set(body.linkedDocIds ?? [])];
-    const linkedPasswordIds = [...new Set(body.linkedPasswordIds ?? [])];
     const linkedFileIds = [...new Set(body.linkedFileIds ?? [])];
     if (!(await ensureProjectScopedIds(env.DB, "docs", body.projectId, linkedDocIds))) return errorResponse(Errors.BAD_REQUEST);
-    if (!(await ensureProjectScopedIds(env.DB, "passwords", body.projectId, linkedPasswordIds))) return errorResponse(Errors.BAD_REQUEST);
     if (!(await ensureSystemFiles(env.DB, body.projectId, linkedFileIds))) return errorResponse(Errors.BAD_REQUEST);
 
     const id = crypto.randomUUID();
@@ -280,14 +275,6 @@ export async function handleSystems(
         ),
       );
     }
-    if (linkedPasswordIds.length > 0) {
-      await env.DB.batch(
-        linkedPasswordIds.map(passwordId =>
-          env.DB.prepare("INSERT INTO system_password_links (system_id, password_id) VALUES (?, ?)")
-            .bind(id, passwordId),
-        ),
-      );
-    }
     await env.DB.prepare("UPDATE files SET system_id = NULL WHERE system_id = ?").bind(id).run();
     if (linkedFileIds.length > 0) {
       await env.DB.batch(
@@ -301,7 +288,6 @@ export async function handleSystems(
     return okResponse({
       ...record,
       linked_doc_ids: linkedDocIds,
-      linked_password_ids: linkedPasswordIds,
       linked_file_ids: linkedFileIds,
     }, 201);
   }
@@ -314,11 +300,9 @@ export async function handleSystems(
     const role = await getCallerRole(env.DB, record.project_id, user.userId);
     if (role === null) return errorResponse(Errors.FORBIDDEN);
 
-    const [docLinks, passwordLinks, fileLinks] = await Promise.all([
+    const [docLinks, fileLinks] = await Promise.all([
       env.DB.prepare("SELECT doc_id FROM system_doc_links WHERE system_id = ? ORDER BY doc_id ASC")
         .bind(systemId).all<{ doc_id: string }>(),
-      env.DB.prepare("SELECT password_id FROM system_password_links WHERE system_id = ? ORDER BY password_id ASC")
-        .bind(systemId).all<{ password_id: string }>(),
       env.DB.prepare("SELECT id FROM files WHERE system_id = ? AND type = 'systems' ORDER BY name ASC")
         .bind(systemId).all<{ id: string }>(),
     ]);
@@ -326,7 +310,6 @@ export async function handleSystems(
     return okResponse({
       ...record,
       linked_doc_ids: docLinks.results.map(row => row.doc_id),
-      linked_password_ids: passwordLinks.results.map(row => row.password_id),
       linked_file_ids: fileLinks.results.map(row => row.id),
     });
   }
@@ -351,7 +334,6 @@ export async function handleSystems(
       renewalDate: string | null;
       folderId: string | null;
       linkedDocIds: string[];
-      linkedPasswordIds: string[];
       linkedFileIds: string[];
     }>>();
 
@@ -367,10 +349,8 @@ export async function handleSystems(
     if (!(await ensureFolder(env.DB, existing.project_id, body.folderId))) return errorResponse(Errors.BAD_REQUEST);
 
     const linkedDocIds = body.linkedDocIds ? [...new Set(body.linkedDocIds)] : undefined;
-    const linkedPasswordIds = body.linkedPasswordIds ? [...new Set(body.linkedPasswordIds)] : undefined;
     const linkedFileIds = body.linkedFileIds ? [...new Set(body.linkedFileIds)] : undefined;
     if (linkedDocIds && !(await ensureProjectScopedIds(env.DB, "docs", existing.project_id, linkedDocIds))) return errorResponse(Errors.BAD_REQUEST);
-    if (linkedPasswordIds && !(await ensureProjectScopedIds(env.DB, "passwords", existing.project_id, linkedPasswordIds))) return errorResponse(Errors.BAD_REQUEST);
     if (linkedFileIds && !(await ensureSystemFiles(env.DB, existing.project_id, linkedFileIds))) return errorResponse(Errors.BAD_REQUEST);
 
     const sets: string[] = ["updated_at = ?"];
@@ -400,17 +380,6 @@ export async function handleSystems(
           linkedDocIds.map(docId =>
             env.DB.prepare("INSERT INTO system_doc_links (system_id, doc_id) VALUES (?, ?)")
               .bind(systemId, docId),
-          ),
-        );
-      }
-    }
-    if (linkedPasswordIds) {
-      await env.DB.prepare("DELETE FROM system_password_links WHERE system_id = ?").bind(systemId).run();
-      if (linkedPasswordIds.length > 0) {
-        await env.DB.batch(
-          linkedPasswordIds.map(passwordId =>
-            env.DB.prepare("INSERT INTO system_password_links (system_id, password_id) VALUES (?, ?)")
-              .bind(systemId, passwordId),
           ),
         );
       }

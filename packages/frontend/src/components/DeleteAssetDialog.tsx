@@ -13,7 +13,7 @@ import { getToken } from "@/lib/auth";
 
 export type SingleDeleteTarget = {
   type: "single";
-  kind: "folder" | "doc" | "file" | "password";
+  kind: "folder" | "doc" | "file";
   id: string;
   name: string;
 };
@@ -22,7 +22,6 @@ export type MultiDeleteTarget = {
   type: "multiple";
   docIds?: string[];
   fileIds?: string[];
-  passwordIds?: string[];
 };
 
 export type DeleteTarget = SingleDeleteTarget | MultiDeleteTarget;
@@ -38,7 +37,6 @@ const ENDPOINT: Record<SingleDeleteTarget["kind"], (id: string) => string> = {
   folder: id => `/api/folders/${id}`,
   doc: id => `/api/docs/${id}`,
   file: id => `/api/files/${id}`,
-  password: id => `/api/passwords/${id}`,
 };
 
 export function DeleteAssetDialog({ open, onOpenChange, target, onDeleted }: DeleteAssetDialogProps) {
@@ -59,9 +57,6 @@ export function DeleteAssetDialog({ open, onOpenChange, target, onDeleted }: Del
           ...(target.fileIds ?? []).map(id =>
             fetch(ENDPOINT.file(id), { method: "DELETE", headers: { Authorization: `Bearer ${token}` } })
           ),
-          ...(target.passwordIds ?? []).map(id =>
-            fetch(ENDPOINT.password(id), { method: "DELETE", headers: { Authorization: `Bearer ${token}` } })
-          ),
         ]);
       }
       onDeleted(target);
@@ -72,13 +67,10 @@ export function DeleteAssetDialog({ open, onOpenChange, target, onDeleted }: Del
   }
 
   function getCount(t: MultiDeleteTarget) {
-    return (t.docIds?.length ?? 0) + (t.fileIds?.length ?? 0) + (t.passwordIds?.length ?? 0);
+    return (t.docIds?.length ?? 0) + (t.fileIds?.length ?? 0);
   }
 
-  function getItemLabel(t: MultiDeleteTarget) {
-    const hasPasswords = (t.passwordIds?.length ?? 0) > 0;
-    const hasFiles = (t.docIds?.length ?? 0) + (t.fileIds?.length ?? 0) > 0;
-    if (hasPasswords && !hasFiles) return "entries";
+  function getItemLabel(_t: MultiDeleteTarget) {
     return "items";
   }
 
