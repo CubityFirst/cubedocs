@@ -1,8 +1,9 @@
 import zxcvbn from "zxcvbn";
 import { okResponse, errorResponse, Errors } from "../lib";
 import { hashPassword } from "../password";
-import { signJwt } from "../jwt";
 import { verifyTurnstile } from "../turnstile";
+import { createVerificationToken } from "../verification";
+import { sendVerificationEmail } from "../email";
 import type { Env } from "../index";
 
 export async function handleRegister(request: Request, env: Env): Promise<Response> {
@@ -37,10 +38,9 @@ export async function handleRegister(request: Request, env: Env): Promise<Respon
     "INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
   ).bind(id, body.email.toLowerCase(), body.name, passwordHash, now).run();
 
-  const token = await signJwt(
-    { userId: id, email: body.email.toLowerCase(), expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000, isAdmin: false },
-    env.JWT_SECRET,
-  );
+  const verificationToken = await createVerificationToken(env, id);
+  const verifyUrl = `${env.APP_ORIGIN}/verify-email?token=${verificationToken}`;
+  await sendVerificationEmail(env, body.email.toLowerCase(), verifyUrl);
 
-  return okResponse({ token, user: { id, email: body.email.toLowerCase(), name: body.name, createdAt: now } }, 201);
+  return okResponse({ verificationSent: true, email: body.email.toLowerCase() }, 201);
 }

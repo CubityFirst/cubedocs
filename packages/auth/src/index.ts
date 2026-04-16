@@ -20,18 +20,31 @@ import { handleWebauthnCredentialsDelete } from "./routes/webauthn-credentials-d
 import { handleTotpBackupCodesGenerate } from "./routes/totp-backup-codes-generate";
 import { handleAdminHandoffStart } from "./routes/admin-handoff-start";
 import { handleAdminHandoffExchange } from "./routes/admin-handoff-exchange";
+import { handleVerifyEmail } from "./routes/verify-email";
+import { handleVerifyEmailResend } from "./routes/verify-email-resend";
 
 export interface Env {
   DB: D1Database;
   JWT_SECRET: string;
   JWT_ISSUER: string;
   ADMIN_APP_ORIGIN: string;
+  APP_ORIGIN: string;
   TURNSTILE_SECRET: string;
   WEBAUTHN_RP_ID: string;
   WEBAUTHN_RP_NAME: string;
   WEBAUTHN_ORIGIN: string;
+  EMAIL: {
+    send(message: {
+      to: string;
+      from: string;
+      subject: string;
+      text?: string;
+      html?: string;
+    }): Promise<{ messageId: string }>;
+  };
   RATE_LIMITER_LOOKUP: { limit(opts: { key: string }): Promise<{ success: boolean }> };
   RATE_LIMITER_AUTH: { limit(opts: { key: string }): Promise<{ success: boolean }> };
+  RATE_LIMITER_EMAIL_VERIFY: { limit(opts: { key: string }): Promise<{ success: boolean }> };
 }
 
 export default {
@@ -77,6 +90,12 @@ export default {
         response = await handleChangePassword(request, env);
       } else if (url.pathname === "/force-change-password" && request.method === "POST") {
         response = await handleForceChangePassword(request, env);
+      } else if (url.pathname === "/verify-email" && request.method === "POST") {
+        response = await handleVerifyEmail(request, env);
+      } else if (url.pathname === "/verify-email/resend" && request.method === "POST") {
+        const { success } = await env.RATE_LIMITER_EMAIL_VERIFY.limit({ key: ip });
+        if (!success) return addCorsHeaders(errorResponse(Errors.RATE_LIMITED));
+        response = await handleVerifyEmailResend(request, env);
       } else if (url.pathname === "/admin/handoff/start" && request.method === "POST") {
         response = await handleAdminHandoffStart(request, env);
       } else if (url.pathname === "/admin/handoff/exchange" && request.method === "POST") {

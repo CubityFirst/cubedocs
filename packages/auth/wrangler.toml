@@ -13,9 +13,14 @@ migrations_dir = "migrations"
 [vars]
 JWT_ISSUER = "https://auth.cubedocs.com"
 ADMIN_APP_ORIGIN = "https://admin.cubityfir.st"
+APP_ORIGIN = "https://docs.cubityfir.st"
 WEBAUTHN_RP_ID = "docs.cubityfir.st"
 WEBAUTHN_RP_NAME = "CubeDocs"
 WEBAUTHN_ORIGIN = "https://docs.cubityfir.st"
+
+[[send_email]]
+name = "EMAIL"
+allowed_sender_addresses = ["noreply@docs.cubityfir.st"]
 
 [[unsafe.bindings]]
 name = "RATE_LIMITER_LOOKUP"
@@ -28,6 +33,12 @@ name = "RATE_LIMITER_AUTH"
 type = "ratelimit"
 namespace_id = "1002"
 simple = { limit = 10, period = 60 }
+
+[[unsafe.bindings]]
+name = "RATE_LIMITER_EMAIL_VERIFY"
+type = "ratelimit"
+namespace_id = "1003"
+simple = { limit = 3, period = 300 }
 
 # Secrets (set via `wrangler secret put`):
 #   JWT_SECRET

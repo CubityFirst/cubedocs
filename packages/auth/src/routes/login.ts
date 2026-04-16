@@ -21,9 +21,9 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
   if (!turnstileValid) return errorResponse(Errors.BAD_REQUEST);
 
   const row = await env.DB.prepare(
-    "SELECT id, email, name, password_hash, created_at, moderation, totp_secret, force_password_change, is_admin FROM users WHERE email = ?",
+    "SELECT id, email, name, password_hash, created_at, moderation, totp_secret, force_password_change, is_admin, email_verified FROM users WHERE email = ?",
   ).bind(body.email.toLowerCase()).first<{
-    id: string; email: string; name: string; password_hash: string; created_at: string; moderation: number; totp_secret: string | null; force_password_change: number; is_admin: number;
+    id: string; email: string; name: string; password_hash: string; created_at: string; moderation: number; totp_secret: string | null; force_password_change: number; is_admin: number; email_verified: number;
   }>();
 
   if (!row) return errorResponse(Errors.UNAUTHORIZED);
@@ -33,6 +33,10 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
 
   const moderationResponse = checkModeration(row.moderation);
   if (moderationResponse) return moderationResponse;
+
+  if (!row.email_verified) {
+    return Response.json({ ok: false, error: "email_not_verified" }, { status: 403 });
+  }
 
   const webauthnResult = await env.DB.prepare(
     "SELECT COUNT(*) as count FROM webauthn_credentials WHERE user_id = ?",

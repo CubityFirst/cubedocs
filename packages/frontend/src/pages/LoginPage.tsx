@@ -6,11 +6,12 @@ import { Input } from "@/components/ui/input";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AuthForm } from "@/components/AuthForm";
 import { Turnstile } from "@/components/Turnstile";
 import { clearToken, getToken, setToken } from "@/lib/auth";
 
-type LoginStep = "credentials" | "totp" | "webauthn" | "method_picker" | "force_password_change";
+type LoginStep = "credentials" | "totp" | "webauthn" | "method_picker" | "force_password_change" | "email_unverified";
 
 function moderationMessage(error?: string, until?: number): string {
   const contact = "Please email docs@cubityfir.st for further details.";
@@ -60,6 +61,7 @@ export function LoginPage() {
   const [changeToken, setChangeToken] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [resendState, setResendState] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const existingSessionHandledRef = useRef(false);
   const logoutHandledRef = useRef(false);
   const handleTurnstileVerify = useCallback((token: string) => setTurnstileToken(token), []);
@@ -197,6 +199,21 @@ export function LoginPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [email, from, navigate]);
 
+  async function handleResendVerification() {
+    if (!email || resendState === "sending") return;
+    setResendState("sending");
+    try {
+      await fetch("/api/verify-email/resend", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      setResendState("sent");
+    } catch {
+      setResendState("error");
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -243,6 +260,8 @@ export function LoginPage() {
       } else if (json.error === "two_factor_required" && json.userId) {
         setPendingUserId(json.userId);
         setStep("method_picker");
+      } else if (json.error === "email_not_verified") {
+        setStep("email_unverified");
       } else if (json.error === "invalid_backup_code") {
         setError("Invalid or already-used backup code.");
         setBackupCode("");
@@ -305,6 +324,47 @@ export function LoginPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (step === "email_unverified") {
+    return (
+      <AuthForm
+        title="CubeDocs"
+        subtitle="Verify your email"
+        submitLabel=""
+        loading={false}
+        error={resendState === "error" ? "Failed to send email. Please try again." : null}
+        onSubmit={e => e.preventDefault()}
+        hideSubmit
+        footer={
+          <button
+            type="button"
+            className="text-primary underline-offset-4 hover:underline text-sm"
+            onClick={handleBack}
+          >
+            Back to sign in
+          </button>
+        }
+      >
+        <p className="text-sm text-muted-foreground">
+          Your email address hasn&apos;t been verified yet. Check your inbox for the verification link, or request a new one.
+        </p>
+        {resendState === "sent" ? (
+          <Alert>
+            <AlertDescription>Verification email sent. Check your inbox.</AlertDescription>
+          </Alert>
+        ) : (
+          <Button
+            type="button"
+            className="w-full"
+            disabled={resendState === "sending"}
+            onClick={handleResendVerification}
+          >
+            {resendState === "sending" ? "Sending…" : "Resend verification email"}
+          </Button>
+        )}
+      </AuthForm>
+    );
   }
 
   if (step === "force_password_change") {

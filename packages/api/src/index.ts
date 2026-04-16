@@ -32,6 +32,8 @@ export default {
         url.pathname === "/register" ||
         url.pathname === "/login" ||
         url.pathname === "/force-change-password" ||
+        url.pathname === "/verify-email" ||
+        url.pathname === "/verify-email/resend" ||
         url.pathname === "/admin/handoff/start"
       ) {
         return env.AUTH.fetch(new Request(`https://auth${url.pathname}`, request));

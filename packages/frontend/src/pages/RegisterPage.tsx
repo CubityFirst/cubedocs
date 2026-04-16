@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AuthForm } from "@/components/AuthForm";
 import { Turnstile } from "@/components/Turnstile";
-import { getToken, setToken } from "@/lib/auth";
+import { getToken } from "@/lib/auth";
 
 const STRENGTH_LABELS = ["Very weak", "Weak", "Fair", "Strong", "Very strong"];
 const STRENGTH_COLORS = [
@@ -55,10 +55,9 @@ export function RegisterPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, email, password, turnstileToken }),
       });
-      const json = await res.json() as { ok: boolean; data?: { token: string }; error?: string };
+      const json = await res.json() as { ok: boolean; data?: { email: string }; error?: string };
       if (json.ok && json.data) {
-        setToken(json.data.token);
-        navigate("/dashboard", { replace: true });
+        navigate("/check-email", { replace: true, state: { email: json.data.email } });
       } else {
         setError(res.status === 409 ? "An account with that email already exists." : "Registration failed. Please try again.");
       }
