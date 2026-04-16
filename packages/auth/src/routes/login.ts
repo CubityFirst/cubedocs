@@ -34,7 +34,7 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
   const moderationResponse = checkModeration(row.moderation);
   if (moderationResponse) return moderationResponse;
 
-  if (!row.email_verified) {
+  if (env.REQUIRE_EMAIL_VERIFICATION === "true" && !row.email_verified) {
     return Response.json({ ok: false, error: "email_not_verified" }, { status: 403 });
   }
 

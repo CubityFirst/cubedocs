@@ -17,6 +17,7 @@ APP_ORIGIN = "https://docs.cubityfir.st"
 WEBAUTHN_RP_ID = "docs.cubityfir.st"
 WEBAUTHN_RP_NAME = "CubeDocs"
 WEBAUTHN_ORIGIN = "https://docs.cubityfir.st"
+REQUIRE_EMAIL_VERIFICATION = "false"
 
 [[send_email]]
 name = "EMAIL"

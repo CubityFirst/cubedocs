@@ -42,6 +42,7 @@ export interface Env {
       html?: string;
     }): Promise<{ messageId: string }>;
   };
+  REQUIRE_EMAIL_VERIFICATION: string;
   RATE_LIMITER_LOOKUP: { limit(opts: { key: string }): Promise<{ success: boolean }> };
   RATE_LIMITER_AUTH: { limit(opts: { key: string }): Promise<{ success: boolean }> };
   RATE_LIMITER_EMAIL_VERIFY: { limit(opts: { key: string }): Promise<{ success: boolean }> };

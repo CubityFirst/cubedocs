@@ -33,14 +33,18 @@ export async function handleRegister(request: Request, env: Env): Promise<Respon
   const id = crypto.randomUUID();
   const passwordHash = await hashPassword(body.password);
   const now = new Date().toISOString();
+  const requireVerification = env.REQUIRE_EMAIL_VERIFICATION === "true";
 
   await env.DB.prepare(
-    "INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
-  ).bind(id, body.email.toLowerCase(), body.name, passwordHash, now).run();
+    "INSERT INTO users (id, email, name, password_hash, created_at, email_verified) VALUES (?, ?, ?, ?, ?, ?)",
+  ).bind(id, body.email.toLowerCase(), body.name, passwordHash, now, requireVerification ? 0 : 1).run();
 
-  const verificationToken = await createVerificationToken(env, id);
-  const verifyUrl = `${env.APP_ORIGIN}/verify-email?token=${verificationToken}`;
-  await sendVerificationEmail(env, body.email.toLowerCase(), verifyUrl);
+  if (requireVerification) {
+    const verificationToken = await createVerificationToken(env, id);
+    const verifyUrl = `${env.APP_ORIGIN}/verify-email?token=${verificationToken}`;
+    await sendVerificationEmail(env, body.email.toLowerCase(), verifyUrl);
+    return okResponse({ verificationSent: true, email: body.email.toLowerCase() }, 201);
+  }
 
-  return okResponse({ verificationSent: true, email: body.email.toLowerCase() }, 201);
+  return okResponse({ verificationSent: false, email: body.email.toLowerCase() }, 201);
 }
