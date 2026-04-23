@@ -6,21 +6,23 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { roll, splitFormulaLabel, type RollResult, type TermResult } from "@/lib/dice";
+import { roll, splitFormulaLabel, type RollResult, type TermResult, type GroupResult } from "@/lib/dice";
 
 interface DiceRollProps {
   notation: string;
 }
 
-function dieColor(value: number | string, t: TermResult): string {
+function dieColor(value: number | string, t: TermResult, critSt?: "success" | "fail" | null): string {
   if (typeof value === "string" || t.minFace === null || t.maxFace === null || t.minFace === t.maxFace) return "";
-  if (value === t.maxFace) return "text-green-400";
+  if (critSt === "success") return "text-green-400";
+  if (critSt === "fail") return "text-red-400";
+  if (value >= t.maxFace) return "text-green-400";
   if (value === t.minFace) return "text-red-400";
   return "";
 }
 
-function DieValue({ value, term, tooltip }: { value: number | string; term: TermResult; tooltip?: string }) {
-  const color = dieColor(value, term);
+function DieValue({ value, term, tooltip, critStatus }: { value: number | string; term: TermResult; tooltip?: string; critStatus?: "success" | "fail" | null }) {
+  const color = dieColor(value, term, critStatus);
   const span = <span className={color || undefined}>{value}</span>;
   if (!tooltip) return span;
   return (
@@ -31,19 +33,36 @@ function DieValue({ value, term, tooltip }: { value: number | string; term: Term
   );
 }
 
-function DiceList({ values, term, rerolledFrom, inlineLabel }: { values: (number | string)[]; term: TermResult; rerolledFrom?: (number | undefined)[]; inlineLabel?: string }) {
+function DiceList({ values, term, rerolledFrom, inlineLabel, critStatus, explosionChains }: { values: (number | string)[]; term: TermResult; rerolledFrom?: (number | undefined)[]; inlineLabel?: string; critStatus?: ("success" | "fail" | null)[]; explosionChains?: (number[] | undefined)[] }) {
   return (
     <>
       {"["}
       {values.map((v, i) => {
         const orig = rerolledFrom?.[i];
+        const chain = explosionChains?.[i];
         return (
           <span key={i}>
             {i > 0 && ", "}
             {orig !== undefined && (
               <span className="line-through text-zinc-600 mr-0.5">{orig}</span>
             )}
-            <DieValue value={v} term={term} tooltip={inlineLabel} />
+            {chain && chain.length > 1 ? (
+              <>
+                {chain.map((r, ci) => {
+                  const isLast = ci === chain.length - 1;
+                  const color = isLast ? (dieColor(r, term, critStatus?.[i]) || "") : "text-amber-400";
+                  return (
+                    <span key={ci}>
+                      {ci > 0 && <span className="text-amber-600">+</span>}
+                      <span className={color || undefined}>{r}</span>
+                      {!isLast && <span className="text-amber-500 text-[0.7em] align-super">!</span>}
+                    </span>
+                  );
+                })}
+              </>
+            ) : (
+              <DieValue value={v} term={term} tooltip={inlineLabel} critStatus={critStatus?.[i]} />
+            )}
           </span>
         );
       })}
@@ -62,10 +81,209 @@ function resolveLabels(terms: TermResult[]): TermResult[] {
   return out;
 }
 
-function buildBreakdown(result: RollResult) {
-  const isStringOnly = result.terms.every(
-    (t) => t.minFace === null && t.kept.some((v) => typeof v === "string"),
+const OP_LABEL: Record<string, string> = {
+  "+": "+", "-": "−", "*": "×", "/": "÷", "%": "mod", "**": "^",
+};
+
+function OpPrefix({ op }: { op?: string }) {
+  if (!op) return null;
+  return <span className="text-zinc-500 mr-1">{OP_LABEL[op] ?? op}</span>;
+}
+
+function TermLine({ t }: { t: TermResult }) {
+  const isTable = t.kept.some((v) => typeof v === "string");
+  const isConstant = t.minFace === null && !isTable;
+
+  if (isConstant) {
+    // For constants used as operands (e.g. the divisor in 2d8/2), just show the operator + value.
+    if (t.operatorPrefix) {
+      return (
+        <div>
+          <OpPrefix op={t.operatorPrefix} />
+          <span className="text-zinc-300">{t.total}</span>
+        </div>
+      );
+    }
+    const val = <span className="text-zinc-300"> = {t.total}</span>;
+    return (
+      <div>
+        <span className="text-zinc-400">{t.label}</span>
+        {t.inlineLabel ? (
+          <>
+            <span className="text-zinc-500"> [{t.inlineLabel}]</span>
+            <Tooltip>
+              <TooltipTrigger asChild>{val}</TooltipTrigger>
+              <TooltipContent side="top" className="font-sans text-xs">{t.inlineLabel}</TooltipContent>
+            </Tooltip>
+          </>
+        ) : val}
+      </div>
+    );
+  }
+
+  if (isTable) {
+    return (
+      <div>
+        <OpPrefix op={t.operatorPrefix} />
+        <span className="text-zinc-400">{t.label}</span>
+        {t.inlineLabel && <span className="text-zinc-500"> [{t.inlineLabel}]</span>}
+        <span className="text-zinc-300">: </span>
+        <DiceList values={t.kept} term={t} inlineLabel={t.inlineLabel} />
+      </div>
+    );
+  }
+
+  const hasKeep = t.rolls.length !== t.kept.length;
+  const st = t.successThreshold;
+  const ft = t.failureThreshold;
+  const stLabel = st ? `${st.op === ">" ? ">" : "<"} ${st.value}` : undefined;
+  const ftLabel = ft ? `${ft.op === "=" ? "=" : ft.op} ${ft.value}` : undefined;
+
+  // For success-counting terms, colour each die: success=green, failure=red, neither=uncolored (3-state when ft present).
+  const successCritStatus = st && t.successMet
+    ? t.successMet.map((met, i): "success" | "fail" | null => {
+        if (met) return "success";
+        if (t.failureMet?.[i]) return "fail";
+        return ft ? null : "fail";
+      })
+    : undefined;
+
+  return (
+    <div>
+      <OpPrefix op={t.operatorPrefix} />
+      <span className="text-zinc-400">{t.label}</span>
+      {t.inlineLabel && <span className="text-zinc-500"> [{t.inlineLabel}]</span>}
+      <span className="text-zinc-400">: </span>
+      <DiceList values={t.rolls} term={t} rerolledFrom={t.rerolledFrom} inlineLabel={t.inlineLabel} critStatus={successCritStatus ?? t.critStatus} explosionChains={t.explosionChains} />
+      {hasKeep && (
+        <>
+          <span className="text-zinc-500"> keep </span>
+          <DiceList values={t.kept} term={t} inlineLabel={t.inlineLabel} />
+        </>
+      )}
+      {st
+        ? ft && t.failureCount !== undefined
+          ? <span className="text-zinc-300">
+              {" = "}{t.successCount} <span className="text-zinc-500">succ ({stLabel})</span>
+              {" − "}{t.failureCount} <span className="text-zinc-500">fail ({ftLabel})</span>
+              {" = "}{t.total}
+            </span>
+          : <span className="text-zinc-300"> = {t.total} <span className="text-zinc-500">successes ({stLabel})</span></span>
+        : <span className="text-zinc-300"> = {t.total}</span>
+      }
+    </div>
   );
+}
+
+function GroupBreakdown({ group }: { group: GroupResult }) {
+  const { keep, keepMode, members, keptValues, total, successThreshold, successCount, failureThreshold, failureCount } = group;
+  const stLabel = successThreshold ? `${successThreshold.op} ${successThreshold.value}` : undefined;
+  const ftLabel = failureThreshold ? `${failureThreshold.op === "=" ? "=" : failureThreshold.op} ${failureThreshold.value}` : undefined;
+
+  if (keepMode === "individual") {
+    const terms = resolveLabels(members[0].terms);
+
+    if (successThreshold) {
+      const matchST = (v: number) => successThreshold.op === ">" ? v > successThreshold.value : v < successThreshold.value;
+      const matchFT = failureThreshold
+        ? (v: number) => failureThreshold.op === "=" ? v === failureThreshold.value : failureThreshold.op === "<" ? v < failureThreshold.value : v > failureThreshold.value
+        : null;
+      // Show all dice, colour each by whether it met success/failure threshold
+      const allValues = terms.flatMap((t) => t.kept.filter((v): v is number => typeof v === "number"));
+      return (
+        <div className="border-l-2 border-zinc-600 pl-2 my-0.5 space-y-0.5">
+          {terms.map((t, i) => <TermLine key={i} t={t} />)}
+          <div>
+            <span className="text-zinc-500">successes ({stLabel}): </span>
+            <span className="text-zinc-300">[{allValues.map((v, i) => {
+              const isSuccess = matchST(v);
+              const isFailure = matchFT ? matchFT(v) : false;
+              return (
+                <span key={i}>
+                  {i > 0 && ", "}
+                  <span className={isSuccess ? "text-green-400" : isFailure ? "text-red-400" : ""}>{v}</span>
+                </span>
+              );
+            })}]</span>
+            {failureThreshold && failureCount !== undefined
+              ? <span className="text-zinc-300"> = {successCount} − {failureCount} <span className="text-zinc-500">fail ({ftLabel})</span> = {total}</span>
+              : <span className="text-zinc-300"> = {successCount} successes</span>
+            }
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="border-l-2 border-zinc-600 pl-2 my-0.5 space-y-0.5">
+        {terms.map((t, i) => <TermLine key={i} t={t} />)}
+        {keep && (
+          <div>
+            <span className="text-zinc-500">keep {keep.mode}{keep.count}: </span>
+            <span className="text-zinc-300">[{keptValues!.join(", ")}]</span>
+            <span className="text-zinc-300"> = {total}</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Sum mode: show each member with kept/dropped or success indicator
+  const matchST_sum = successThreshold
+    ? (v: number) => successThreshold.op === ">" ? v > successThreshold.value : v < successThreshold.value
+    : null;
+  const matchFT_sum = failureThreshold
+    ? (v: number) => failureThreshold.op === "=" ? v === failureThreshold.value : failureThreshold.op === "<" ? v < failureThreshold.value : v > failureThreshold.value
+    : null;
+  return (
+    <div className="border-l-2 border-zinc-600 pl-2 my-0.5 space-y-0.5">
+      {members.map((member, mi) => {
+        const terms = resolveLabels(member.terms);
+        const isSuccess = matchST_sum ? matchST_sum(member.total) : member.kept;
+        const isFailure = matchFT_sum ? matchFT_sum(member.total) : false;
+        const icon = isSuccess ? "✓" : isFailure ? "✗" : successThreshold ? "−" : "✗";
+        const iconColor = isSuccess ? "text-green-400" : isFailure ? "text-red-400" : "text-zinc-500";
+        return (
+          <div key={mi} className={!successThreshold && !member.kept ? "opacity-40" : ""}>
+            <div className="flex items-start gap-1">
+              <span className={`text-xs mt-0.5 ${iconColor}`}>{icon}</span>
+              <div className="space-y-0.5">
+                {terms.map((t, i) => <TermLine key={i} t={t} />)}
+                <div>
+                  <span className="text-zinc-500">sum: </span>
+                  <span className="text-zinc-300">{member.total}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+      <div className="border-t border-zinc-700 pt-0.5">
+        {successThreshold
+          ? failureThreshold && failureCount !== undefined
+            ? <><span className="text-zinc-500">successes ({stLabel}) = </span><span className="text-zinc-300">{successCount} − {failureCount} <span className="text-zinc-500">fail ({ftLabel})</span> = {total}</span></>
+            : <><span className="text-zinc-500">successes ({stLabel}) = </span><span className="text-zinc-300">{successCount}</span></>
+          : keep
+            ? <><span className="text-zinc-500">keep {keep.mode}{keep.count} = </span><span className="text-zinc-300">{total}</span></>
+            : null
+        }
+      </div>
+    </div>
+  );
+}
+
+function buildBreakdown(result: RollResult) {
+  const hasGroups = (result.groups?.length ?? 0) > 0;
+  const isStringOnly =
+    !hasGroups &&
+    result.terms.every(
+      (t) => t.minFace === null && t.kept.some((v) => typeof v === "string"),
+    );
+  const isDiceSuccessCount =
+    result.terms.some((t) => t.successThreshold) ||
+    result.groups?.some((g) => g.successThreshold);
+  const exprST = result.successThreshold;
+  const exprSTLabel = exprST ? `${exprST.op} ${exprST.value}` : undefined;
   const terms = resolveLabels(result.terms);
 
   return (
@@ -73,60 +291,24 @@ function buildBreakdown(result: RollResult) {
       {result.label && (
         <div className="text-zinc-300 font-sans font-medium pb-0.5">{result.label}</div>
       )}
-      {terms.map((t, i) => {
-        const isTable = t.kept.some((v) => typeof v === "string");
-        const isConstant = t.minFace === null && !isTable;
-
-        if (isConstant) {
-          const val = <span className="text-zinc-300"> = {t.total}</span>;
-          return (
-            <div key={i}>
-              <span className="text-zinc-400">{t.label}</span>
-              {t.inlineLabel ? (
-                <>
-                  <span className="text-zinc-500"> [{t.inlineLabel}]</span>
-                  <Tooltip>
-                    <TooltipTrigger asChild>{val}</TooltipTrigger>
-                    <TooltipContent side="top" className="font-sans text-xs">{t.inlineLabel}</TooltipContent>
-                  </Tooltip>
-                </>
-              ) : val}
-            </div>
-          );
-        }
-
-        if (isTable) {
-          return (
-            <div key={i}>
-              <span className="text-zinc-400">{t.label}</span>
-              {t.inlineLabel && <span className="text-zinc-500"> [{t.inlineLabel}]</span>}
-              <span className="text-zinc-300">: </span>
-              <DiceList values={t.kept} term={t} inlineLabel={t.inlineLabel} />
-            </div>
-          );
-        }
-
-        const hasKeep = t.rolls.length !== t.kept.length;
-        return (
-          <div key={i}>
-            <span className="text-zinc-400">{t.label}</span>
-            {t.inlineLabel && <span className="text-zinc-500"> [{t.inlineLabel}]</span>}
-            <span className="text-zinc-400">: </span>
-            <DiceList values={t.rolls} term={t} rerolledFrom={t.rerolledFrom} inlineLabel={t.inlineLabel} />
-            {hasKeep && (
-              <>
-                <span className="text-zinc-500"> keep </span>
-                <DiceList values={t.kept} term={t} inlineLabel={t.inlineLabel} />
-              </>
-            )}
-            <span className="text-zinc-300"> = {t.total}</span>
-          </div>
-        );
-      })}
+      {terms.map((t, i) => <TermLine key={i} t={t} />)}
+      {result.groups?.map((g, gi) => <GroupBreakdown key={gi} group={g} />)}
+      {result.annotations?.map((a, i) => (
+        <div key={i} className="text-zinc-500 italic">{a}</div>
+      ))}
       <div className="border-t border-zinc-600 pt-0.5 text-zinc-200">
         {isStringOnly
           ? <>Result: {terms.flatMap((t) => t.kept).join(", ")}</>
-          : <>Total: {result.total}</>}
+          : isDiceSuccessCount
+            ? <>{result.total} <span className="text-zinc-400">successes</span></>
+            : exprST
+              ? <>
+                  <span className="text-zinc-400">Total: </span>{result.total}
+                  <span className={`ml-2 font-semibold ${result.successCount === 1 ? "text-green-400" : "text-red-400"}`}>
+                    {result.successCount === 1 ? `✓ Success (${exprSTLabel})` : `✗ Failure (${exprSTLabel})`}
+                  </span>
+                </>
+              : <>Total: {result.total}</>}
       </div>
     </div>
   );
@@ -172,12 +354,21 @@ export function DiceRoll({ notation }: DiceRollProps) {
     );
   }
 
-  const isStringOnly = result.terms.every((t) => t.kept.some((v) => typeof v === "string"));
+  const hasGroups = (result.groups?.length ?? 0) > 0;
+  const isStringOnly =
+    !hasGroups &&
+    result.terms.every((t) => t.kept.some((v) => typeof v === "string"));
+  const isDiceSuccessCount =
+    result.terms.some((t) => t.successThreshold) ||
+    (result.groups ?? []).some((g) => g.successThreshold);
+  const exprST = result.successThreshold;
   const displayValue = isStringOnly
     ? result.terms.flatMap((t) => t.kept).join(", ")
     : result.total;
   const isMaxRoll = !isStringOnly && result.maxTotal !== null && result.total === result.maxTotal;
   const isMinRoll = !isStringOnly && result.minTotal !== null && result.total === result.minTotal;
+  const anyCritSuccess = result.terms.some((t) => t.anyCritSuccess);
+  const anyCritFail = result.terms.some((t) => t.anyCritFail);
 
   return (
     <TooltipProvider>
@@ -194,7 +385,13 @@ export function DiceRoll({ notation }: DiceRollProps) {
               <span className="text-zinc-400">{result.label}</span>
             )}
             <span className="text-zinc-500">:</span>
-            <span className={`font-semibold ${isMaxRoll ? "text-green-400" : isMinRoll ? "text-red-400" : "text-zinc-100"}`}>{displayValue}</span>
+            <span className={`font-semibold ${isMaxRoll || anyCritSuccess ? "text-green-400" : isMinRoll || anyCritFail ? "text-red-400" : "text-zinc-100"}`}>{displayValue}</span>
+            {isDiceSuccessCount && <span className="text-zinc-400 font-normal">succ</span>}
+            {exprST && (
+              <span className={`font-semibold ${result.successCount === 1 ? "text-green-400" : "text-red-400"}`}>
+                {result.successCount === 1 ? "✓" : "✗"}
+              </span>
+            )}
           </button>
         </TooltipTrigger>
         <TooltipContent side="top" className="max-w-xs font-mono text-xs">
