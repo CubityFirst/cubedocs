@@ -83,6 +83,16 @@ Built as a monorepo with a React frontend and Cloudflare Workers backend, backed
 
 ---
 
+## Development
+
+```bash
+pnpm dev
+```
+
+Starts all packages concurrently (frontend, api, auth, admin).
+
+---
+
 ## Packages
 
 ```

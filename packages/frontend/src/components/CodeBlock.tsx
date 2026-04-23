@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { Check, Copy } from "lucide-react";
 import { getHighlighter, highlighterReady } from "@/lib/shiki";
 import { Button } from "@/components/ui/button";
+import { DiceRoll } from "@/components/DiceRoll";
 
 const THEME = "github-dark-dimmed";
 
@@ -86,6 +87,11 @@ export function MarkdownCode({
   if (match) {
     // Fenced code block
     return <CodeBlock lang={match[1]} code={String(children).replace(/\n$/, "")} />;
+  }
+
+  // Inline dice roller: `dice: 3d6+4`
+  if (typeof children === "string" && children.startsWith("dice:")) {
+    return <DiceRoll notation={children.slice(5).trim()} />;
   }
 
   // Inline code

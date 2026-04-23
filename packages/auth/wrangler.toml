@@ -39,7 +39,7 @@ simple = { limit = 10, period = 60 }
 name = "RATE_LIMITER_EMAIL_VERIFY"
 type = "ratelimit"
 namespace_id = "1003"
-simple = { limit = 3, period = 300 }
+simple = { limit = 3, period = 60 }
 
 # Secrets (set via `wrangler secret put`):
 #   JWT_SECRET

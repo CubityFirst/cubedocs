@@ -622,6 +622,10 @@ export function DocPage() {
                 <Section title="Horizontal rule">
                   <Code>{`---`}</Code>
                 </Section>
+                <Section title="Dice roller">
+                  <Code>{`\`dice: 1d20\`             standard roll\n\`dice: 2d6+1d4+3\`       compound expression\n\`dice: 4d6kh3\`          keep highest 3\n\`dice: 4d6kl3\`          keep lowest 3\n\`dice: 2d8r1\`           reroll 1s (unlimited)\n\`dice: 2d8r<3\`          reroll less than 3\n\`dice: 2d8r>5\`          reroll greater than 5\n\`dice: 2d8r1r3\`         reroll 1s and 3s\n\`dice: 4d6kh3r1\`        keep highest 3, reroll 1s\n\`dice: 2d10ro<2\`        reroll once if less than 2\n\`dice: 2dF\`             fate/fudge dice (-1, 0, +1)\n\`dice: 1d[2,4,6,8]\`    custom numeric faces\n\`dice: 1d[fire,ice]\`   random string table\n\`dice: 2d6[Fire]\`      inline label\n\`dice: 2d6%4\`          modulus\n\`dice: 2d6**2\`         exponentiation\n\`dice: floor(2d6/3)\`   math function\n\`dice: (2d6+1d4)*2\`    grouping with parentheses\n\`dice: 1d20 Attack Roll\`         overall label\n\`dice: 1d20+5 \\ +5 for initiative\` label with separator`}</Code>
+                  <p className="text-xs text-muted-foreground mt-1">Click the die icon to roll. Click again to re-roll. Hover the result for a full breakdown. Math functions: <span className="font-mono">floor</span>, <span className="font-mono">ceil</span>, <span className="font-mono">round</span>, <span className="font-mono">abs</span>.</p>
+                </Section>
               </div>
             </div>
           </DialogContent>
