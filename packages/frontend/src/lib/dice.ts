@@ -1,9 +1,10 @@
-export type RerollCondition = { op: "=" | "<" | ">"; value: number };
-export type CritCondition = { op: "=" | "<" | ">"; value: number };
+export type CompOp = "=" | "<" | ">" | "<=" | ">=";
+export type RerollCondition = { op: CompOp; value: number };
+export type CritCondition = { op: CompOp; value: number };
 export type ExplodeMode = "normal" | "compound" | "penetrating";
 
 export type DiceTerm =
-  | { type: "standard"; count: number; sides: number; keep?: { mode: "h" | "l"; count: number }; reroll?: { conditions: RerollCondition[]; once: boolean }; critSuccess?: CritCondition[]; critFail?: CritCondition[]; explode?: { mode: ExplodeMode; condition?: RerollCondition }; successThreshold?: { op: "<" | ">"; value: number }; failureThreshold?: { op: "=" | "<" | ">"; value: number }; sort?: "asc" | "desc" }
+  | { type: "standard"; count: number; sides: number; keep?: { mode: "h" | "l"; count: number }; reroll?: { conditions: RerollCondition[]; once: boolean }; critSuccess?: CritCondition[]; critFail?: CritCondition[]; explode?: { mode: ExplodeMode; condition?: RerollCondition }; successThreshold?: { op: "<" | ">" | "<=" | ">="; value: number }; failureThreshold?: { op: CompOp; value: number }; sort?: "asc" | "desc" }
   | { type: "fate"; count: number }
   | { type: "pool"; count: number; faces: number[] }
   | { type: "table"; count: number; entries: string[] }
@@ -17,12 +18,12 @@ export type DiceNode =
   | { type: "binary"; op: Operator; left: DiceNode; right: DiceNode }
   | { type: "fn"; fn: MathFn; arg: DiceNode }
   | { type: "negate"; arg: DiceNode }
-  | { type: "group"; members: DiceNode[]; keep?: { mode: "h" | "l"; count: number }; successThreshold?: { op: "<" | ">"; value: number }; failureThreshold?: { op: "=" | "<" | ">"; value: number } };
+  | { type: "group"; members: DiceNode[]; keep?: { mode: "h" | "l"; count: number }; successThreshold?: { op: "<" | ">" | "<=" | ">="; value: number }; failureThreshold?: { op: CompOp; value: number } };
 
 export interface DiceExpression {
   root: DiceNode;
   /** Expression-level success threshold: compare the total to this value (>= for ">", <= for "<"). */
-  successThreshold?: { op: "<" | ">"; value: number };
+  successThreshold?: { op: "<" | ">" | "<=" | ">="; value: number };
 }
 
 export interface TermResult {
@@ -52,13 +53,13 @@ export interface TermResult {
    */
   explosionChains?: (number[] | undefined)[];
   /** When set, total is the count of kept dice meeting the threshold (>= for ">", <= for "<"). */
-  successThreshold?: { op: "<" | ">"; value: number };
+  successThreshold?: { op: "<" | ">" | "<=" | ">="; value: number };
   /** Which kept dice met the success threshold. Parallel to kept[]. */
   successMet?: boolean[];
   /** Raw count of successes before subtracting failures. Only set when failureThreshold is also present. */
   successCount?: number;
   /** Failure threshold (subtracts matching dice from successThreshold count). */
-  failureThreshold?: { op: "=" | "<" | ">"; value: number };
+  failureThreshold?: { op: CompOp; value: number };
   /** Which rolls met the failure threshold. Parallel to rolls[]. */
   failureMet?: boolean[];
   /** Count of kept dice meeting the failure threshold. */
@@ -79,10 +80,10 @@ export interface GroupResult {
   keepMode: "individual" | "sum";
   keep?: { mode: "h" | "l"; count: number };
   /** When set, total is the count of dice/members meeting this threshold rather than a sum. */
-  successThreshold?: { op: "<" | ">"; value: number };
+  successThreshold?: { op: "<" | ">" | "<=" | ">="; value: number };
   successCount?: number;
   /** Failure threshold (subtracts matching dice/members from successCount). */
-  failureThreshold?: { op: "=" | "<" | ">"; value: number };
+  failureThreshold?: { op: CompOp; value: number };
   failureCount?: number;
   members: GroupMember[];
   /** individual mode only: the actual selected dice values after keeping */
@@ -104,7 +105,7 @@ export interface RollResult {
   /** Rounding annotations from floor/ceil/round in the expression (e.g. "rounded down: 4.5 → 4"). */
   annotations?: string[];
   /** Expression-level success threshold (e.g. from "1d20+13>21"). total is the raw sum; successCount is 0 or 1. */
-  successThreshold?: { op: "<" | ">"; value: number };
+  successThreshold?: { op: "<" | ">" | "<=" | ">="; value: number };
   successCount?: number;
 }
 
@@ -118,7 +119,7 @@ type Token =
   | { kind: "lbrace" }
   | { kind: "rbrace" }
   | { kind: "comma" }
-  | { kind: "cmp"; value: "<" | ">" };
+  | { kind: "cmp"; value: "<" | ">" | "<=" | ">=" };
 
 function tokenize(input: string): Token[] {
   const tokens: Token[] = [];
@@ -141,15 +142,25 @@ function tokenize(input: string): Token[] {
       continue;
     }
     // < and > are only part of an atom when the atom already contains a 'd' (dice notation).
-    // Standalone < and > become cmp tokens used for expression-level / group success thresholds.
-    if (ch === "<" || ch === ">") { tokens.push({ kind: "cmp", value: ch as "<" | ">" }); i++; continue; }
+    // Standalone < and > (and <= >= ≤ ≥) become cmp tokens for expression-level / group success thresholds.
+    if (ch === "<" || ch === ">" || ch === "≤" || ch === "≥") {
+      if (ch === "≤") { tokens.push({ kind: "cmp", value: "<=" }); i++; }
+      else if (ch === "≥") { tokens.push({ kind: "cmp", value: ">=" }); i++; }
+      else if (i + 1 < input.length && input[i + 1] === "=") { tokens.push({ kind: "cmp", value: (ch + "=") as "<=" | ">=" }); i += 2; }
+      else { tokens.push({ kind: "cmp", value: ch as "<" | ">" }); i++; }
+      continue;
+    }
     if (/[a-zA-Z0-9.!]/.test(ch)) {
       let atom = "";
       while (i < input.length) {
         const c = input[i];
         if (/[a-zA-Z0-9.!]/.test(c)) { atom += c; i++; }
-        // Allow < > within the atom only after a 'd' has appeared (it's a dice modifier like r>3, cs<5, !>4)
-        else if ((c === "<" || c === ">") && /d/i.test(atom)) { atom += c; i++; }
+        // Allow < > <= >= ≤ ≥ within the atom only after a 'd' has appeared (e.g. r>3, cs<=5, !>=4)
+        else if ((c === "<" || c === ">" || c === "≤" || c === "≥") && /d/i.test(atom)) {
+          if (c === "≤") { atom += "<="; i++; }
+          else if (c === "≥") { atom += ">="; i++; }
+          else { atom += c; i++; if (i < input.length && input[i] === "=") { atom += "="; i++; } }
+        }
         else break;
       }
       // Consume bracket groups: pool/table dice (1d[fire,ice]) and inline labels (2d6[Fire])
@@ -258,8 +269,8 @@ function parseDiceTerm(s: string): DiceTerm {
     const critSuccessConditions: CritCondition[] = [];
     const critFailConditions: CritCondition[] = [];
     let explode: { mode: ExplodeMode; condition?: RerollCondition } | undefined;
-    let successThreshold: { op: "<" | ">"; value: number } | undefined;
-    let failureThreshold: { op: "=" | "<" | ">"; value: number } | undefined;
+    let successThreshold: { op: "<" | ">" | "<=" | ">="; value: number } | undefined;
+    let failureThreshold: { op: CompOp; value: number } | undefined;
     let sort: "asc" | "desc" | undefined;
     let mod: RegExpMatchArray | null;
     while (rest.length > 0) {
@@ -272,29 +283,29 @@ function parseDiceTerm(s: string): DiceTerm {
         const dropCount = parseInt(mod[2], 10);
         keep = { mode: dropDir === "h" ? "l" : "h", count: count - dropCount };
         rest = rest.slice(mod[0].length);
-      } else if ((mod = /^ro([<>]?)(\d+)/i.exec(rest))) {
+      } else if ((mod = /^ro([<>]=?)?(\d+)/i.exec(rest))) {
         rerollOnce = true;
-        rerollConditions.push({ op: (mod[1] || "=") as "=" | "<" | ">", value: parseInt(mod[2], 10) });
+        rerollConditions.push({ op: (mod[1] || "=") as CompOp, value: parseInt(mod[2], 10) });
         rest = rest.slice(mod[0].length);
-      } else if ((mod = /^r([<>]?)(\d+)/i.exec(rest))) {
-        rerollConditions.push({ op: (mod[1] || "=") as "=" | "<" | ">", value: parseInt(mod[2], 10) });
+      } else if ((mod = /^r([<>]=?)?(\d+)/i.exec(rest))) {
+        rerollConditions.push({ op: (mod[1] || "=") as CompOp, value: parseInt(mod[2], 10) });
         rest = rest.slice(mod[0].length);
-      } else if ((mod = /^cs([<>]?)(\d+)/i.exec(rest))) {
-        critSuccessConditions.push({ op: (mod[1] || "=") as "=" | "<" | ">", value: parseInt(mod[2], 10) });
+      } else if ((mod = /^cs([<>]=?)?(\d+)/i.exec(rest))) {
+        critSuccessConditions.push({ op: (mod[1] || "=") as CompOp, value: parseInt(mod[2], 10) });
         rest = rest.slice(mod[0].length);
-      } else if ((mod = /^cf([<>]?)(\d+)/i.exec(rest))) {
-        critFailConditions.push({ op: (mod[1] || "=") as "=" | "<" | ">", value: parseInt(mod[2], 10) });
+      } else if ((mod = /^cf([<>]=?)?(\d+)/i.exec(rest))) {
+        critFailConditions.push({ op: (mod[1] || "=") as CompOp, value: parseInt(mod[2], 10) });
         rest = rest.slice(mod[0].length);
-      } else if ((mod = /^!!([<>]?)(\d*)/.exec(rest))) {
-        const condition = mod[2] ? { op: (mod[1] || "=") as "=" | "<" | ">", value: parseInt(mod[2], 10) } : undefined;
+      } else if ((mod = /^!!([<>]=?)?(\d*)/.exec(rest))) {
+        const condition = mod[2] ? { op: (mod[1] || "=") as CompOp, value: parseInt(mod[2], 10) } : undefined;
         explode = { mode: "compound", ...(condition ? { condition } : {}) };
         rest = rest.slice(mod[0].length);
-      } else if ((mod = /^!p([<>]?)(\d*)/.exec(rest))) {
-        const condition = mod[2] ? { op: (mod[1] || "=") as "=" | "<" | ">", value: parseInt(mod[2], 10) } : undefined;
+      } else if ((mod = /^!p([<>]=?)?(\d*)/.exec(rest))) {
+        const condition = mod[2] ? { op: (mod[1] || "=") as CompOp, value: parseInt(mod[2], 10) } : undefined;
         explode = { mode: "penetrating", ...(condition ? { condition } : {}) };
         rest = rest.slice(mod[0].length);
-      } else if ((mod = /^!([<>]?)(\d*)/.exec(rest))) {
-        const condition = mod[2] ? { op: (mod[1] || "=") as "=" | "<" | ">", value: parseInt(mod[2], 10) } : undefined;
+      } else if ((mod = /^!([<>]=?)?(\d*)/.exec(rest))) {
+        const condition = mod[2] ? { op: (mod[1] || "=") as CompOp, value: parseInt(mod[2], 10) } : undefined;
         explode = { mode: "normal", ...(condition ? { condition } : {}) };
         rest = rest.slice(mod[0].length);
       } else if (/^sd/i.test(rest)) {
@@ -303,11 +314,11 @@ function parseDiceTerm(s: string): DiceTerm {
       } else if (/^s/i.test(rest)) {
         sort = "asc";
         rest = rest.slice(1);
-      } else if ((mod = /^([<>])(\d+)/.exec(rest))) {
+      } else if ((mod = /^([<>]=?)(\d+)/.exec(rest))) {
         successThreshold = { op: mod[1] as "<" | ">", value: parseInt(mod[2], 10) };
         rest = rest.slice(mod[0].length);
-      } else if ((mod = /^f([<>]?)(\d+)/i.exec(rest))) {
-        failureThreshold = { op: (mod[1] || "=") as "=" | "<" | ">", value: parseInt(mod[2], 10) };
+      } else if ((mod = /^f([<>]=?)?(\d+)/i.exec(rest))) {
+        failureThreshold = { op: (mod[1] || "=") as CompOp, value: parseInt(mod[2], 10) };
         rest = rest.slice(mod[0].length);
       } else {
         throw new Error(`Cannot parse dice term: "${s}"`);
@@ -340,7 +351,7 @@ const KEEP_RE = /^k([hl])(\d+)$/i;
 
 class DiceParser {
   private pos = 0;
-  successThreshold?: { op: "<" | ">"; value: number };
+  successThreshold?: { op: "<" | ">" | "<=" | ">="; value: number };
   constructor(private readonly tokens: Token[]) {}
 
   private peek(): Token | undefined { return this.tokens[this.pos]; }
@@ -358,7 +369,7 @@ class DiceParser {
     const node = this.parseExpr();
     // Check for expression-level success threshold (e.g. "1d20+13>21")
     if (this.peek()?.kind === "cmp") {
-      const cmpTok = this.advance() as { kind: "cmp"; value: "<" | ">" };
+      const cmpTok = this.advance() as { kind: "cmp"; value: "<" | ">" | "<=" | ">=" };
       const numTok = this.peek();
       if (!numTok || numTok.kind !== "atom" || !/^\d+$/.test(numTok.value)) {
         throw new Error(`Expected number after "${cmpTok.value}" in success threshold`);
@@ -431,8 +442,8 @@ class DiceParser {
 
       // Optional keep or success-threshold modifier immediately after }
       let keep: { mode: "h" | "l"; count: number } | undefined;
-      let successThreshold: { op: "<" | ">"; value: number } | undefined;
-      let groupFailureThreshold: { op: "=" | "<" | ">"; value: number } | undefined;
+      let successThreshold: { op: "<" | ">" | "<=" | ">="; value: number } | undefined;
+      let groupFailureThreshold: { op: CompOp; value: number } | undefined;
       const next = this.peek();
       if (next?.kind === "atom") {
         const km = KEEP_RE.exec(next.value);
@@ -445,14 +456,14 @@ class DiceParser {
         const numTok = this.tokens[this.pos + 1];
         if (numTok?.kind === "atom") {
           // Number token may carry embedded failure: "21f1", "21f", or plain "21"
-          const fullFail = /^(\d+)f([<>]?)(\d+)$/.exec(numTok.value);
+          const fullFail = /^(\d+)f([<>]=?)?(\d+)$/.exec(numTok.value);
           const partialFail = /^(\d+)f$/.exec(numTok.value);
           const simple = /^(\d+)$/.exec(numTok.value);
           if (fullFail) {
             this.advance(); // consume cmp
             this.advance(); // consume number atom
             successThreshold = { op: next.value, value: parseInt(fullFail[1], 10) };
-            groupFailureThreshold = { op: (fullFail[2] || "=") as "=" | "<" | ">", value: parseInt(fullFail[3], 10) };
+            groupFailureThreshold = { op: (fullFail[2] || "=") as CompOp, value: parseInt(fullFail[3], 10) };
           } else if (partialFail) {
             this.advance(); // consume cmp
             this.advance(); // consume number+f atom
@@ -525,19 +536,27 @@ function randInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+export function cmpMatch(op: CompOp, v: number, threshold: number): boolean {
+  switch (op) {
+    case "=":  return v === threshold;
+    case "<":  return v <   threshold;
+    case ">":  return v >   threshold;
+    case "<=": return v <=  threshold;
+    case ">=": return v >=  threshold;
+  }
+}
+
 function rollDiceTerm(term: DiceTerm): Omit<TermResult, "inlineLabel"> {
   switch (term.type) {
     case "standard": {
       const matchesReroll = (v: number): boolean =>
-        (term.reroll?.conditions ?? []).some((c) =>
-          c.op === "=" ? v === c.value : c.op === "<" ? v < c.value : v > c.value,
-        );
+        (term.reroll?.conditions ?? []).some((c) => cmpMatch(c.op, v, c.value));
 
       const matchesExplode = (v: number): boolean => {
         if (!term.explode) return false;
         const cond = term.explode.condition;
         if (!cond) return v === term.sides;
-        return cond.op === "=" ? v === cond.value : cond.op === "<" ? v < cond.value : v > cond.value;
+        return cmpMatch(cond.op, v, cond.value);
       };
 
       const rolls: number[] = [];
@@ -607,7 +626,7 @@ function rollDiceTerm(term: DiceTerm): Omit<TermResult, "inlineLabel"> {
       const cfConditions = term.critFail ?? [];
       const hasCritConds = csConditions.length > 0 || cfConditions.length > 0;
       const matchCrit = (v: number, conds: CritCondition[]) =>
-        conds.some((c) => c.op === "=" ? v === c.value : c.op === "<" ? v < c.value : v > c.value);
+        conds.some((c) => cmpMatch(c.op, v, c.value));
       const critStatus: ("success" | "fail" | null)[] | undefined = hasCritConds
         ? rolls.map((v) => {
             if (matchCrit(v, csConditions)) return "success";
@@ -622,12 +641,8 @@ function rollDiceTerm(term: DiceTerm): Omit<TermResult, "inlineLabel"> {
 
       const st = term.successThreshold;
       const ft = term.failureThreshold;
-      const matchST = st
-        ? (v: number) => st.op === ">" ? v > st.value : v < st.value
-        : null;
-      const matchFT = ft
-        ? (v: number) => ft.op === "=" ? v === ft.value : ft.op === "<" ? v < ft.value : v > ft.value
-        : null;
+      const matchST = st ? (v: number) => cmpMatch(st.op, v, st.value) : null;
+      const matchFT = ft ? (v: number) => cmpMatch(ft.op, v, ft.value) : null;
       // successMet and failureMet are parallel to rolls[] (for per-die display colouring)
       const successMet = matchST ? rolls.map((v) => typeof v === "number" && matchST(v)) : undefined;
       const failureMet = matchFT ? rolls.map((v) => typeof v === "number" && matchFT(v)) : undefined;
@@ -799,11 +814,9 @@ function evalNode(node: DiceNode): EvalResult {
 
       if (node.successThreshold) {
         const { op, value } = node.successThreshold;
-        const matchST = (v: number) => op === ">" ? v > value : v < value;
+        const matchST = (v: number) => cmpMatch(op, v, value);
         const ft = node.failureThreshold;
-        const matchFT = ft
-          ? (v: number) => ft.op === "=" ? v === ft.value : ft.op === "<" ? v < ft.value : v > ft.value
-          : null;
+        const matchFT = ft ? (v: number) => cmpMatch(ft.op, v, ft.value) : null;
 
         if (node.members.length === 1) {
           // Individual dice: check each kept die value against threshold
@@ -1004,9 +1017,7 @@ function minNode(node: DiceNode): number | null {
 export function rollExpression(expr: DiceExpression): RollResult {
   const { total, terms, groups, annotations } = evalNode(expr.root);
   const st = expr.successThreshold;
-  const successCount = st
-    ? (st.op === ">" ? (total > st.value ? 1 : 0) : (total < st.value ? 1 : 0))
-    : undefined;
+  const successCount = st ? (cmpMatch(st.op, total, st.value) ? 1 : 0) : undefined;
   return {
     terms,
     ...(groups.length > 0 ? { groups } : {}),

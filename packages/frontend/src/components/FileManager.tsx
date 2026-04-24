@@ -148,6 +148,9 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [creatingDoc, setCreatingDoc] = useState(false);
 
+  const [loading, setLoading] = useState(true);
+  const loadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [summaryDoc, setSummaryDoc] = useState<DocItem | null>(null);
   const [summary, setSummary] = useState<string | null>(null);
   const [summarizing, setSummarizing] = useState(false);
@@ -218,6 +221,14 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
   }, [path, dropTarget]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadContents() {
+    if (loadingTimerRef.current) clearTimeout(loadingTimerRef.current);
+    loadingTimerRef.current = setTimeout(() => {
+      setLoading(true);
+      setFolders([]);
+      setDocs([]);
+      setFiles([]);
+    }, 150);
+
     const token = getToken();
     if (!token) return;
 
@@ -240,9 +251,11 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
     const docsJson = await docsRes.json() as { ok: boolean; data?: DocItem[] };
     const filesJson = await filesRes.json() as { ok: boolean; data?: FileItem[] };
 
+    if (loadingTimerRef.current) { clearTimeout(loadingTimerRef.current); loadingTimerRef.current = null; }
     if (foldersJson.ok && foldersJson.data) setFolders(foldersJson.data);
     if (docsJson.ok && docsJson.data) setDocs(docsJson.data);
     if (filesJson.ok && filesJson.data) setFiles(filesJson.data);
+    setLoading(false);
   }
 
   function enterFolder(folder: FolderItem) {
@@ -937,7 +950,13 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
 
       {/* Table */}
       <div className="px-6 pb-6">
-        {searchResults !== null ? (
+        {loading ? (
+          <div className="flex flex-col gap-1.5 pt-2">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="h-10 w-full" />
+            ))}
+          </div>
+        ) : searchResults !== null ? (
           searchResults.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <Search className="mb-3 h-10 w-10 text-muted-foreground/30" />

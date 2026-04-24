@@ -27,12 +27,16 @@
 | Drop lowest explicit | `dl3` | done |
 | Reroll unlimited | `r<2`, `r1r3r5` | done |
 | Reroll once | `ro<2` | done |
+| Reroll with ≤/≥ | `r<=2`, `ro>=5` | done |
 | Exploding | `3d6!`, `3d6!>4`, `3d6!3` | done |
 | Compounding (Shadowrun) | `5d6!!` | done |
 | Penetrating (HackMaster) | `5d6!p` | done |
 | Success count | `3d6>3`, `10d6<4` | done |
+| Success count with ≤/≥ | `3d6>=3`, `10d6<=4` | done |
 | Failure count (subtracts from successes) | `3d6>3f1`, `10d6<4f>5` | done |
+| Failure count with ≤/≥ | `3d6>=3f<=1` | done |
 | Critical success (display) | `1d20cs>10` | done |
+| Critical success with ≤/≥ (display) | `1d20cs>=10` | done |
 | Critical failure (display) | `1d20cf<3` | done |
 | Sorting ascending/descending | `8d6s`, `8d6sd` | done |
 | Dice matching | `2d6m`, `2d6mt`, `6d6mt3>4` | no |

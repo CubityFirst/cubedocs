@@ -6,7 +6,9 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { roll, splitFormulaLabel, type RollResult, type TermResult, type GroupResult } from "@/lib/dice";
+import { roll, splitFormulaLabel, cmpMatch, type RollResult, type TermResult, type GroupResult } from "@/lib/dice";
+
+const opSymbol = (op: string) => op === "<=" ? "≤" : op === ">=" ? "≥" : op;
 
 interface DiceRollProps {
   notation: string;
@@ -136,8 +138,8 @@ function TermLine({ t }: { t: TermResult }) {
   const hasKeep = t.rolls.length !== t.kept.length;
   const st = t.successThreshold;
   const ft = t.failureThreshold;
-  const stLabel = st ? `${st.op === ">" ? ">" : "<"} ${st.value}` : undefined;
-  const ftLabel = ft ? `${ft.op === "=" ? "=" : ft.op} ${ft.value}` : undefined;
+  const stLabel = st ? `${opSymbol(st.op)} ${st.value}` : undefined;
+  const ftLabel = ft ? `${opSymbol(ft.op)} ${ft.value}` : undefined;
 
   // For success-counting terms, colour each die: success=green, failure=red, neither=uncolored (3-state when ft present).
   const successCritStatus = st && t.successMet
@@ -177,16 +179,16 @@ function TermLine({ t }: { t: TermResult }) {
 
 function GroupBreakdown({ group }: { group: GroupResult }) {
   const { keep, keepMode, members, keptValues, total, successThreshold, successCount, failureThreshold, failureCount } = group;
-  const stLabel = successThreshold ? `${successThreshold.op} ${successThreshold.value}` : undefined;
-  const ftLabel = failureThreshold ? `${failureThreshold.op === "=" ? "=" : failureThreshold.op} ${failureThreshold.value}` : undefined;
+  const stLabel = successThreshold ? `${opSymbol(successThreshold.op)} ${successThreshold.value}` : undefined;
+  const ftLabel = failureThreshold ? `${opSymbol(failureThreshold.op)} ${failureThreshold.value}` : undefined;
 
   if (keepMode === "individual") {
     const terms = resolveLabels(members[0].terms);
 
     if (successThreshold) {
-      const matchST = (v: number) => successThreshold.op === ">" ? v > successThreshold.value : v < successThreshold.value;
+      const matchST = (v: number) => cmpMatch(successThreshold.op, v, successThreshold.value);
       const matchFT = failureThreshold
-        ? (v: number) => failureThreshold.op === "=" ? v === failureThreshold.value : failureThreshold.op === "<" ? v < failureThreshold.value : v > failureThreshold.value
+        ? (v: number) => cmpMatch(failureThreshold.op, v, failureThreshold.value)
         : null;
       // Show all dice, colour each by whether it met success/failure threshold
       const allValues = terms.flatMap((t) => t.kept.filter((v): v is number => typeof v === "number"));
@@ -230,10 +232,10 @@ function GroupBreakdown({ group }: { group: GroupResult }) {
 
   // Sum mode: show each member with kept/dropped or success indicator
   const matchST_sum = successThreshold
-    ? (v: number) => successThreshold.op === ">" ? v > successThreshold.value : v < successThreshold.value
+    ? (v: number) => cmpMatch(successThreshold.op, v, successThreshold.value)
     : null;
   const matchFT_sum = failureThreshold
-    ? (v: number) => failureThreshold.op === "=" ? v === failureThreshold.value : failureThreshold.op === "<" ? v < failureThreshold.value : v > failureThreshold.value
+    ? (v: number) => cmpMatch(failureThreshold.op, v, failureThreshold.value)
     : null;
   return (
     <div className="border-l-2 border-zinc-600 pl-2 my-0.5 space-y-0.5">
@@ -283,7 +285,7 @@ function buildBreakdown(result: RollResult) {
     result.terms.some((t) => t.successThreshold) ||
     result.groups?.some((g) => g.successThreshold);
   const exprST = result.successThreshold;
-  const exprSTLabel = exprST ? `${exprST.op} ${exprST.value}` : undefined;
+  const exprSTLabel = exprST ? `${opSymbol(exprST.op)} ${exprST.value}` : undefined;
   const terms = resolveLabels(result.terms);
 
   return (
