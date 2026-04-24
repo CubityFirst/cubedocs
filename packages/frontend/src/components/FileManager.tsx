@@ -571,7 +571,7 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
 
   function renderTable(folderRows: FolderItem[], docRows: DocItem[], fileRows: FileItem[] = []) {
     return (
-      <ResizableTable columns={FILE_COLUMNS} storageKey="file-columns">
+      <ResizableTable columns={FILE_COLUMNS} checkboxColumn={canEdit} storageKey="file-columns">
         <>
           {folderRows.map(folder => {
             const isDropTarget = dropTarget === folder.id;
@@ -932,14 +932,18 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
             </button>
           )}
         </div>
-        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setShowNewFolder(true)}>
-          <FolderPlus className="h-3.5 w-3.5" />
-          New folder
-        </Button>
-        <Button size="sm" className="gap-1.5" onClick={handleNewDoc} disabled={creatingDoc}>
-          <Plus className="h-3.5 w-3.5" />
-          {creatingDoc ? "Creating…" : "New document"}
-        </Button>
+        {canEdit && (
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setShowNewFolder(true)}>
+            <FolderPlus className="h-3.5 w-3.5" />
+            New folder
+          </Button>
+        )}
+        {canEdit && (
+          <Button size="sm" className="gap-1.5" onClick={handleNewDoc} disabled={creatingDoc}>
+            <Plus className="h-3.5 w-3.5" />
+            {creatingDoc ? "Creating…" : "New document"}
+          </Button>
+        )}
         {canEdit && (selectedDocs.size > 0 || selectedFiles.size > 0) && (
           <Button size="sm" variant="destructive" className="gap-1.5" onClick={() => setDeleteConfirmOpen(true)} disabled={deleting}>
             <Trash2 className="h-3.5 w-3.5" />
