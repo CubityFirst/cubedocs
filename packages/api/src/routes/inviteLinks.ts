@@ -165,11 +165,10 @@ export async function handleInvitePublic(
     }
 
     // Look up user info from auth worker
-    const authHeader = request.headers.get("Authorization");
     const lookupRes = await env.AUTH.fetch("https://auth/lookup-by-id", {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
-      body: JSON.stringify({}),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: session.userId }),
     });
     if (!lookupRes.ok) return errorResponse(Errors.INTERNAL);
     const lookupData = await lookupRes.json<{ ok: boolean; data?: { name: string; email: string } }>();
