@@ -34,6 +34,27 @@ export async function handleFolders(
     const rootFolderId = params.get("rootFolderId");
     const type = params.get("type") ?? "docs";
 
+    if (role === "limited") {
+      const rows = await env.DB.prepare(`
+        WITH accessible_folder_ids AS (
+          SELECT DISTINCT d.folder_id
+          FROM docs d
+          JOIN doc_shares ds ON ds.doc_id = d.id AND ds.user_id = ?
+          WHERE d.project_id = ? AND d.folder_id IS NOT NULL
+        ),
+        ancestors(id, parent_id) AS (
+          SELECT f.id, f.parent_id FROM folders f WHERE f.id IN (SELECT folder_id FROM accessible_folder_ids)
+          UNION ALL
+          SELECT f.id, f.parent_id FROM folders f JOIN ancestors a ON f.id = a.parent_id
+        )
+        SELECT DISTINCT f.id, f.name, f.type, f.project_id, f.parent_id, f.created_at
+        FROM folders f
+        WHERE f.id IN (SELECT id FROM ancestors) AND f.project_id = ? AND f.type = ?
+        ORDER BY f.name ASC
+      `).bind(user.userId, projectId, projectId, type).all<Folder>();
+      return okResponse(rows.results);
+    }
+
     let rows;
     if (rootFolderId) {
       rows = await env.DB.prepare(`
@@ -67,6 +88,7 @@ export async function handleFolders(
 
     const role = await getCallerRole(env.DB, projectId, user.userId);
     if (role === null) return errorResponse(Errors.FORBIDDEN);
+    if (role === "limited") return okResponse({});
 
     const type = params.get("type") ?? "docs";
     const itemTable = "docs";

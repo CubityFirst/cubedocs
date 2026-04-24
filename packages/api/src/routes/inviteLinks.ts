@@ -3,7 +3,7 @@ import { authenticate } from "../auth";
 import type { Env } from "../index";
 import type { Session } from "../lib";
 
-const VALID_INVITE_ROLES: Role[] = ["viewer", "editor", "admin"];
+const VALID_INVITE_ROLES: Role[] = ["limited", "viewer", "editor", "admin"];
 
 interface InviteLinkRow {
   id: string;

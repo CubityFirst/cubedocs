@@ -76,7 +76,11 @@ export async function handleDocs(
 
     const folderId = params.get("folderId");
     const q = params.get("q");
-    const docWithAuthor = `
+    const isLimitedViewer = role === "limited";
+
+    type DocWithAuthor = Doc & { author_name: string; author_role: string | null; is_home: number };
+
+    const docWithAuthor = (sharesJoin: boolean) => `
       SELECT d.id, d.title, d.folder_id, d.author_id, d.created_at, d.updated_at, d.sidebar_position,
         COALESCE(pm.name, d.author_id) AS author_name,
         pm.role AS author_role,
@@ -84,9 +88,9 @@ export async function handleDocs(
       FROM docs d
       LEFT JOIN project_members pm ON pm.project_id = d.project_id AND pm.user_id = d.author_id
       LEFT JOIN projects p ON p.id = d.project_id
+      ${sharesJoin ? "JOIN doc_shares ds ON ds.doc_id = d.id AND ds.user_id = ?" : ""}
     `;
-
-    type DocWithAuthor = Doc & { author_name: string; author_role: string | null; is_home: number };
+    const lv = isLimitedViewer;
 
     if (q) {
       const rootFolderId = params.get("rootFolderId");
@@ -98,26 +102,26 @@ export async function handleDocs(
             UNION ALL
             SELECT f.id FROM folders f JOIN subtree s ON f.parent_id = s.id
           )
-          ${docWithAuthor}
+          ${docWithAuthor(lv)}
           WHERE d.project_id = ? AND d.folder_id IN (SELECT id FROM subtree)
             AND (LOWER(d.title) LIKE LOWER(?) OR LOWER(COALESCE(pm.name, d.author_id)) LIKE LOWER(?))
           ORDER BY CASE WHEN d.sidebar_position IS NULL THEN 1 ELSE 0 END, d.sidebar_position ASC, d.title ASC
-        `).bind(rootFolderId, projectId, `%${q}%`, `%${q}%`).all<DocWithAuthor>();
+        `).bind(...(lv ? [user.userId] : []), rootFolderId, projectId, `%${q}%`, `%${q}%`).all<DocWithAuthor>();
       } else {
-        rows = await env.DB.prepare(`${docWithAuthor} WHERE d.project_id = ? AND (LOWER(d.title) LIKE LOWER(?) OR LOWER(COALESCE(pm.name, d.author_id)) LIKE LOWER(?)) ORDER BY CASE WHEN d.sidebar_position IS NULL THEN 1 ELSE 0 END, d.sidebar_position ASC, d.title ASC`)
-          .bind(projectId, `%${q}%`, `%${q}%`).all<DocWithAuthor>();
+        rows = await env.DB.prepare(`${docWithAuthor(lv)} WHERE d.project_id = ? AND (LOWER(d.title) LIKE LOWER(?) OR LOWER(COALESCE(pm.name, d.author_id)) LIKE LOWER(?)) ORDER BY CASE WHEN d.sidebar_position IS NULL THEN 1 ELSE 0 END, d.sidebar_position ASC, d.title ASC`)
+          .bind(...(lv ? [user.userId] : []), projectId, `%${q}%`, `%${q}%`).all<DocWithAuthor>();
       }
       return okResponse(rows.results);
     }
 
     const rows = folderId
-      ? await env.DB.prepare(`${docWithAuthor} WHERE d.project_id = ? AND d.folder_id = ? ORDER BY CASE WHEN d.sidebar_position IS NULL THEN 1 ELSE 0 END, d.sidebar_position ASC, d.title ASC`)
-          .bind(projectId, folderId).all<DocWithAuthor>()
+      ? await env.DB.prepare(`${docWithAuthor(lv)} WHERE d.project_id = ? AND d.folder_id = ? ORDER BY CASE WHEN d.sidebar_position IS NULL THEN 1 ELSE 0 END, d.sidebar_position ASC, d.title ASC`)
+          .bind(...(lv ? [user.userId] : []), projectId, folderId).all<DocWithAuthor>()
       : params.has("folderId")
-        ? await env.DB.prepare(`${docWithAuthor} WHERE d.project_id = ? AND d.folder_id IS NULL ORDER BY CASE WHEN d.sidebar_position IS NULL THEN 1 ELSE 0 END, d.sidebar_position ASC, d.title ASC`)
-            .bind(projectId).all<DocWithAuthor>()
-        : await env.DB.prepare(`${docWithAuthor} WHERE d.project_id = ? ORDER BY d.created_at DESC`)
-            .bind(projectId).all<DocWithAuthor>();
+        ? await env.DB.prepare(`${docWithAuthor(lv)} WHERE d.project_id = ? AND d.folder_id IS NULL ORDER BY CASE WHEN d.sidebar_position IS NULL THEN 1 ELSE 0 END, d.sidebar_position ASC, d.title ASC`)
+            .bind(...(lv ? [user.userId] : []), projectId).all<DocWithAuthor>()
+        : await env.DB.prepare(`${docWithAuthor(lv)} WHERE d.project_id = ? ORDER BY d.created_at DESC`)
+            .bind(...(lv ? [user.userId] : []), projectId).all<DocWithAuthor>();
     return okResponse(rows.results);
   }
 
@@ -148,12 +152,16 @@ export async function handleDocs(
     );
   }
 
-  // GET /docs/:id/revisions/:revisionId — any member
+  // GET /docs/:id/revisions/:revisionId — any member (limited must have a doc_share)
   if (docId && subResource === "revisions" && subId && request.method === "GET") {
     const meta = await env.DB.prepare("SELECT project_id FROM docs WHERE id = ?").bind(docId).first<{ project_id: string }>();
     if (!meta) return errorResponse(Errors.NOT_FOUND);
     const caller = await getCallerInfo(env.DB, meta.project_id, user.userId);
     if (caller === null) return errorResponse(Errors.FORBIDDEN);
+    if (caller.role === "limited") {
+      const share = await env.DB.prepare("SELECT id FROM doc_shares WHERE doc_id = ? AND user_id = ?").bind(docId, user.userId).first();
+      if (!share) return errorResponse(Errors.FORBIDDEN);
+    }
     const revision = await env.DB.prepare(
       "SELECT id, editor_id, editor_name, created_at, changelog FROM asset_revisions WHERE id = ? AND asset_type = 'doc' AND asset_id = ?",
     ).bind(subId, docId).first<{ id: string; editor_id: string; editor_name: string; created_at: string; changelog: string | null }>();
@@ -163,24 +171,34 @@ export async function handleDocs(
     return okResponse({ ...revision, content });
   }
 
-  // GET /docs/:id/revisions — any member
+  // GET /docs/:id/revisions — any member (limited must have a doc_share)
   if (docId && subResource === "revisions" && !subId && request.method === "GET") {
     const meta = await env.DB.prepare("SELECT project_id FROM docs WHERE id = ?").bind(docId).first<{ project_id: string }>();
     if (!meta) return errorResponse(Errors.NOT_FOUND);
     const caller = await getCallerInfo(env.DB, meta.project_id, user.userId);
     if (caller === null) return errorResponse(Errors.FORBIDDEN);
+    if (caller.role === "limited") {
+      const share = await env.DB.prepare("SELECT id FROM doc_shares WHERE doc_id = ? AND user_id = ?").bind(docId, user.userId).first();
+      if (!share) return errorResponse(Errors.FORBIDDEN);
+    }
     const rows = await env.DB.prepare(
       "SELECT id, editor_id, editor_name, created_at, changelog FROM asset_revisions WHERE asset_type = 'doc' AND asset_id = ? ORDER BY created_at DESC",
     ).bind(docId).all<{ id: string; editor_id: string; editor_name: string; created_at: string; changelog: string | null }>();
     return okResponse(rows.results);
   }
 
-  // GET /docs/:id — any member of the doc's project
+  // GET /docs/:id — any member of the doc's project (limited must have a doc_share)
   if (docId && request.method === "GET") {
     const meta = await env.DB.prepare("SELECT project_id FROM docs WHERE id = ?").bind(docId).first<{ project_id: string }>();
     if (!meta) return errorResponse(Errors.NOT_FOUND);
     const caller = await getCallerInfo(env.DB, meta.project_id, user.userId);
     if (caller === null) return errorResponse(Errors.FORBIDDEN);
+    let myPermission: string | null = null;
+    if (caller.role === "limited") {
+      const share = await env.DB.prepare("SELECT permission FROM doc_shares WHERE doc_id = ? AND user_id = ?").bind(docId, user.userId).first<{ permission: string }>();
+      if (!share) return errorResponse(Errors.FORBIDDEN);
+      myPermission = share.permission;
+    }
     const row = await env.DB.prepare("SELECT * FROM docs WHERE id = ?").bind(docId).first<Doc>();
     if (!row) return errorResponse(Errors.NOT_FOUND);
     const [r2Content, r2Blame] = await Promise.all([
@@ -192,7 +210,7 @@ export async function handleDocs(
     const fm = parseFrontmatter(content);
     const display_title = fm.title ?? null;
     const hide_title = fm.hide_title ?? null;
-    return okResponse({ ...row, content, blame, myRole: caller.role, display_title, hide_title });
+    return okResponse({ ...row, content, blame, myRole: caller.role, myPermission, display_title, hide_title });
   }
 
   // PUT /docs/:id — editor or above
@@ -203,9 +221,25 @@ export async function handleDocs(
 
     const caller = await getCallerInfo(env.DB, doc.project_id, user.userId);
     if (caller === null) return errorResponse(Errors.FORBIDDEN);
-    if (ROLE_RANK[caller.role] < ROLE_RANK["editor"]) return errorResponse(Errors.FORBIDDEN);
+    if (ROLE_RANK[caller.role] < ROLE_RANK["editor"]) {
+      if (caller.role === "limited") {
+        const share = await env.DB.prepare("SELECT permission FROM doc_shares WHERE doc_id = ? AND user_id = ?")
+          .bind(docId, user.userId).first<{ permission: string }>();
+        if (!share || share.permission !== "edit") return errorResponse(Errors.FORBIDDEN);
+      } else {
+        return errorResponse(Errors.FORBIDDEN);
+      }
+    }
 
     const body = await request.json<Partial<{ title: string; content: string; publishedAt: string | null; showHeading: boolean; showLastUpdated: boolean; folderId: string | null; changelog: string }>>();
+
+    // Limited members with edit permission cannot change publish state or move docs between folders
+    const isLimitedEdit = caller.role === "limited";
+    if (isLimitedEdit) {
+      delete body.publishedAt;
+      delete body.folderId;
+    }
+
     const now = new Date().toISOString();
     let returnContent: string | undefined;
 

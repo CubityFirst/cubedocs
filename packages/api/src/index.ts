@@ -8,6 +8,7 @@ import { handlePublic } from "./routes/public";
 import { handleFiles } from "./routes/files";
 import { handleAi } from "./routes/ai";
 import { handleInviteLinks, handleInvitePublic } from "./routes/inviteLinks";
+import { handleDocShares } from "./routes/docShares";
 
 export interface Env {
   DB: D1Database;
@@ -140,10 +141,18 @@ export default {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
         response = await handleInviteLinks(request, env, session, url);
+      } else if (/^\/projects\/[^/]+\/folder-shares/.test(url.pathname)) {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        response = await handleDocShares(request, env, session, url);
       } else if (url.pathname.startsWith("/projects")) {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
         response = await handleProjects(request, env, session, url);
+      } else if (/^\/docs\/[^/]+\/shares/.test(url.pathname)) {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        response = await handleDocShares(request, env, session, url);
       } else if (url.pathname.startsWith("/docs")) {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;

@@ -18,10 +18,11 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { HistorySheet, type RevisionMeta } from "@/components/HistorySheet";
 import { HistoryBanner } from "@/components/HistoryBanner";
-import { Pencil, X, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
+import { Pencil, X, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight, Sparkles, Users, UserPlus, Trash2 } from "lucide-react";
 import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
 import { getToken } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
@@ -188,6 +189,7 @@ interface Doc {
   id: string;
   title: string;
   content: string;
+  folder_id: string | null;
   updated_at: string;
   published_at: string | null;
   show_heading: number;
@@ -195,9 +197,25 @@ interface Doc {
   display_title?: string | null;
   hide_title?: boolean | null;
   myRole?: string;
+  myPermission?: string | null;
   blame?: (BlameEntry | null)[];
   ai_summary?: string | null;
   ai_summary_version?: string | null;
+}
+
+type SharePermission = "view" | "edit";
+
+interface DocShareMember {
+  userId: string;
+  name: string;
+  email: string;
+  permission: SharePermission;
+}
+
+interface LimitedMember {
+  userId: string;
+  name: string;
+  email: string;
 }
 
 interface RevisionDetail extends RevisionMeta {
@@ -218,6 +236,7 @@ export function DocPage() {
 
   const [doc, setDoc] = useState<Doc | null>(null);
   const [myRole, setMyRole] = useState<string | null>(null);
+  const [myPermission, setMyPermission] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
@@ -236,6 +255,15 @@ export function DocPage() {
   const [editorScrollTop, setEditorScrollTop] = useState(0);
   const [aiSummaryLoading, setAiSummaryLoading] = useState(false);
   const [markdownHelpOpen, setMarkdownHelpOpen] = useState(false);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [docShares, setDocShares] = useState<DocShareMember[]>([]);
+  const [sharesLoading, setSharesLoading] = useState(false);
+  const [limitedViewerMembers, setLimitedViewerMembers] = useState<LimitedMember[]>([]);
+  const [addingShareUserId, setAddingShareUserId] = useState<string | null>(null);
+  const [removingShareUserId, setRemovingShareUserId] = useState<string | null>(null);
+  const [updatingShareUserId, setUpdatingShareUserId] = useState<string | null>(null);
+  const [folderShareLoading, setFolderShareLoading] = useState(false);
+  const [pendingAddPermission, setPendingAddPermission] = useState<Record<string, SharePermission>>({});
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -258,6 +286,7 @@ export function DocPage() {
         if (json.ok && json.data) {
           setDoc(json.data);
           setMyRole(json.data.myRole ?? null);
+          setMyPermission(json.data.myPermission ?? null);
           const rawPath: { id: string | null; name: string }[] = location.state?.folderPath ?? [];
           const folderPath: BreadcrumbItem[] = rawPath.map((crumb, i) => ({
             id: crumb.id,
@@ -454,6 +483,94 @@ export function DocPage() {
       toast({ title: "Could not connect to the server.", variant: "destructive" });
     } finally {
       setReverting(false);
+    }
+  }
+
+  async function openShareDialog() {
+    setShareDialogOpen(true);
+    setSharesLoading(true);
+    const token = getToken();
+    const [sharesRes, membersRes] = await Promise.all([
+      fetch(`/api/docs/${docId}/shares`, { headers: { Authorization: `Bearer ${token}` } }),
+      fetch(`/api/projects/${projectId}/members`, { headers: { Authorization: `Bearer ${token}` } }),
+    ]);
+    const sharesJson = await sharesRes.json() as { ok: boolean; data?: DocShareMember[] };
+    const membersJson = await membersRes.json() as { ok: boolean; data?: { userId: string; name: string; email: string; role: string }[] };
+    if (sharesJson.ok) setDocShares(sharesJson.data ?? []);
+    if (membersJson.ok) {
+      setLimitedViewerMembers((membersJson.data ?? [])
+        .filter(m => m.role === "limited")
+        .map(m => ({ userId: m.userId, name: m.name, email: m.email })));
+    }
+    setSharesLoading(false);
+  }
+
+  async function addShare(userId: string, permission: SharePermission) {
+    setAddingShareUserId(userId);
+    try {
+      const token = getToken();
+      const res = await fetch(`/api/docs/${docId}/shares`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ userId, permission }),
+      });
+      const json = await res.json() as { ok: boolean; data?: DocShareMember };
+      if (json.ok && json.data) setDocShares(prev => [...prev.filter(s => s.userId !== userId), json.data!]);
+    } finally {
+      setAddingShareUserId(null);
+    }
+  }
+
+  async function updateSharePermission(userId: string, permission: SharePermission) {
+    setUpdatingShareUserId(userId);
+    try {
+      const token = getToken();
+      const res = await fetch(`/api/docs/${docId}/shares/${userId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ permission }),
+      });
+      const json = await res.json() as { ok: boolean };
+      if (json.ok) setDocShares(prev => prev.map(s => s.userId === userId ? { ...s, permission } : s));
+    } finally {
+      setUpdatingShareUserId(null);
+    }
+  }
+
+  async function removeShare(userId: string) {
+    setRemovingShareUserId(userId);
+    try {
+      const token = getToken();
+      const res = await fetch(`/api/docs/${docId}/shares/${userId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json() as { ok: boolean };
+      if (json.ok) setDocShares(prev => prev.filter(s => s.userId !== userId));
+    } finally {
+      setRemovingShareUserId(null);
+    }
+  }
+
+  async function shareFolderWith(userId: string, permission: SharePermission) {
+    if (!doc?.folder_id || !projectId) return;
+    setFolderShareLoading(true);
+    try {
+      const token = getToken();
+      const res = await fetch(`/api/projects/${projectId}/folder-shares`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ userId, folderId: doc.folder_id, permission }),
+      });
+      const json = await res.json() as { ok: boolean; data?: { granted: number } };
+      if (json.ok) {
+        const sharesRes = await fetch(`/api/docs/${docId}/shares`, { headers: { Authorization: `Bearer ${token}` } });
+        const sharesJson = await sharesRes.json() as { ok: boolean; data?: DocShareMember[] };
+        if (sharesJson.ok) setDocShares(sharesJson.data ?? []);
+        toast({ title: `Shared ${json.data?.granted ?? 0} documents in this folder.` });
+      }
+    } finally {
+      setFolderShareLoading(false);
     }
   }
 
@@ -679,7 +796,8 @@ export function DocPage() {
   }
 
   const headings = extractHeadings(doc.content);
-  const isEditor = myRole === "editor" || myRole === "admin" || myRole === "owner";
+  const isEditor = myRole === "editor" || myRole === "admin" || myRole === "owner" || (myRole === "limited" && myPermission === "edit");
+  const isAdmin = myRole === "admin" || myRole === "owner";
 
   return (
     <div className="flex min-h-full">
@@ -709,6 +827,124 @@ export function DocPage() {
                 loading={loadingRevision}
                 onSelect={viewRevision}
               />
+              {isAdmin && (
+                <>
+                  <Button variant="ghost" size="icon" title="Manage limited viewer access" onClick={openShareDialog}>
+                    <Users className="h-4 w-4" />
+                  </Button>
+                  <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
+                    <DialogContent className="sm:max-w-md">
+                      <DialogHeader>
+                        <DialogTitle>Limited Viewer Access</DialogTitle>
+                        <DialogDescription>
+                          Control which limited viewers can read this document.
+                        </DialogDescription>
+                      </DialogHeader>
+                      {sharesLoading ? (
+                        <p className="text-sm text-muted-foreground py-2">Loading…</p>
+                      ) : (
+                        <div className="flex flex-col gap-4 py-2">
+                          {docShares.length === 0 ? (
+                            <p className="text-sm text-muted-foreground">No limited members have access to this document.</p>
+                          ) : (
+                            <div className="flex flex-col divide-y divide-border rounded-md border border-border">
+                              {docShares.map(share => (
+                                <div key={share.userId} className="flex items-center gap-3 px-3 py-2.5">
+                                  <div className="flex min-w-0 flex-1 flex-col">
+                                    <span className="truncate text-sm font-medium">{share.name}</span>
+                                    <span className="truncate text-xs text-muted-foreground">{share.email}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <Select
+                                      value={share.permission}
+                                      onValueChange={val => updateSharePermission(share.userId, val as SharePermission)}
+                                      disabled={updatingShareUserId === share.userId}
+                                    >
+                                      <SelectTrigger className="h-7 w-[80px] text-xs">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="view">View</SelectItem>
+                                        <SelectItem value="edit">Edit</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7 text-destructive hover:text-destructive"
+                                      onClick={() => removeShare(share.userId)}
+                                      disabled={removingShareUserId === share.userId}
+                                      title="Revoke access"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {limitedViewerMembers.filter(m => !docShares.some(s => s.userId === m.userId)).length > 0 && (
+                            <div className="flex flex-col gap-2">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Add limited member</p>
+                              <div className="flex flex-col divide-y divide-border rounded-md border border-border">
+                                {limitedViewerMembers
+                                  .filter(m => !docShares.some(s => s.userId === m.userId))
+                                  .map(member => (
+                                    <div key={member.userId} className="flex items-center gap-3 px-3 py-2.5">
+                                      <div className="flex min-w-0 flex-1 flex-col">
+                                        <span className="truncate text-sm font-medium">{member.name}</span>
+                                        <span className="truncate text-xs text-muted-foreground">{member.email}</span>
+                                      </div>
+                                      <div className="flex items-center gap-1.5 shrink-0">
+                                        <Select
+                                          value={pendingAddPermission[member.userId] ?? "view"}
+                                          onValueChange={val => setPendingAddPermission(prev => ({ ...prev, [member.userId]: val as SharePermission }))}
+                                        >
+                                          <SelectTrigger className="h-7 w-[80px] text-xs">
+                                            <SelectValue />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="view">View</SelectItem>
+                                            <SelectItem value="edit">Edit</SelectItem>
+                                          </SelectContent>
+                                        </Select>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-7 w-7"
+                                          onClick={() => addShare(member.userId, pendingAddPermission[member.userId] ?? "view")}
+                                          disabled={addingShareUserId === member.userId}
+                                          title="Grant access"
+                                        >
+                                          <UserPlus className="h-3.5 w-3.5" />
+                                        </Button>
+                                        {doc?.folder_id && (
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-7 px-2 text-xs"
+                                            onClick={() => shareFolderWith(member.userId, pendingAddPermission[member.userId] ?? "view")}
+                                            disabled={folderShareLoading}
+                                            title="Share all docs in this folder"
+                                          >
+                                            Folder
+                                          </Button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                              </div>
+                            </div>
+                          )}
+                          {limitedViewerMembers.length === 0 && (
+                            <p className="text-xs text-muted-foreground">No limited members in this project yet. Invite them from Site Settings.</p>
+                          )}
+                        </div>
+                      )}
+                    </DialogContent>
+                  </Dialog>
+                </>
+              )}
               <Dialog>
                 <DialogTrigger asChild>
                   <Button variant="ghost" size="icon" title="Document settings">

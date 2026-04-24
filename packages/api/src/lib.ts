@@ -42,7 +42,7 @@ export interface Project {
   home_doc_id: string | null;
 }
 
-export type Role = "viewer" | "editor" | "admin" | "owner";
+export type Role = "limited" | "viewer" | "editor" | "admin" | "owner";
 
 export interface Member {
   id: string;
@@ -56,6 +56,7 @@ export interface Member {
 }
 
 export const ROLE_RANK: Record<Role, number> = {
+  limited: -1,
   viewer: 0,
   editor: 1,
   admin: 2,

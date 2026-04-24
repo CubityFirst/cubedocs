@@ -2,7 +2,7 @@ import { okResponse, errorResponse, Errors, ROLE_RANK, type Role, type Member } 
 import type { Env } from "../index";
 import type { Session } from "../lib";
 
-const VALID_ROLES: Role[] = ["viewer", "editor", "admin", "owner"];
+const VALID_ROLES: Role[] = ["limited", "viewer", "editor", "admin", "owner"];
 
 interface MemberRow {
   id: string; project_id: string; user_id: string; email: string; name: string;

@@ -48,6 +48,12 @@ export async function handleFiles(
       if (!user) return errorResponse(Errors.UNAUTHORIZED);
       const role = await getCallerRole(env.DB, meta.project_id, user.userId);
       if (role === null) return errorResponse(Errors.FORBIDDEN);
+      if (role === "limited") {
+        const hasShare = await env.DB.prepare(
+          "SELECT id FROM doc_shares WHERE project_id = ? AND user_id = ? LIMIT 1",
+        ).bind(meta.project_id, user.userId).first();
+        if (!hasShare) return errorResponse(Errors.FORBIDDEN);
+      }
     }
 
     const obj = await env.ASSETS.get(`files/${fileId}`);
@@ -66,7 +72,7 @@ export async function handleFiles(
   // All other file operations require authentication
   if (!user) return errorResponse(Errors.UNAUTHORIZED);
 
-  // GET /files/:id — get single file metadata (any member)
+  // GET /files/:id — get single file metadata (any member except limited)
   if (fileId && !subResource && request.method === "GET") {
     const record = await env.DB.prepare("SELECT * FROM files WHERE id = ?")
       .bind(fileId).first<FileRecord>();
@@ -74,17 +80,19 @@ export async function handleFiles(
 
     const role = await getCallerRole(env.DB, record.project_id, user.userId);
     if (role === null) return errorResponse(Errors.FORBIDDEN);
+    if (role === "limited") return errorResponse(Errors.FORBIDDEN);
 
     return okResponse(record);
   }
 
-  // GET /files?projectId=xxx[&folderId=yyy] — list files (any member)
+  // GET /files?projectId=xxx[&folderId=yyy] — list files (any member except limited)
   if (!fileId && request.method === "GET") {
     const projectId = url.searchParams.get("projectId");
     if (!projectId) return errorResponse(Errors.BAD_REQUEST);
 
     const role = await getCallerRole(env.DB, projectId, user.userId);
     if (role === null) return errorResponse(Errors.FORBIDDEN);
+    if (role === "limited") return errorResponse(Errors.FORBIDDEN);
 
     const folderId = url.searchParams.get("folderId");
     const baseSelect = `

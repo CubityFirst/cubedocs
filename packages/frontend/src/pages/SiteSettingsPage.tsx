@@ -38,9 +38,10 @@ import { getToken } from "@/lib/auth";
 import { Switch } from "@/components/ui/switch";
 import { Globe, House, Link, Lock, Copy, Check, X } from "lucide-react";
 
-type Role = "viewer" | "editor" | "admin" | "owner";
+type Role = "limited" | "viewer" | "editor" | "admin" | "owner";
 
 const ROLE_LABELS: Record<Role, string> = {
+  limited: "Limited",
   viewer: "Viewer",
   editor: "Editor",
   admin: "Admin",
@@ -48,15 +49,16 @@ const ROLE_LABELS: Record<Role, string> = {
 };
 
 const ROLE_DESCRIPTIONS: Record<Role, string> = {
+  limited: "Can only access documents explicitly shared with them (view or edit per doc)",
   viewer: "Can read documents",
   editor: "Can create and edit documents",
   admin: "Can invite users and manage roles",
   owner: "Full access including site deletion",
 };
 
-const ROLE_RANK: Record<Role, number> = { viewer: 0, editor: 1, admin: 2, owner: 3 };
+const ROLE_RANK: Record<Role, number> = { limited: -1, viewer: 0, editor: 1, admin: 2, owner: 3 };
 
-const ASSIGNABLE_ROLES: Role[] = ["viewer", "editor", "admin"];
+const ASSIGNABLE_ROLES: Role[] = ["limited", "viewer", "editor", "admin"];
 
 interface Project {
   id: string;
@@ -844,7 +846,7 @@ export function SiteSettingsPage() {
             <div className="rounded-md border border-border bg-muted/40 p-4">
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Permission levels</p>
               <div className="flex flex-col gap-1.5">
-                {(["viewer", "editor", "admin", "owner"] as Role[]).map(role => (
+                {(["limited", "viewer", "editor", "admin", "owner"] as Role[]).map(role => (
                   <div key={role} className="flex items-center gap-2 text-sm">
                     <RoleBadge role={role} />
                     <span className="text-muted-foreground">{ROLE_DESCRIPTIONS[role]}</span>
@@ -1119,6 +1121,7 @@ function RoleBadge({ role }: { role: Role }) {
     admin: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
     editor: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300",
     viewer: "bg-muted text-muted-foreground",
+    limited: "bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300",
   };
   return (
     <Badge variant="outline" className={`shrink-0 text-xs font-medium ${variants[role]}`}>
