@@ -50,8 +50,9 @@ export async function handleFolders(
         SELECT DISTINCT f.id, f.name, f.type, f.project_id, f.parent_id, f.created_at
         FROM folders f
         WHERE f.id IN (SELECT id FROM ancestors) AND f.project_id = ? AND f.type = ?
+          AND f.parent_id IS ?
         ORDER BY f.name ASC
-      `).bind(user.userId, projectId, projectId, type).all<Folder>();
+      `).bind(user.userId, projectId, projectId, type, parentId ?? null).all<Folder>();
       return okResponse(rows.results);
     }
 

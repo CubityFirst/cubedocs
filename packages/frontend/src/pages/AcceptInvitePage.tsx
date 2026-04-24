@@ -4,9 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { getToken } from "@/lib/auth";
 
-type Role = "viewer" | "editor" | "admin" | "owner";
+type Role = "limited" | "viewer" | "editor" | "admin" | "owner";
 
 const ROLE_LABELS: Record<Role, string> = {
+  limited: "Limited",
   viewer: "Viewer",
   editor: "Editor",
   admin: "Admin",
@@ -18,6 +19,7 @@ const ROLE_COLORS: Record<Role, string> = {
   admin: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
   editor: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300",
   viewer: "bg-muted text-muted-foreground",
+  limited: "bg-muted text-muted-foreground",
 };
 
 interface InviteInfo {
