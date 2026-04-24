@@ -13,6 +13,7 @@ import { NotFoundPage } from "./pages/NotFoundPage";
 import { SiteSettingsPage } from "./pages/SiteSettingsPage";
 import { UserSettingsPage } from "./pages/UserSettingsPage";
 import { PublicDocPage } from "./pages/PublicDocPage";
+import { AcceptInvitePage } from "./pages/AcceptInvitePage";
 
 export function App() {
   return (
@@ -30,6 +31,7 @@ export function App() {
         <Route path="/projects/:projectId/settings" element={<SiteSettingsPage />} />
         <Route path="/settings" element={<UserSettingsPage />} />
       </Route>
+      <Route path="/invite/:token" element={<AcceptInvitePage />} />
       <Route path="/s/:projectId" element={<PublicDocPage />} />
       <Route path="/s/:projectId/:docId" element={<PublicDocPage />} />
       <Route path="*" element={<NotFoundPage />} />

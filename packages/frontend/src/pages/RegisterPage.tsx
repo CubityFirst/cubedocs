@@ -55,9 +55,13 @@ export function RegisterPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, email, password, turnstileToken }),
       });
-      const json = await res.json() as { ok: boolean; data?: { email: string }; error?: string };
+      const json = await res.json() as { ok: boolean; data?: { email: string; verificationSent: boolean }; error?: string };
       if (json.ok && json.data) {
-        navigate("/check-email", { replace: true, state: { email: json.data.email } });
+        if (json.data.verificationSent) {
+          navigate("/check-email", { replace: true, state: { email: json.data.email } });
+        } else {
+          navigate("/login", { replace: true });
+        }
       } else {
         setError(res.status === 409 ? "An account with that email already exists." : "Registration failed. Please try again.");
       }

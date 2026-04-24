@@ -7,6 +7,7 @@ import { handleMembers } from "./routes/members";
 import { handlePublic } from "./routes/public";
 import { handleFiles } from "./routes/files";
 import { handleAi } from "./routes/ai";
+import { handleInviteLinks, handleInvitePublic } from "./routes/inviteLinks";
 
 export interface Env {
   DB: D1Database;
@@ -129,10 +130,16 @@ export default {
       // Public (unauthenticated) routes
       if (url.pathname.startsWith("/public")) {
         response = await handlePublic(request, env, url);
+      } else if (url.pathname.startsWith("/invites/")) {
+        response = await handleInvitePublic(request, env, url);
       } else if (/^\/projects\/[^/]+\/members/.test(url.pathname)) {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
         response = await handleMembers(request, env, session, url);
+      } else if (/^\/projects\/[^/]+\/invite-links/.test(url.pathname)) {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        response = await handleInviteLinks(request, env, session, url);
       } else if (url.pathname.startsWith("/projects")) {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;

@@ -36,7 +36,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { getToken } from "@/lib/auth";
 import { Switch } from "@/components/ui/switch";
-import { Globe, House, Link, Lock } from "lucide-react";
+import { Globe, House, Link, Lock, Copy, Check, X } from "lucide-react";
 
 type Role = "viewer" | "editor" | "admin" | "owner";
 
@@ -80,6 +80,36 @@ interface Member {
   role: Role;
 }
 
+interface InviteLink {
+  id: string;
+  projectId: string;
+  role: Role;
+  maxUses: number | null;
+  useCount: number;
+  expiresAt: string | null;
+  createdBy: string;
+  createdAt: string;
+  isActive: boolean;
+}
+
+const EXPIRY_OPTIONS = [
+  { value: "never", label: "Never" },
+  { value: "1d", label: "1 day" },
+  { value: "7d", label: "7 days" },
+  { value: "30d", label: "30 days" },
+];
+
+function expiryLabel(expiresAt: string | null): string {
+  if (!expiresAt) return "Never";
+  const date = new Date(expiresAt);
+  const now = new Date();
+  if (date < now) return "Expired";
+  const diff = date.getTime() - now.getTime();
+  const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+  if (days === 1) return "Expires in 1 day";
+  return `Expires in ${days} days`;
+}
+
 function parseToken(token: string): { userId: string; email: string } | null {
   try {
     const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
@@ -110,6 +140,16 @@ export function SiteSettingsPage() {
   const [inviteError, setInviteError] = useState<string | null>(null);
 
   const [removingId, setRemovingId] = useState<string | null>(null);
+
+  const [inviteLinks, setInviteLinks] = useState<InviteLink[]>([]);
+  const [loadingLinks, setLoadingLinks] = useState(false);
+  const [createLinkOpen, setCreateLinkOpen] = useState(false);
+  const [newLinkRole, setNewLinkRole] = useState<Role>("editor");
+  const [newLinkMaxUses, setNewLinkMaxUses] = useState("");
+  const [newLinkExpiry, setNewLinkExpiry] = useState("never");
+  const [creatingLink, setCreatingLink] = useState(false);
+  const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null);
+  const [revokingLinkId, setRevokingLinkId] = useState<string | null>(null);
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -165,6 +205,19 @@ export function SiteSettingsPage() {
       .catch(() => {})
       .finally(() => setLoadingMembers(false));
   }, [projectId]);
+
+  useEffect(() => {
+    if (!token || !projectId || !myRole) return;
+    if (ROLE_RANK[myRole] < ROLE_RANK["admin"]) return;
+    setLoadingLinks(true);
+    fetch(`/api/projects/${projectId}/invite-links`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then((json: { ok: boolean; data?: InviteLink[] }) => {
+        if (json.ok && json.data) setInviteLinks(json.data);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingLinks(false));
+  }, [projectId, token, myRole]);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -257,6 +310,70 @@ export function SiteSettingsPage() {
     } finally {
       setRemovingId(null);
     }
+  }
+
+  async function handleCreateLink() {
+    if (!projectId) return;
+    setCreatingLink(true);
+    try {
+      const expiresAt = newLinkExpiry === "never" ? null : (() => {
+        const days = newLinkExpiry === "1d" ? 1 : newLinkExpiry === "7d" ? 7 : 30;
+        const d = new Date();
+        d.setDate(d.getDate() + days);
+        return d.toISOString();
+      })();
+      const maxUses = newLinkMaxUses.trim() ? parseInt(newLinkMaxUses, 10) : null;
+      const res = await fetch(`/api/projects/${projectId}/invite-links`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ role: newLinkRole, maxUses, expiresAt }),
+      });
+      const json = await res.json() as { ok: boolean; data?: InviteLink };
+      if (json.ok && json.data) {
+        setInviteLinks(prev => [json.data!, ...prev]);
+        setCreateLinkOpen(false);
+        setNewLinkRole("editor");
+        setNewLinkMaxUses("");
+        setNewLinkExpiry("never");
+        toast({ title: "Invite link created." });
+      } else {
+        toast({ title: "Failed to create invite link.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Could not connect to the server.", variant: "destructive" });
+    } finally {
+      setCreatingLink(false);
+    }
+  }
+
+  async function handleRevokeLink(id: string) {
+    if (!projectId) return;
+    setRevokingLinkId(id);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/invite-links/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json() as { ok: boolean };
+      if (json.ok) {
+        setInviteLinks(prev => prev.map(l => l.id === id ? { ...l, isActive: false } : l));
+        toast({ title: "Invite link revoked." });
+      } else {
+        toast({ title: "Failed to revoke link.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Could not connect to the server.", variant: "destructive" });
+    } finally {
+      setRevokingLinkId(null);
+    }
+  }
+
+  function handleCopyLink(link: InviteLink) {
+    const url = `${window.location.origin}/invite/${link.id}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedLinkId(link.id);
+      setTimeout(() => setCopiedLinkId(prev => prev === link.id ? null : prev), 2000);
+    });
   }
 
   async function handleTogglePublish() {
@@ -795,6 +912,112 @@ export function SiteSettingsPage() {
                 })}
               </div>
             )}
+
+            {/* Invite links */}
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-medium">Invite links</h4>
+                <Dialog open={createLinkOpen} onOpenChange={setCreateLinkOpen}>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" size="sm">Create link</Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Create invite link</DialogTitle>
+                      <DialogDescription>
+                        Anyone with the link can join this project with the selected role.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="flex flex-col gap-4 py-2">
+                      <div className="flex flex-col gap-1.5">
+                        <Label>Role</Label>
+                        <Select value={newLinkRole} onValueChange={val => setNewLinkRole(val as Role)}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(isOwner ? ASSIGNABLE_ROLES : ASSIGNABLE_ROLES.filter(r => ROLE_RANK[r] < ROLE_RANK["admin"])).map(role => (
+                              <SelectItem key={role} value={role}>{ROLE_LABELS[role]}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <Label>Max uses <span className="text-muted-foreground font-normal">(leave blank for unlimited)</span></Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          placeholder="Unlimited"
+                          value={newLinkMaxUses}
+                          onChange={e => setNewLinkMaxUses(e.target.value)}
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <Label>Expires</Label>
+                        <Select value={newLinkExpiry} onValueChange={setNewLinkExpiry}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {EXPIRY_OPTIONS.map(opt => (
+                              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setCreateLinkOpen(false)}>Cancel</Button>
+                      <Button onClick={handleCreateLink} disabled={creatingLink}>
+                        {creatingLink ? "Creating…" : "Create link"}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
+
+              {loadingLinks ? (
+                <p className="text-sm text-muted-foreground">Loading…</p>
+              ) : inviteLinks.filter(l => l.isActive && (l.maxUses === null || l.useCount < l.maxUses)).length === 0 ? (
+                <p className="text-sm text-muted-foreground">No invite links yet.</p>
+              ) : (
+                <div className="flex flex-col divide-y divide-border rounded-md border border-border">
+                  {inviteLinks.filter(l => l.isActive && (l.maxUses === null || l.useCount < l.maxUses)).map(link => (
+                    <div key={link.id} className="flex items-center gap-3 px-4 py-3">
+                      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                        <div className="flex items-center gap-2">
+                          <RoleBadge role={link.role} />
+                        </div>
+                        <div className="flex gap-2 text-xs text-muted-foreground">
+                          <span>{link.maxUses ? `${link.useCount} / ${link.maxUses} uses` : `${link.useCount} uses`}</span>
+                          <span>·</span>
+                          <span>{expiryLabel(link.expiresAt)}</span>
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs gap-1.5"
+                        onClick={() => handleCopyLink(link)}
+                      >
+                        {copiedLinkId === link.id ? <Check className="size-3" /> : <Copy className="size-3" />}
+                        {copiedLinkId === link.id ? "Copied" : "Copy"}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive gap-1.5"
+                        disabled={revokingLinkId === link.id}
+                        onClick={() => handleRevokeLink(link.id)}
+                      >
+                        <X className="size-3" />
+                        {revokingLinkId === link.id ? "Revoking…" : "Revoke"}
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {/* Invite form */}
             <form onSubmit={handleInvite} className="flex flex-col gap-3">

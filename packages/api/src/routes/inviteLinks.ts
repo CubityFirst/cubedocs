@@ -1,0 +1,192 @@
+import { okResponse, errorResponse, Errors, ROLE_RANK, type Role } from "../lib";
+import { authenticate } from "../auth";
+import type { Env } from "../index";
+import type { Session } from "../lib";
+
+const VALID_INVITE_ROLES: Role[] = ["viewer", "editor", "admin"];
+
+interface InviteLinkRow {
+  id: string;
+  project_id: string;
+  role: Role;
+  max_uses: number | null;
+  use_count: number;
+  expires_at: string | null;
+  created_by: string;
+  created_at: string;
+  is_active: number;
+}
+
+async function getCallerRole(db: D1Database, projectId: string, userId: string): Promise<Role | null> {
+  const row = await db.prepare("SELECT role FROM project_members WHERE project_id = ? AND user_id = ?")
+    .bind(projectId, userId).first<{ role: Role }>();
+  return row?.role ?? null;
+}
+
+function rowToLink(r: InviteLinkRow) {
+  return {
+    id: r.id,
+    projectId: r.project_id,
+    role: r.role,
+    maxUses: r.max_uses,
+    useCount: r.use_count,
+    expiresAt: r.expires_at,
+    createdBy: r.created_by,
+    createdAt: r.created_at,
+    isActive: r.is_active === 1,
+  };
+}
+
+// Handles /projects/:projectId/invite-links[/:linkId] — requires project membership
+export async function handleInviteLinks(
+  request: Request,
+  env: Env,
+  user: Session,
+  url: URL,
+): Promise<Response> {
+  const match = url.pathname.match(/^\/projects\/([^/]+)\/invite-links\/?([^/]*)$/);
+  if (!match) return errorResponse(Errors.NOT_FOUND);
+  const projectId = match[1];
+  const linkId = match[2] || null;
+
+  const callerRole = await getCallerRole(env.DB, projectId, user.userId);
+  if (callerRole === null) return errorResponse(Errors.NOT_FOUND);
+  if (ROLE_RANK[callerRole] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
+
+  // GET /projects/:id/invite-links
+  if (!linkId && request.method === "GET") {
+    const rows = await env.DB.prepare(
+      "SELECT * FROM project_invite_links WHERE project_id = ? ORDER BY created_at DESC",
+    ).bind(projectId).all<InviteLinkRow>();
+    return okResponse(rows.results.map(rowToLink));
+  }
+
+  // POST /projects/:id/invite-links
+  if (!linkId && request.method === "POST") {
+    const body = await request.json<{ role: Role; maxUses?: number | null; expiresAt?: string | null }>();
+    if (!body.role || !VALID_INVITE_ROLES.includes(body.role)) return errorResponse(Errors.BAD_REQUEST);
+
+    // Admins cannot create links that grant admin role
+    if (callerRole === "admin" && ROLE_RANK[body.role] >= ROLE_RANK["admin"]) {
+      return errorResponse(Errors.FORBIDDEN);
+    }
+
+    const maxUses = body.maxUses != null && body.maxUses > 0 ? body.maxUses : null;
+    const expiresAt = body.expiresAt ?? null;
+
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    await env.DB.prepare(
+      "INSERT INTO project_invite_links (id, project_id, role, max_uses, use_count, expires_at, created_by, created_at, is_active) VALUES (?, ?, ?, ?, 0, ?, ?, ?, 1)",
+    ).bind(id, projectId, body.role, maxUses, expiresAt, user.userId, now).run();
+
+    return okResponse({
+      id, projectId, role: body.role, maxUses, useCount: 0,
+      expiresAt, createdBy: user.userId, createdAt: now, isActive: true,
+    }, 201);
+  }
+
+  // DELETE /projects/:id/invite-links/:linkId
+  if (linkId && request.method === "DELETE") {
+    const row = await env.DB.prepare("SELECT id FROM project_invite_links WHERE id = ? AND project_id = ?")
+      .bind(linkId, projectId).first();
+    if (!row) return errorResponse(Errors.NOT_FOUND);
+
+    await env.DB.prepare("UPDATE project_invite_links SET is_active = 0 WHERE id = ?")
+      .bind(linkId).run();
+
+    return okResponse({ revoked: true });
+  }
+
+  return errorResponse(Errors.NOT_FOUND);
+}
+
+// Handles /invites/:token — GET is public, POST requires auth
+export async function handleInvitePublic(
+  request: Request,
+  env: Env,
+  url: URL,
+): Promise<Response> {
+  const match = url.pathname.match(/^\/invites\/([^/]+)(\/accept)?$/);
+  if (!match) return errorResponse(Errors.NOT_FOUND);
+  const token = match[1];
+  const isAccept = match[2] === "/accept";
+
+  // GET /invites/:token — public, returns invite metadata
+  if (!isAccept && request.method === "GET") {
+    const link = await env.DB.prepare(
+      "SELECT pil.*, p.name as project_name FROM project_invite_links pil JOIN projects p ON p.id = pil.project_id WHERE pil.id = ?",
+    ).bind(token).first<InviteLinkRow & { project_name: string }>();
+
+    if (!link) return errorResponse(Errors.NOT_FOUND);
+
+    // Get owner name from project_members
+    const owner = await env.DB.prepare(
+      "SELECT name FROM project_members WHERE project_id = ? AND role = 'owner'",
+    ).bind(link.project_id).first<{ name: string }>();
+
+    return okResponse({
+      projectId: link.project_id,
+      projectName: link.project_name,
+      ownerName: owner?.name ?? "Unknown",
+      role: link.role,
+      maxUses: link.max_uses,
+      useCount: link.use_count,
+      expiresAt: link.expires_at,
+      isActive: link.is_active === 1,
+    });
+  }
+
+  // POST /invites/:token/accept — requires auth
+  if (isAccept && request.method === "POST") {
+    const session = await authenticate(request, env);
+    if (!session) return errorResponse(Errors.UNAUTHORIZED);
+
+    const link = await env.DB.prepare(
+      "SELECT * FROM project_invite_links WHERE id = ?",
+    ).bind(token).first<InviteLinkRow>();
+
+    if (!link) return errorResponse(Errors.NOT_FOUND);
+    if (link.is_active === 0) {
+      return Response.json({ ok: false, error: "This invite link has been revoked.", status: 410 }, { status: 410 });
+    }
+    if (link.expires_at && new Date(link.expires_at) < new Date()) {
+      return Response.json({ ok: false, error: "This invite link has expired.", status: 410 }, { status: 410 });
+    }
+    if (link.max_uses !== null && link.use_count >= link.max_uses) {
+      return Response.json({ ok: false, error: "This invite link has reached its maximum uses.", status: 410 }, { status: 410 });
+    }
+
+    // Check if already a member
+    const existing = await env.DB.prepare("SELECT role FROM project_members WHERE project_id = ? AND user_id = ?")
+      .bind(link.project_id, session.userId).first<{ role: Role }>();
+    if (existing) {
+      return Response.json({ ok: true, data: { projectId: link.project_id, alreadyMember: true, role: existing.role } });
+    }
+
+    // Look up user info from auth worker
+    const authHeader = request.headers.get("Authorization");
+    const lookupRes = await env.AUTH.fetch("https://auth/lookup-by-id", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
+      body: JSON.stringify({}),
+    });
+    if (!lookupRes.ok) return errorResponse(Errors.INTERNAL);
+    const lookupData = await lookupRes.json<{ ok: boolean; data?: { name: string; email: string } }>();
+    if (!lookupData.ok || !lookupData.data) return errorResponse(Errors.INTERNAL);
+
+    const memberId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    await env.DB.batch([
+      env.DB.prepare(
+        "INSERT INTO project_members (id, project_id, user_id, email, name, role, invited_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      ).bind(memberId, link.project_id, session.userId, lookupData.data.email, lookupData.data.name, link.role, link.created_by, now),
+      env.DB.prepare("UPDATE project_invite_links SET use_count = use_count + 1 WHERE id = ?")
+        .bind(token),
+    ]);
+
+    return okResponse({ projectId: link.project_id, role: link.role }, 201);
+  }
+
+  return errorResponse(Errors.NOT_FOUND);
+}
