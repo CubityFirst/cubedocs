@@ -1,9 +1,13 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback } from "react";
 import { Dices } from "lucide-react";
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card";
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { roll, splitFormulaLabel, cmpMatch, type RollResult, type TermResult, type GroupResult } from "@/lib/dice";
@@ -326,8 +330,6 @@ function tryRoll(notation: string): RollResult | null {
 
 export function DiceRoll({ notation }: DiceRollProps) {
   const [result, setResult] = useState<RollResult | "invalid" | null>(null);
-  const [tooltipOpen, setTooltipOpen] = useState(false);
-  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const doRoll = useCallback(
     (e: React.MouseEvent) => {
@@ -337,20 +339,6 @@ export function DiceRoll({ notation }: DiceRollProps) {
     },
     [notation],
   );
-
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    longPressTimer.current = setTimeout(() => {
-      e.preventDefault();
-      setTooltipOpen(true);
-    }, 500);
-  }, []);
-
-  const handleTouchEnd = useCallback(() => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-  }, []);
 
   if (result === "invalid") {
     return (
@@ -389,36 +377,31 @@ export function DiceRoll({ notation }: DiceRollProps) {
   const anyCritFail = result.terms.some((t) => t.anyCritFail);
 
   return (
-    <TooltipProvider>
-      <Tooltip open={tooltipOpen || undefined} onOpenChange={setTooltipOpen}>
-        <TooltipTrigger asChild>
-          <button
-            onClick={doRoll}
-            onTouchStart={handleTouchStart}
-            onTouchEnd={handleTouchEnd}
-            onTouchMove={handleTouchEnd}
-            className="inline-flex items-center gap-1 rounded bg-zinc-700/60 px-1.5 py-0.5 text-[0.875em] text-zinc-200 font-mono select-none not-prose hover:bg-zinc-700 transition-colors cursor-pointer"
-            aria-label="Re-roll"
-          >
-            <Dices className="h-3.5 w-3.5 text-zinc-500" />
-            <span className="text-zinc-400">{splitFormulaLabel(notation).formula}</span>
-            {result.label && (
-              <span className="text-zinc-400">{result.label}</span>
-            )}
-            <span className="text-zinc-500">:</span>
-            <span className={`font-semibold ${isMaxRoll || anyCritSuccess ? "text-green-400" : isMinRoll || anyCritFail ? "text-red-400" : "text-zinc-100"}`}>{displayValue}</span>
-            {isDiceSuccessCount && <span className="text-zinc-400 font-normal">succ</span>}
-            {exprST && (
-              <span className={`font-semibold ${result.successCount === 1 ? "text-green-400" : "text-red-400"}`}>
-                {result.successCount === 1 ? "✓" : "✗"}
-              </span>
-            )}
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-xs font-mono text-xs">
-          {buildBreakdown(result)}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <HoverCard>
+      <HoverCardTrigger asChild>
+        <button
+          onClick={doRoll}
+          className="inline-flex items-center gap-1 rounded bg-zinc-700/60 px-1.5 py-0.5 text-[0.875em] text-zinc-200 font-mono select-none not-prose hover:bg-zinc-700 transition-colors cursor-pointer"
+          aria-label="Re-roll"
+        >
+          <Dices className="h-3.5 w-3.5 text-zinc-500" />
+          <span className="text-zinc-400">{splitFormulaLabel(notation).formula}</span>
+          {result.label && (
+            <span className="text-zinc-400">{result.label}</span>
+          )}
+          <span className="text-zinc-500">:</span>
+          <span className={`font-semibold ${isMaxRoll || anyCritSuccess ? "text-green-400" : isMinRoll || anyCritFail ? "text-red-400" : "text-zinc-100"}`}>{displayValue}</span>
+          {isDiceSuccessCount && <span className="text-zinc-400 font-normal">succ</span>}
+          {exprST && (
+            <span className={`font-semibold ${result.successCount === 1 ? "text-green-400" : "text-red-400"}`}>
+              {result.successCount === 1 ? "✓" : "✗"}
+            </span>
+          )}
+        </button>
+      </HoverCardTrigger>
+      <HoverCardContent side="top" className="max-w-xs font-mono text-xs">
+        {buildBreakdown(result)}
+      </HoverCardContent>
+    </HoverCard>
   );
 }
