@@ -318,9 +318,23 @@ export function DocsLayout() {
   };
 
   return (
-    <div className="relative flex h-screen overflow-hidden bg-background text-foreground">
-      {/* Sidebar — absolutely positioned so it overlays content without causing reflow */}
-      <aside className={cn("absolute inset-y-0 left-0 z-20 flex w-64 flex-col border-r border-border bg-background transition-transform duration-200", sidebarOpen ? "translate-x-0" : "-translate-x-full")}>
+    <div className="relative h-screen overflow-hidden bg-background text-foreground">
+      {/* Sliding wrapper — sidebar + content translate as one unit on mobile; plain flex row on desktop */}
+      <div className={cn("flex h-full transition-transform duration-200", sidebarOpen ? "translate-x-0" : "-translate-x-64", "md:translate-x-0")}>
+      {/* Backdrop — mobile only: closes sidebar when tapping the content area */}
+      {sidebarOpen && (
+        <div
+          className="absolute inset-0 z-10 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+      <aside className={cn(
+        "relative z-20 flex flex-col shrink-0 border-r border-border bg-background w-64",
+        "md:transition-[width] md:duration-200",
+        sidebarOpen ? "md:w-64" : "md:w-0 md:border-r-0",
+      )}>
+        {/* Inner wrapper — clips content on desktop when collapsed; toggle button lives outside so it stays visible */}
+        <div className={cn("flex flex-col flex-1 min-h-0 w-64 overflow-hidden transition-[width] duration-200", !sidebarOpen && "md:w-0")}>
         {/* Logo / Site header */}
         <div className="flex h-14 items-center gap-2 px-4 border-b border-border">
           {projectId && currentProject ? (
@@ -477,6 +491,7 @@ export function DocsLayout() {
             Sign out
           </Button>
         </div>
+        </div>
         <button
           onClick={() => setSidebarOpen(v => !v)}
           aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
@@ -486,16 +501,8 @@ export function DocsLayout() {
         </button>
       </aside>
 
-      {/* Backdrop — dims content and closes sidebar on click */}
-      {sidebarOpen && (
-        <div
-          className="absolute inset-0 z-10"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
-      {/* Main content — full width, pushed right when sidebar open */}
-      <main className={cn("flex w-full flex-col overflow-hidden transition-transform duration-200", sidebarOpen ? "translate-x-64" : "translate-x-0")}>
+      {/* Main content */}
+      <main className="flex flex-col overflow-hidden min-w-full md:min-w-0 md:flex-1">
         {/* Breadcrumb bar — always at the top */}
         {breadcrumbs.length > 0 && (
           <div className="shrink-0 flex h-14 items-center gap-1 px-6 border-b border-border bg-background text-sm">
@@ -528,6 +535,7 @@ export function DocsLayout() {
           <Outlet context={outletContext} />
         </div>
       </main>
+      </div>
       <Toaster />
     </div>
   );
