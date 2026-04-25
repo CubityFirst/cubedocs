@@ -1,0 +1,1 @@
+ALTER TABLE project_members ADD COLUMN accepted INTEGER NOT NULL DEFAULT 1;

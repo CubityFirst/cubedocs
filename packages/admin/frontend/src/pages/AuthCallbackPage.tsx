@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { exchangeAdminHandoff } from "@/lib/api";
+import { AdminHandoffError, exchangeAdminHandoff } from "@/lib/api";
 import { setToken } from "@/lib/auth";
 import { buildDocsAdminLoginUrl, normalizeAdminNextPath } from "@/lib/handoff";
 
@@ -45,9 +45,13 @@ export function AuthCallbackPage({ onAuthenticated }: AuthCallbackPageProps) {
         if (!cancelled) {
           navigate(nextPath, { replace: true });
         }
-      } catch {
+      } catch (err) {
         if (!cancelled) {
-          setError("The admin sign-in handoff expired or failed. Please try again.");
+          if (err instanceof AdminHandoffError && err.code === "not_admin") {
+            setError("This CubeDocs account does not have admin access.");
+          } else {
+            setError("The admin sign-in handoff expired or failed. Please try again.");
+          }
         }
       }
     }

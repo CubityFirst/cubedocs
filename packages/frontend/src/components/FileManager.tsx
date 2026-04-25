@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useLocation, useOutletContext } from "react-router-dom";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
-import { Folder, FileText, House, Plus, FolderPlus, Search, X, Download, Upload, Image, FileCode, FileArchive, File, Trash2, Pencil, Link, Sparkles } from "lucide-react";
+import { Folder, FileText, House, Plus, FolderPlus, Search, X, Download, Upload, Image, FileCode, FileArchive, File, Music, Trash2, Pencil, Link, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -50,6 +50,7 @@ interface FileItem {
 
 function FileIcon({ mimeType, className }: { mimeType: string; className?: string }) {
   if (mimeType.startsWith("image/")) return <Image className={className} />;
+  if (mimeType.startsWith("audio/")) return <Music className={className} />;
   if (mimeType === "application/json" || mimeType.startsWith("text/")) return <FileCode className={className} />;
   if (mimeType.includes("zip") || mimeType.includes("tar") || mimeType.includes("gzip") || mimeType.includes("archive")) return <FileArchive className={className} />;
   return <File className={className} />;

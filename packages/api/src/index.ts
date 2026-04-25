@@ -9,6 +9,7 @@ import { handleFiles } from "./routes/files";
 import { handleAi } from "./routes/ai";
 import { handleInviteLinks, handleInvitePublic } from "./routes/inviteLinks";
 import { handleDocShares } from "./routes/docShares";
+import { handlePendingInvites } from "./routes/pendingInvites";
 
 export interface Env {
   DB: D1Database;
@@ -66,7 +67,7 @@ export default {
         const authRes = await env.AUTH.fetch(`https://auth${webauthnPath}`, {
           method: "POST",
           headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
-          body: JSON.stringify(body),
+          body: JSON.stringify({ ...body, userId: session.userId }),
         });
         return addCorsHeaders(authRes);
       }
@@ -100,12 +101,12 @@ export default {
         const lookupRes = await env.AUTH.fetch("https://auth/lookup-by-id", {
           method: "POST",
           headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
-          body: JSON.stringify({}),
+          body: JSON.stringify({ userId: session.userId }),
         });
         if (!lookupRes.ok) return addCorsHeaders(errorResponse(Errors.INTERNAL));
-        const data = await lookupRes.json<{ ok: boolean; data?: { name: string; email: string } }>();
+        const data = await lookupRes.json<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean } }>();
         if (!data.ok || !data.data) return addCorsHeaders(errorResponse(Errors.INTERNAL));
-        return addCorsHeaders(Response.json({ ok: true, data: { name: data.data.name, email: data.data.email, userId: session.userId } }));
+        return addCorsHeaders(Response.json({ ok: true, data: { name: data.data.name, email: data.data.email, emailVerified: data.data.emailVerified, emailVerificationEnabled: data.data.emailVerificationEnabled, userId: session.userId } }));
       }
 
       // PATCH /me — update authenticated user's name
@@ -128,8 +129,12 @@ export default {
         return addCorsHeaders(Response.json({ ok: true, data: { name: trimmedName } }));
       }
 
-      // Public (unauthenticated) routes
-      if (url.pathname.startsWith("/public")) {
+      // Pending invites
+      if (url.pathname.startsWith("/pending-invites")) {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        response = await handlePendingInvites(request, env, session, url);
+      } else if (url.pathname.startsWith("/public")) {
         response = await handlePublic(request, env, url);
       } else if (url.pathname.startsWith("/invites/")) {
         response = await handleInvitePublic(request, env, url);

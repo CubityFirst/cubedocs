@@ -835,7 +835,7 @@ export function DocPage() {
                   <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
                     <DialogContent className="sm:max-w-md">
                       <DialogHeader>
-                        <DialogTitle>Limited Viewer Access</DialogTitle>
+                        <DialogTitle>Guest Access</DialogTitle>
                         <DialogDescription>
                           Control which limited viewers can read this document.
                         </DialogDescription>

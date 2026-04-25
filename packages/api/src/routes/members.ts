@@ -6,11 +6,11 @@ const VALID_ROLES: Role[] = ["limited", "viewer", "editor", "admin", "owner"];
 
 interface MemberRow {
   id: string; project_id: string; user_id: string; email: string; name: string;
-  role: Role; invited_by: string; created_at: string;
+  role: Role; invited_by: string; created_at: string; accepted: number;
 }
 
 async function getCallerRole(db: D1Database, projectId: string, userId: string): Promise<Role | null> {
-  const row = await db.prepare("SELECT role FROM project_members WHERE project_id = ? AND user_id = ?")
+  const row = await db.prepare("SELECT role FROM project_members WHERE project_id = ? AND user_id = ? AND accepted = 1")
     .bind(projectId, userId).first<{ role: Role }>();
   return row?.role ?? null;
 }
@@ -45,6 +45,7 @@ export async function handleMembers(
       email: r.email,
       name: r.name,
       role: r.role,
+      accepted: r.accepted === 1,
       invitedBy: r.invited_by,
       createdAt: r.created_at,
     })));
@@ -85,10 +86,10 @@ export async function handleMembers(
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     await env.DB.prepare(
-      "INSERT INTO project_members (id, project_id, user_id, email, name, role, invited_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO project_members (id, project_id, user_id, email, name, role, invited_by, created_at, accepted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)",
     ).bind(id, projectId, inviteeId, inviteeEmail, inviteeName, body.role, user.userId, now).run();
 
-    return okResponse({ id, projectId, userId: inviteeId, email: inviteeEmail, name: inviteeName, role: body.role, invitedBy: user.userId, createdAt: now }, 201);
+    return okResponse({ id, projectId, userId: inviteeId, email: inviteeEmail, name: inviteeName, role: body.role, accepted: false, invitedBy: user.userId, createdAt: now }, 201);
   }
 
   // PATCH /projects/:id/members/:userId — admin/owner can change roles
@@ -126,8 +127,18 @@ export async function handleMembers(
     });
   }
 
-  // DELETE /projects/:id/members/:userId — admin/owner can remove
+  // DELETE /projects/:id/members/:userId — admin/owner can remove; any non-owner can remove themselves
   if (targetUserId && request.method === "DELETE") {
+    const isSelf = targetUserId === user.userId;
+
+    if (isSelf) {
+      // Allow any member to leave, except the owner
+      if (callerRole === "owner") return errorResponse(Errors.FORBIDDEN);
+      await env.DB.prepare("DELETE FROM project_members WHERE project_id = ? AND user_id = ?")
+        .bind(projectId, targetUserId).run();
+      return okResponse({ deleted: true });
+    }
+
     if (ROLE_RANK[callerRole] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
 
     const row = await env.DB.prepare("SELECT id, role FROM project_members WHERE project_id = ? AND user_id = ?")

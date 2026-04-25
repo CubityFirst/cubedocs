@@ -12,7 +12,7 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { use2FA } from "@/hooks/use2FA";
 import { getToken } from "@/lib/auth";
-import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy } from "lucide-react";
+import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertCircle } from "lucide-react";
 
 interface WebAuthnCredential {
   id: string;
@@ -24,6 +24,9 @@ export function UserSettingsPage() {
   const [name, setName] = useState("");
   const [currentName, setCurrentName] = useState("");
   const [email, setEmail] = useState("");
+  const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
+  const [emailVerificationEnabled, setEmailVerificationEnabled] = useState(false);
+  const [resendingVerification, setResendingVerification] = useState(false);
   const [saving, setSaving] = useState(false);
   const { toast } = useToast();
 
@@ -67,12 +70,14 @@ export function UserSettingsPage() {
     const token = getToken();
     if (!token) return;
     fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json() as Promise<{ ok: boolean; data?: { name: string; email: string } }>)
+      .then(r => r.json() as Promise<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean } }>)
       .then(json => {
         if (json.ok && json.data) {
           setCurrentName(json.data.name);
           setName(json.data.name);
           setEmail(json.data.email);
+          setEmailVerified(json.data.emailVerified);
+          setEmailVerificationEnabled(json.data.emailVerificationEnabled);
         }
       })
       .catch(() => {});
@@ -101,6 +106,24 @@ export function UserSettingsPage() {
       .catch(() => {})
       .finally(() => setWebauthnLoading(false));
   }, []);
+
+  async function handleResendVerification() {
+    if (!email) return;
+    setResendingVerification(true);
+    try {
+      const token = getToken();
+      await fetch("/api/verify-email/resend", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ email }),
+      });
+      toast({ title: "Verification email sent" });
+    } catch {
+      toast({ title: "Could not send verification email", variant: "destructive" });
+    } finally {
+      setResendingVerification(false);
+    }
+  }
 
   async function handleSaveName(e: React.FormEvent) {
     e.preventDefault();
@@ -403,7 +426,45 @@ export function UserSettingsPage() {
             <form onSubmit={handleSaveName} className="mt-4 flex flex-col gap-4">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="email">Email</Label>
-                <Input id="email" value={email} disabled className="max-w-sm" />
+                <div className="flex items-center gap-2 max-w-sm">
+                  <Input id="email" value={email} disabled className="flex-1" />
+                  {emailVerified === true && emailVerificationEnabled && (
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <button type="button" className="inline-flex shrink-0 focus:outline-none">
+                          <CheckCircle2 className="size-4 text-green-500" />
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent side="top" className="w-auto px-3 py-1.5 text-xs">
+                        Email verified
+                      </PopoverContent>
+                    </Popover>
+                  )}
+                  {emailVerified === false && emailVerificationEnabled && (
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <button type="button" className="inline-flex shrink-0 focus:outline-none">
+                          <AlertCircle className="size-4 text-amber-500" />
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent side="top" className="w-auto px-3 py-1.5 text-xs">
+                        Email not verified
+                      </PopoverContent>
+                    </Popover>
+                  )}
+                </div>
+                {emailVerified === false && emailVerificationEnabled && (
+                  <Button
+                    type="button"
+                    variant="link"
+                    size="sm"
+                    className="w-fit px-0 h-auto text-xs"
+                    onClick={handleResendVerification}
+                    disabled={resendingVerification}
+                  >
+                    {resendingVerification ? "Sending…" : "Resend verification email"}
+                  </Button>
+                )}
               </div>
 
               <div className="flex flex-col gap-1.5">

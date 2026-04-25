@@ -18,7 +18,7 @@ interface InviteLinkRow {
 }
 
 async function getCallerRole(db: D1Database, projectId: string, userId: string): Promise<Role | null> {
-  const row = await db.prepare("SELECT role FROM project_members WHERE project_id = ? AND user_id = ?")
+  const row = await db.prepare("SELECT role FROM project_members WHERE project_id = ? AND user_id = ? AND accepted = 1")
     .bind(projectId, userId).first<{ role: Role }>();
   return row?.role ?? null;
 }
@@ -157,11 +157,21 @@ export async function handleInvitePublic(
       return Response.json({ ok: false, error: "This invite link has reached its maximum uses.", status: 410 }, { status: 410 });
     }
 
-    // Check if already a member
-    const existing = await env.DB.prepare("SELECT role FROM project_members WHERE project_id = ? AND user_id = ?")
-      .bind(link.project_id, session.userId).first<{ role: Role }>();
+    // Check if already a member (accepted or pending email invite)
+    const existing = await env.DB.prepare("SELECT id, role, accepted FROM project_members WHERE project_id = ? AND user_id = ?")
+      .bind(link.project_id, session.userId).first<{ id: string; role: Role; accepted: number }>();
     if (existing) {
-      return Response.json({ ok: true, data: { projectId: link.project_id, alreadyMember: true, role: existing.role } });
+      if (existing.accepted === 1) {
+        return Response.json({ ok: true, data: { projectId: link.project_id, alreadyMember: true, role: existing.role } });
+      }
+      // Pending email invite — accept it via the link
+      await env.DB.batch([
+        env.DB.prepare("UPDATE project_members SET accepted = 1, role = ? WHERE id = ?")
+          .bind(link.role, existing.id),
+        env.DB.prepare("UPDATE project_invite_links SET use_count = use_count + 1 WHERE id = ?")
+          .bind(token),
+      ]);
+      return okResponse({ projectId: link.project_id, role: link.role }, 201);
     }
 
     // Look up user info from auth worker
@@ -178,7 +188,7 @@ export async function handleInvitePublic(
     const now = new Date().toISOString();
     await env.DB.batch([
       env.DB.prepare(
-        "INSERT INTO project_members (id, project_id, user_id, email, name, role, invited_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO project_members (id, project_id, user_id, email, name, role, invited_by, created_at, accepted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)",
       ).bind(memberId, link.project_id, session.userId, lookupData.data.email, lookupData.data.name, link.role, link.created_by, now),
       env.DB.prepare("UPDATE project_invite_links SET use_count = use_count + 1 WHERE id = ?")
         .bind(token),

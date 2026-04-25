@@ -175,13 +175,19 @@ export async function verifyAdminSession(): Promise<AdminAuthSession> {
   return json.data;
 }
 
+export class AdminHandoffError extends Error {
+  constructor(public readonly code: string) {
+    super(code);
+  }
+}
+
 export async function exchangeAdminHandoff(code: string, callbackUrl: string): Promise<AdminHandoffExchange> {
   const res = await fetch("/api/auth/handoff/exchange", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ code, callbackUrl }),
   });
-  const json = (await res.json()) as { ok: boolean; data?: AdminHandoffExchange };
-  if (!json.ok || !json.data) throw new Error("Failed to exchange admin handoff");
+  const json = (await res.json()) as { ok: boolean; data?: AdminHandoffExchange; error?: string };
+  if (!json.ok || !json.data) throw new AdminHandoffError(json.error ?? "unknown");
   return json.data;
 }

@@ -4,7 +4,7 @@ import type { Env } from "../index";
 const VANITY_SLUG_REGEX = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/;
 
 async function getCallerRole(db: D1Database, projectId: string, userId: string): Promise<Role | null> {
-  const row = await db.prepare("SELECT role FROM project_members WHERE project_id = ? AND user_id = ?")
+  const row = await db.prepare("SELECT role FROM project_members WHERE project_id = ? AND user_id = ? AND accepted = 1")
     .bind(projectId, userId).first<{ role: Role }>();
   return row?.role ?? null;
 }
@@ -21,8 +21,8 @@ export async function handleProjects(
   // GET /projects — list projects where user is a member (includes owned)
   if (!projectId && request.method === "GET") {
     const rows = await env.DB.prepare(
-      "SELECT p.*, pm.role, (SELECT COUNT(*) FROM docs WHERE project_id = p.id) as doc_count, (SELECT COUNT(*) FROM project_members WHERE project_id = p.id) as member_count FROM projects p INNER JOIN project_members pm ON pm.project_id = p.id WHERE pm.user_id = ? ORDER BY p.created_at DESC",
-    ).bind(user.userId).all<Project & { role: Role; doc_count: number; member_count: number }>();
+      "SELECT p.*, pm.role, pm.is_favourite, (SELECT COUNT(*) FROM docs WHERE project_id = p.id) as doc_count, (SELECT COUNT(*) FROM project_members WHERE project_id = p.id AND accepted = 1) as member_count FROM projects p INNER JOIN project_members pm ON pm.project_id = p.id WHERE pm.user_id = ? AND pm.accepted = 1 ORDER BY pm.is_favourite DESC, p.created_at DESC",
+    ).bind(user.userId).all<Project & { role: Role; is_favourite: number; doc_count: number; member_count: number }>();
     return okResponse(rows.results);
   }
 
@@ -51,7 +51,7 @@ export async function handleProjects(
     ).bind(id, body.name, body.description ?? null, user.userId, now).run();
 
     await env.DB.prepare(
-      "INSERT INTO project_members (id, project_id, user_id, email, name, role, invited_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO project_members (id, project_id, user_id, email, name, role, invited_by, created_at, accepted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)",
     ).bind(crypto.randomUUID(), id, user.userId, user.email, ownerName, "owner", user.userId, now).run();
 
     return okResponse({ id, name: body.name, ownerId: user.userId, createdAt: now }, 201);
@@ -63,7 +63,18 @@ export async function handleProjects(
     if (role === null) return errorResponse(Errors.NOT_FOUND);
     const row = await env.DB.prepare("SELECT * FROM projects WHERE id = ?").bind(projectId).first<Project>();
     if (!row) return errorResponse(Errors.NOT_FOUND);
-    return okResponse(row);
+    return okResponse({ ...row, role });
+  }
+
+  // PATCH /projects/:id/favourite — toggle favourite for current user
+  if (projectId && parts[1] === "favourite" && request.method === "PATCH") {
+    const row = await env.DB.prepare("SELECT is_favourite FROM project_members WHERE project_id = ? AND user_id = ? AND accepted = 1")
+      .bind(projectId, user.userId).first<{ is_favourite: number }>();
+    if (row === null) return errorResponse(Errors.NOT_FOUND);
+    const next = row.is_favourite ? 0 : 1;
+    await env.DB.prepare("UPDATE project_members SET is_favourite = ? WHERE project_id = ? AND user_id = ?")
+      .bind(next, projectId, user.userId).run();
+    return okResponse({ is_favourite: next });
   }
 
   // PATCH /projects/:id — admin or owner

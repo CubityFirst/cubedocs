@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { getToken } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import { BookOpen, FileText, Folder, House, ChevronLeft, ChevronRight, Search, X, Image, FileCode, FileArchive, File, Download, ImageOff } from "lucide-react";
+import { BookOpen, FileText, Folder, House, ChevronLeft, ChevronRight, Search, X, Image, FileCode, FileArchive, File, Music, Download, ImageOff } from "lucide-react";
 
 function toId(text: string): string {
   return text.toLowerCase().replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-");
@@ -150,6 +150,7 @@ function formatBytes(bytes: number): string {
 
 function FileTypeIcon({ mimeType, className }: { mimeType: string; className?: string }) {
   if (mimeType.startsWith("image/")) return <Image className={className} />;
+  if (mimeType.startsWith("audio/")) return <Music className={className} />;
   if (mimeType === "application/json" || mimeType.startsWith("text/")) return <FileCode className={className} />;
   if (mimeType.includes("zip") || mimeType.includes("tar") || mimeType.includes("gzip") || mimeType.includes("archive")) return <FileArchive className={className} />;
   return <File className={className} />;
@@ -368,6 +369,12 @@ function PublicFileView({ file, projectId }: { file: NavFile; projectId: string 
             alt={file.name}
             className="max-h-[60vh] w-full object-contain"
           />
+        </div>
+      )}
+
+      {file.mime_type.startsWith("audio/") && (
+        <div className="mt-8 rounded-xl border border-border bg-muted/30 p-4">
+          <audio controls src={`/api/public/files/${file.id}/content?projectId=${projectId}`} className="w-full" />
         </div>
       )}
 

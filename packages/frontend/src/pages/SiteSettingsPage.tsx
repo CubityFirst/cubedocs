@@ -72,6 +72,7 @@ interface Project {
   ai_enabled: number;
   ai_summarization_type: string;
   home_doc_id: string | null;
+  role: Role;
 }
 
 interface Member {
@@ -80,6 +81,7 @@ interface Member {
   email: string;
   name: string;
   role: Role;
+  accepted: boolean;
 }
 
 interface InviteLink {
@@ -157,6 +159,10 @@ export function SiteSettingsPage() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
+  const [leaveOpen, setLeaveOpen] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const [leaveError, setLeaveError] = useState<string | null>(null);
+
   const [togglingPublish, setTogglingPublish] = useState(false);
   const [togglingChangelog, setTogglingChangelog] = useState(false);
   const [togglingAi, setTogglingAi] = useState(false);
@@ -181,10 +187,7 @@ export function SiteSettingsPage() {
           setName(json.data.name);
           setDescription(json.data.description ?? "");
           setVanitySlug(json.data.vanity_slug ?? "");
-          // Determine role if user is the owner (before members load)
-          if (currentUser && json.data.owner_id === currentUser.userId) {
-            setMyRole("owner");
-          }
+          setMyRole(json.data.role);
         }
       })
       .catch(() => {});
@@ -261,7 +264,7 @@ export function SiteSettingsPage() {
       if (json.ok && json.data) {
         setMembers(prev => [...prev, json.data!]);
         setInviteEmail("");
-        toast({ title: `${json.data.name} added as ${ROLE_LABELS[json.data.role]}.` });
+        toast({ title: `Invite sent to ${json.data.email}.` });
       } else {
         setInviteError((json as { error?: string }).error ?? "Failed to add member.");
       }
@@ -303,9 +306,9 @@ export function SiteSettingsPage() {
       const json = await res.json() as { ok: boolean };
       if (json.ok) {
         setMembers(prev => prev.filter(m => m.userId !== member.userId));
-        toast({ title: `${member.name} removed.` });
+        toast({ title: member.accepted ? `${member.name} removed.` : `Invite to ${member.email} canceled.` });
       } else {
-        toast({ title: "Failed to remove member.", variant: "destructive" });
+        toast({ title: member.accepted ? "Failed to remove member." : "Failed to cancel invite.", variant: "destructive" });
       }
     } catch {
       toast({ title: "Could not connect to the server.", variant: "destructive" });
@@ -522,6 +525,28 @@ export function SiteSettingsPage() {
     }
   }
 
+  async function handleLeave() {
+    if (!projectId || !currentUser) return;
+    setLeaving(true);
+    setLeaveError(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/members/${currentUser.userId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json() as { ok: boolean };
+      if (json.ok) {
+        navigate("/dashboard");
+      } else {
+        setLeaveError("Failed to leave site.");
+      }
+    } catch {
+      setLeaveError("Could not connect to the server.");
+    } finally {
+      setLeaving(false);
+    }
+  }
+
   async function handleDelete() {
     if (!projectId) return;
     setDeleting(true);
@@ -547,6 +572,21 @@ export function SiteSettingsPage() {
   const isAdminOrOwner = myRole !== null && ROLE_RANK[myRole] >= ROLE_RANK["admin"];
   const isOwner = myRole === "owner";
 
+  function scrollToSection(id: string) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const container = el.closest(".overflow-y-auto");
+    if (container) {
+      const containerTop = container.getBoundingClientRect().top;
+      const elTop = el.getBoundingClientRect().top;
+      const offset = elTop - containerTop + container.scrollTop;
+      const maxScroll = container.scrollHeight - container.clientHeight;
+      container.scrollTo({ top: Math.min(offset, maxScroll), behavior: "smooth" });
+    } else {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+
   if (!project) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -562,12 +602,12 @@ export function SiteSettingsPage() {
         <aside className="hidden md:block w-40 shrink-0">
           <nav className="sticky top-10 flex flex-col">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">On this page</p>
-            <a href="#general" className="py-1 text-sm text-muted-foreground transition-colors hover:text-foreground">General</a>
-            {isAdminOrOwner && <a href="#publishing" className="py-1 text-sm text-muted-foreground transition-colors hover:text-foreground">Publishing</a>}
-            {isAdminOrOwner && !!(project.features & 1) && <a href="#custom-link" className="py-1 text-sm text-muted-foreground transition-colors hover:text-foreground flex items-center gap-1.5">Custom Link <PremiumBadge /></a>}
-            {isAdminOrOwner && <a href="#features" className="py-1 text-sm text-muted-foreground transition-colors hover:text-foreground">Features</a>}
-            {isAdminOrOwner && <a href="#members" className="py-1 text-sm text-muted-foreground transition-colors hover:text-foreground">Members</a>}
-            {isOwner && <a href="#danger" className="py-1 text-sm text-destructive/70 transition-colors hover:text-destructive">Danger Zone</a>}
+            <button onClick={() => scrollToSection("general")} className="py-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground">General</button>
+            {isAdminOrOwner && <button onClick={() => scrollToSection("publishing")} className="py-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground">Publishing</button>}
+            {isAdminOrOwner && !!(project.features & 1) && <button onClick={() => scrollToSection("custom-link")} className="py-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground flex items-center gap-1.5">Custom Link <PremiumBadge /></button>}
+            {isAdminOrOwner && <button onClick={() => scrollToSection("features")} className="py-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground">Features</button>}
+            {isAdminOrOwner && <button onClick={() => scrollToSection("members")} className="py-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground">Members</button>}
+            {myRole !== null && <button onClick={() => scrollToSection("danger")} className="py-1 text-left text-sm text-destructive/70 transition-colors hover:text-destructive">Danger Zone</button>}
           </nav>
         </aside>
 
@@ -862,8 +902,9 @@ export function SiteSettingsPage() {
               <div className="flex flex-col divide-y divide-border rounded-md border border-border">
                 {members.map(member => {
                   const isMe = member.userId === currentUser?.userId;
+                  const isPending = !member.accepted;
                   const canManage = isOwner || (myRole === "admin" && ROLE_RANK[member.role] < ROLE_RANK["admin"]);
-                  const canChangeRole = canManage && member.role !== "owner" && !isMe;
+                  const canChangeRole = !isPending && canManage && member.role !== "owner" && !isMe;
                   const canRemove = canManage && member.role !== "owner" && !isMe;
 
                   return (
@@ -876,39 +917,43 @@ export function SiteSettingsPage() {
                         <span className="truncate text-xs text-muted-foreground">{member.email}</span>
                       </div>
 
-                      {canChangeRole ? (
-                        <Select
-                          value={member.role}
-                          onValueChange={val => handleRoleChange(member, val as Role)}
-                        >
-                          <SelectTrigger className="h-7 w-28 text-xs">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {(isOwner ? ASSIGNABLE_ROLES : ASSIGNABLE_ROLES.filter(r => ROLE_RANK[r] < ROLE_RANK["admin"])).map(role => (
-                              <SelectItem key={role} value={role} className="text-xs">
-                                {ROLE_LABELS[role]}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <RoleBadge role={member.role} />
-                      )}
+                      <div className="flex shrink-0 items-center gap-3">
+                        {isPending ? (
+                          <Badge variant="outline" className="text-xs font-medium bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800">
+                            Pending
+                          </Badge>
+                        ) : canChangeRole ? (
+                          <Select
+                            value={member.role}
+                            onValueChange={val => handleRoleChange(member, val as Role)}
+                          >
+                            <SelectTrigger className="h-7 w-28 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {(isOwner ? ASSIGNABLE_ROLES : ASSIGNABLE_ROLES.filter(r => ROLE_RANK[r] < ROLE_RANK["admin"])).map(role => (
+                                <SelectItem key={role} value={role} className="text-xs">
+                                  {ROLE_LABELS[role]}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <RoleBadge role={member.role} />
+                        )}
 
-                      {canRemove ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
-                          disabled={removingId === member.userId}
-                          onClick={() => handleRemove(member)}
-                        >
-                          {removingId === member.userId ? "Removing…" : "Remove"}
-                        </Button>
-                      ) : (
-                        <div className="w-[70px]" />
-                      )}
+                        {canRemove && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+                            disabled={removingId === member.userId}
+                            onClick={() => handleRemove(member)}
+                          >
+                            {removingId === member.userId ? (isPending ? "Canceling…" : "Removing…") : (isPending ? "Cancel" : "Remove")}
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -1059,45 +1104,85 @@ export function SiteSettingsPage() {
         </>
       )}
 
-      {/* Danger zone — owner only */}
-      {isOwner && (
+      {/* Danger zone */}
+      {myRole !== null && (
         <>
           <Separator className="my-10" />
 
           <div id="danger" className="flex flex-col gap-3">
             <h3 className="text-base font-semibold text-destructive">Danger Zone</h3>
-            <p className="text-sm text-muted-foreground">
-              Deleting this site will permanently remove all of its documents and members. This action cannot be undone.
-            </p>
 
-            <AlertDialog open={deleteOpen} onOpenChange={open => { setDeleteOpen(open); if (!open) setDeleteError(null); }}>
-              <AlertDialogTrigger asChild>
-                <Button variant="destructive" className="self-start">Delete site</Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Delete "{project.name}"?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    This will permanently delete the site and all of its documents. This action cannot be undone.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                {deleteError && (
-                  <Alert variant="destructive">
-                    <AlertDescription>{deleteError}</AlertDescription>
-                  </Alert>
-                )}
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                    disabled={deleting}
-                    onClick={handleDelete}
-                  >
-                    {deleting ? "Deleting…" : "Yes, delete"}
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+            {isOwner ? (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  Deleting this site will permanently remove all of its documents and members. This action cannot be undone.
+                </p>
+
+                <AlertDialog open={deleteOpen} onOpenChange={open => { setDeleteOpen(open); if (!open) setDeleteError(null); }}>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="destructive" className="self-start">Delete site</Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete "{project.name}"?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will permanently delete the site and all of its documents. This action cannot be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    {deleteError && (
+                      <Alert variant="destructive">
+                        <AlertDescription>{deleteError}</AlertDescription>
+                      </Alert>
+                    )}
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        disabled={deleting}
+                        onClick={handleDelete}
+                      >
+                        {deleting ? "Deleting…" : "Yes, delete"}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  Leaving this site will remove your access. You will need to be re-invited to regain access.
+                </p>
+
+                <AlertDialog open={leaveOpen} onOpenChange={open => { setLeaveOpen(open); if (!open) setLeaveError(null); }}>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="destructive" className="self-start">Leave site</Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Leave "{project.name}"?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        You will lose access to this site immediately. You will need to be re-invited to regain access.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    {leaveError && (
+                      <Alert variant="destructive">
+                        <AlertDescription>{leaveError}</AlertDescription>
+                      </Alert>
+                    )}
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        disabled={leaving}
+                        onClick={handleLeave}
+                      >
+                        {leaving ? "Leaving…" : "Yes, leave"}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </>
+            )}
           </div>
         </>
       )}

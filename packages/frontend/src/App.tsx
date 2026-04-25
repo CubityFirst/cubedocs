@@ -14,6 +14,7 @@ import { SiteSettingsPage } from "./pages/SiteSettingsPage";
 import { UserSettingsPage } from "./pages/UserSettingsPage";
 import { PublicDocPage } from "./pages/PublicDocPage";
 import { AcceptInvitePage } from "./pages/AcceptInvitePage";
+import { PendingInvitesPage } from "./pages/PendingInvitesPage";
 
 export function App() {
   return (
@@ -30,6 +31,7 @@ export function App() {
         <Route path="/projects/:projectId/files/:fileId" element={<FilePage />} />
         <Route path="/projects/:projectId/settings" element={<SiteSettingsPage />} />
         <Route path="/settings" element={<UserSettingsPage />} />
+        <Route path="/invites/pending" element={<PendingInvitesPage />} />
       </Route>
       <Route path="/invite/:token" element={<AcceptInvitePage />} />
       <Route path="/s/:projectId" element={<PublicDocPage />} />

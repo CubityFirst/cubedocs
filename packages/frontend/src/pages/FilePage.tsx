@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, useOutletContext, useLocation, useNavigate } from "react-router-dom";
-import { Image, FileCode, FileArchive, FileText, File, Download, Link, Check } from "lucide-react";
+import { Image, FileCode, FileArchive, FileText, File, Music, Download, Link, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { AuthenticatedImage } from "@/components/AuthenticatedImage";
@@ -20,6 +20,7 @@ interface FileRecord {
 
 function FileTypeIcon({ mimeType, className }: { mimeType: string; className?: string }) {
   if (mimeType.startsWith("image/")) return <Image className={className} />;
+  if (mimeType.startsWith("audio/")) return <Music className={className} />;
   if (mimeType === "application/json" || mimeType.startsWith("text/")) return <FileCode className={className} />;
   if (mimeType.includes("zip") || mimeType.includes("tar") || mimeType.includes("gzip") || mimeType.includes("archive")) return <FileArchive className={className} />;
   if (mimeType === "application/pdf") return <FileText className={className} />;
@@ -48,6 +49,7 @@ export function FilePage() {
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [audioBlobUrl, setAudioBlobUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (!fileId) return;
@@ -65,10 +67,19 @@ export function FilePage() {
             onClick: () => navigate(basePath, { state: { restorePath: rawPath.slice(0, i + 1) } }),
           }));
           setBreadcrumbs([...folderCrumbs, { id: fileId ?? null, name: json.data.name }]);
+          if (json.data.mime_type.startsWith("audio/")) {
+            fetch(`/api/files/${fileId}/content`, { headers: { Authorization: `Bearer ${token}` } })
+              .then(r => r.blob())
+              .then(blob => setAudioBlobUrl(URL.createObjectURL(blob)))
+              .catch(() => {});
+          }
         }
       })
       .catch(() => {})
       .finally(() => setLoading(false));
+    return () => {
+      setAudioBlobUrl(prev => { if (prev) URL.revokeObjectURL(prev); return null; });
+    };
   }, [fileId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleDownload() {
@@ -137,6 +148,12 @@ export function FilePage() {
             projectId={projectId}
             className="max-h-[60vh] w-full object-contain"
           />
+        </div>
+      )}
+
+      {file.mime_type.startsWith("audio/") && audioBlobUrl && (
+        <div className="mt-6 rounded-lg border border-border bg-muted/30 p-4">
+          <audio controls src={audioBlobUrl} className="w-full" />
         </div>
       )}
 

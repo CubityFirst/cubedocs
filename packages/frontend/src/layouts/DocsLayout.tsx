@@ -34,6 +34,7 @@ interface Project {
   changelog_mode: string;
   ai_enabled: number;
   ai_summarization_type: string;
+  is_favourite: number;
 }
 
 interface Doc {
@@ -210,7 +211,7 @@ export function DocsLayout() {
           navigate("/login", { replace: true, state: { from: location.pathname } });
           return;
         }
-        if (json.ok && json.data) setProjects(json.data);
+        if (json.ok && json.data) setProjects([...json.data].sort((a, b) => b.is_favourite - a.is_favourite));
       })
       .catch(() => {});
   }, [navigate]); // eslint-disable-line react-hooks/exhaustive-deps
