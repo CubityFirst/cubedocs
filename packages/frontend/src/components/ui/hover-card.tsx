@@ -4,7 +4,7 @@ import { HoverCard as HoverCardPrimitive } from "radix-ui"
 import { cn } from "@/lib/utils"
 
 function HoverCard({
-  openDelay = 200,
+  openDelay = 500,
   closeDelay = 150,
   ...props
 }: React.ComponentProps<typeof HoverCardPrimitive.Root>) {
