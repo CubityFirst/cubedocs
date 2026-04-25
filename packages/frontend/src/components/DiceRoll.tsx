@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { Dices } from "lucide-react";
 import {
   Tooltip,
@@ -326,6 +326,8 @@ function tryRoll(notation: string): RollResult | null {
 
 export function DiceRoll({ notation }: DiceRollProps) {
   const [result, setResult] = useState<RollResult | "invalid" | null>(null);
+  const [tooltipOpen, setTooltipOpen] = useState(false);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const doRoll = useCallback(
     (e: React.MouseEvent) => {
@@ -335,6 +337,20 @@ export function DiceRoll({ notation }: DiceRollProps) {
     },
     [notation],
   );
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    longPressTimer.current = setTimeout(() => {
+      e.preventDefault();
+      setTooltipOpen(true);
+    }, 500);
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }, []);
 
   if (result === "invalid") {
     return (
@@ -374,10 +390,13 @@ export function DiceRoll({ notation }: DiceRollProps) {
 
   return (
     <TooltipProvider>
-      <Tooltip>
+      <Tooltip open={tooltipOpen || undefined} onOpenChange={setTooltipOpen}>
         <TooltipTrigger asChild>
           <button
             onClick={doRoll}
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+            onTouchMove={handleTouchEnd}
             className="inline-flex items-center gap-1 rounded bg-zinc-700/60 px-1.5 py-0.5 text-[0.875em] text-zinc-200 font-mono select-none not-prose hover:bg-zinc-700 transition-colors cursor-pointer"
             aria-label="Re-roll"
           >
