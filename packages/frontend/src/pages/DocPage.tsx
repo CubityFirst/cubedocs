@@ -803,9 +803,9 @@ export function DocPage() {
     <div className="flex min-h-full">
       {/* Article */}
       <div className="flex-1 min-w-0 px-6 py-10">
-        <div className="mx-auto max-w-3xl relative">
+        <div className="mx-auto max-w-3xl md:relative">
           {/* Top-right actions */}
-          <div className="absolute top-0 right-0 flex items-center gap-1">
+          <div className="flex justify-end gap-1 mb-2 md:absolute md:top-0 md:right-0 md:mb-0">
             {!viewingRevision && aiEnabled && aiSummarizationType === "manual" && (
               <Button variant="ghost" size="icon" title="Generate AI summary" onClick={generateSummary} disabled={aiSummaryLoading}>
                 <Sparkles className="h-4 w-4 text-violet-500" />

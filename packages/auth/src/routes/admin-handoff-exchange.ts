@@ -8,11 +8,7 @@ export async function handleAdminHandoffExchange(request: Request, env: Env): Pr
   const body = await request.json<{ code?: string; callbackUrl?: string }>();
   if (!body.code || !body.callbackUrl) return errorResponse(Errors.BAD_REQUEST);
 
-  const normalizedCallbackUrl = normalizeAdminCallbackUrl(
-    body.callbackUrl,
-    env,
-    request.headers.get("Origin"),
-  );
+  const normalizedCallbackUrl = normalizeAdminCallbackUrl(body.callbackUrl, env);
   if (!normalizedCallbackUrl) return errorResponse(Errors.BAD_REQUEST);
 
   const now = Date.now();

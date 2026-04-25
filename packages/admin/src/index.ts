@@ -20,7 +20,12 @@ async function enforceAdmin(c: { req: { raw: Request }; env: Env }, next: () => 
 }
 
 app.post("/api/auth/handoff/exchange", async (c) => {
-  return c.env.AUTH.fetch(new Request("https://auth/admin/handoff/exchange", c.req.raw));
+  const body = await c.req.json();
+  return c.env.AUTH.fetch("https://auth/admin/handoff/exchange", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 });
 
 app.get("/api/verify", async (c) => {

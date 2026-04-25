@@ -1,4 +1,5 @@
 import { useState, useEffect, type Dispatch, type SetStateAction } from "react";
+import { useSwipeGesture } from "@/hooks/useSwipeGesture";
 import { cn } from "@/lib/utils";
 import { Outlet, useMatch, useNavigate, useLocation, NavLink } from "react-router-dom";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -158,7 +159,13 @@ function ProjectSwitcher({
 }
 
 export function DocsLayout() {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 768);
+
+  useSwipeGesture({
+    onSwipeLeft: () => setSidebarOpen(false),
+    onSwipeRight: () => setSidebarOpen(true),
+  });
+
   const [projects, setProjects] = useState<Project[]>([]);
   const [docs, setDocs] = useState<Doc[]>([]);
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([]);
@@ -311,10 +318,9 @@ export function DocsLayout() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background text-foreground">
-      {/* Sidebar */}
-      <div className="relative shrink-0">
-      <aside className={cn("flex h-full flex-col border-r border-border transition-[width] duration-200 overflow-hidden", sidebarOpen ? "w-64" : "w-0")}>
+    <div className="relative flex h-screen overflow-hidden bg-background text-foreground">
+      {/* Sidebar — absolutely positioned so it overlays content without causing reflow */}
+      <aside className={cn("absolute inset-y-0 left-0 z-20 flex w-64 flex-col border-r border-border bg-background transition-transform duration-200", sidebarOpen ? "translate-x-0" : "-translate-x-full")}>
         {/* Logo / Site header */}
         <div className="flex h-14 items-center gap-2 px-4 border-b border-border">
           {projectId && currentProject ? (
@@ -471,18 +477,25 @@ export function DocsLayout() {
             Sign out
           </Button>
         </div>
+        <button
+          onClick={() => setSidebarOpen(v => !v)}
+          aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+          className="absolute top-1/2 -translate-y-1/2 -right-3 z-10 flex h-10 w-3 items-center justify-center rounded-r-full border border-l-0 border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+        >
+          <ChevronLeft className={cn("h-2.5 w-2.5 transition-transform duration-200", !sidebarOpen && "rotate-180")} />
+        </button>
       </aside>
-      <button
-        onClick={() => setSidebarOpen(v => !v)}
-        aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
-        className="absolute top-1/2 -translate-y-1/2 -right-3 z-10 flex h-10 w-3 items-center justify-center rounded-r-full border border-l-0 border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-      >
-        <ChevronLeft className={cn("h-2.5 w-2.5 transition-transform duration-200", !sidebarOpen && "rotate-180")} />
-      </button>
-      </div>
 
-      {/* Main content */}
-      <main className="flex flex-1 flex-col overflow-hidden">
+      {/* Backdrop — dims content and closes sidebar on click */}
+      {sidebarOpen && (
+        <div
+          className="absolute inset-0 z-10"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* Main content — full width, pushed right when sidebar open */}
+      <main className={cn("flex w-full flex-col overflow-hidden transition-transform duration-200", sidebarOpen ? "translate-x-64" : "translate-x-0")}>
         {/* Breadcrumb bar — always at the top */}
         {breadcrumbs.length > 0 && (
           <div className="shrink-0 flex h-14 items-center gap-1 px-6 border-b border-border bg-background text-sm">

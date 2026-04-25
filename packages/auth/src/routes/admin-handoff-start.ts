@@ -16,11 +16,7 @@ export async function handleAdminHandoffStart(request: Request, env: Env): Promi
   const body = await request.json<{ returnTo?: string }>();
   if (!body.returnTo) return errorResponse(Errors.BAD_REQUEST);
 
-  const normalizedReturnTo = normalizeAdminCallbackUrl(
-    body.returnTo,
-    env,
-    request.headers.get("Origin"),
-  );
+  const normalizedReturnTo = normalizeAdminCallbackUrl(body.returnTo, env);
   if (!normalizedReturnTo) return errorResponse(Errors.BAD_REQUEST);
 
   const now = Date.now();

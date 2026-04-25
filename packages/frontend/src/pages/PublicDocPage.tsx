@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, isValidElement } from "react";
+import { useSwipeGesture } from "@/hooks/useSwipeGesture";
 import { useParams, useNavigate, NavLink } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -397,7 +398,12 @@ export function PublicDocPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFile, setSelectedFile] = useState<NavFile | null>(null);
   const [hasToken, setHasToken] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 768);
+
+  useSwipeGesture({
+    onSwipeLeft: () => setSidebarOpen(false),
+    onSwipeRight: () => setSidebarOpen(true),
+  });
 
   const markdownComponents = useMemo(() => ({
     ...baseMarkdownComponents,
@@ -483,10 +489,18 @@ export function PublicDocPage() {
 
   return (
     <div className="flex h-screen bg-background text-foreground">
+      {/* Mobile sidebar backdrop */}
+      {showNav && sidebarOpen && (
+        <div className="fixed inset-0 z-30 bg-black/20 md:hidden" onClick={() => setSidebarOpen(false)} aria-hidden="true" />
+      )}
       {/* Sidebar — only shown when the entire site is published */}
       {showNav && (
-        <div className="relative shrink-0">
-        <aside className={cn("flex h-full flex-col border-r border-border transition-[width] duration-200 overflow-hidden", sidebarOpen ? "w-64" : "w-0")}>
+        <div className={cn(
+          "fixed inset-y-0 left-0 z-40 transition-transform duration-200",
+          "md:relative md:inset-auto md:z-auto md:transition-none md:shrink-0",
+          sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+        )}>
+        <aside className={cn("flex h-full flex-col border-r border-border overflow-hidden w-64 md:transition-[width] md:duration-200", !sidebarOpen && "md:w-0")}>
           <div className="flex h-14 items-center gap-2 px-4">
             {hasToken && (
               <button
@@ -591,7 +605,7 @@ export function PublicDocPage() {
       )}
 
       {/* Main content */}
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className={cn("flex flex-1 flex-col overflow-hidden transition-transform duration-200", showNav && sidebarOpen && "translate-x-64 md:translate-x-0")}>
         {!showNav && (
           <header className="flex h-14 items-center border-b border-border px-6 gap-2">
             <BookOpen className="h-4 w-4 text-primary shrink-0" />

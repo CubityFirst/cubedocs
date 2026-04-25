@@ -16,17 +16,6 @@ function isAllowedLocalAdminOrigin(origin: string): boolean {
   return LOCAL_ADMIN_ORIGINS.has(origin);
 }
 
-function isDevelopmentDocsOrigin(originHeader: string | null): boolean {
-  if (!originHeader) return false;
-
-  try {
-    const url = new URL(originHeader);
-    return url.protocol === "http:" && (url.hostname === "localhost" || url.hostname === "127.0.0.1");
-  } catch {
-    return false;
-  }
-}
-
 function buildApprovedCallbackUrl(origin: string, nextPath: string | null): string {
   const url = new URL("/auth/callback", origin);
   if (nextPath && nextPath !== "/") {
@@ -38,7 +27,6 @@ function buildApprovedCallbackUrl(origin: string, nextPath: string | null): stri
 export function normalizeAdminCallbackUrl(
   callbackUrl: string,
   env: Env,
-  docsOriginHeader: string | null,
 ): string | null {
   try {
     const url = new URL(callbackUrl);
@@ -51,7 +39,7 @@ export function normalizeAdminCallbackUrl(
       return buildApprovedCallbackUrl(productionOrigin, nextPath);
     }
 
-    if (isDevelopmentDocsOrigin(docsOriginHeader) && isAllowedLocalAdminOrigin(url.origin)) {
+    if (isAllowedLocalAdminOrigin(url.origin)) {
       return buildApprovedCallbackUrl(url.origin, nextPath);
     }
 
