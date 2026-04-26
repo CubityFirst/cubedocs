@@ -330,12 +330,14 @@ function tryRoll(notation: string): RollResult | null {
 
 export function DiceRoll({ notation }: DiceRollProps) {
   const [result, setResult] = useState<RollResult | "invalid" | null>(null);
+  const [rollKey, setRollKey] = useState(0);
 
   const doRoll = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
       setResult(tryRoll(notation) ?? "invalid");
+      setRollKey((k) => k + 1);
     },
     [notation],
   );
@@ -377,7 +379,7 @@ export function DiceRoll({ notation }: DiceRollProps) {
   const anyCritFail = result.terms.some((t) => t.anyCritFail);
 
   return (
-    <HoverCard>
+    <HoverCard key={rollKey}>
       <HoverCardTrigger asChild>
         <button
           onClick={doRoll}
