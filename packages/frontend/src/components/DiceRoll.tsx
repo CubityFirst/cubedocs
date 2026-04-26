@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { Dices } from "lucide-react";
 import {
   HoverCard,
@@ -331,16 +331,53 @@ function tryRoll(notation: string): RollResult | null {
 export function DiceRoll({ notation }: DiceRollProps) {
   const [result, setResult] = useState<RollResult | "invalid" | null>(null);
   const [rollKey, setRollKey] = useState(0);
+  const [open, setOpen] = useState(false);
+  const touchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const blockOpenRef = useRef(false);
+
+  const clearTouchTimer = useCallback(() => {
+    if (touchTimerRef.current) {
+      clearTimeout(touchTimerRef.current);
+      touchTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => clearTouchTimer, [clearTouchTimer]);
 
   const doRoll = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
+      clearTouchTimer();
       setResult(tryRoll(notation) ?? "invalid");
       setRollKey((k) => k + 1);
+      setOpen(false);
     },
-    [notation],
+    [notation, clearTouchTimer],
   );
+
+  const handleOpenChange = useCallback((nextOpen: boolean) => {
+    if (nextOpen && blockOpenRef.current) return;
+    setOpen(nextOpen);
+  }, []);
+
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    if (e.pointerType !== "touch") return;
+    blockOpenRef.current = true;
+    clearTouchTimer();
+    touchTimerRef.current = setTimeout(() => {
+      blockOpenRef.current = false;
+      setOpen(true);
+      touchTimerRef.current = null;
+    }, 500);
+  }, [clearTouchTimer]);
+
+  const handlePointerUp = useCallback((e: React.PointerEvent) => {
+    if (e.pointerType !== "touch") return;
+    clearTouchTimer();
+    // Keep blocking long enough to cover Radix's openDelay + synthetic mouse events
+    setTimeout(() => { blockOpenRef.current = false; }, 700);
+  }, [clearTouchTimer]);
 
   if (result === "invalid") {
     return (
@@ -379,10 +416,12 @@ export function DiceRoll({ notation }: DiceRollProps) {
   const anyCritFail = result.terms.some((t) => t.anyCritFail);
 
   return (
-    <HoverCard key={rollKey}>
+    <HoverCard key={rollKey} open={open} onOpenChange={handleOpenChange} openDelay={200}>
       <HoverCardTrigger asChild>
         <button
           onClick={doRoll}
+          onPointerDown={handlePointerDown}
+          onPointerUp={handlePointerUp}
           className="inline-flex items-center gap-1 rounded bg-zinc-700/60 px-1.5 py-0.5 text-[0.875em] text-zinc-200 font-mono select-none not-prose hover:bg-zinc-700 transition-colors cursor-pointer"
           aria-label="Re-roll"
         >
