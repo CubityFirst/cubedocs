@@ -369,7 +369,7 @@ export function DiceRoll({ notation }: DiceRollProps) {
       blockOpenRef.current = false;
       setOpen(true);
       touchTimerRef.current = null;
-    }, 500);
+    }, 200);
   }, [clearTouchTimer]);
 
   const handlePointerUp = useCallback((e: React.PointerEvent) => {
