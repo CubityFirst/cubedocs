@@ -220,6 +220,14 @@ export function AvatarCropDialog({ file, onApply, onClose }: AvatarCropDialogPro
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
+          onWheel={e => {
+            e.preventDefault();
+            const factor = e.deltaY < 0 ? 1.08 : 1 / 1.08;
+            const newScale = Math.min(maxScale, Math.max(minScale, scale * factor));
+            const newOffset = zoomAround(0, 0, scale, newScale, offset);
+            setScale(newScale);
+            setOffset(clampOffset(newOffset.x, newOffset.y, newScale, naturalSize.w, naturalSize.h, rotation));
+          }}
         >
           {imageSrc && (
             <img

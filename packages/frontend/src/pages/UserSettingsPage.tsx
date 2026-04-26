@@ -486,11 +486,11 @@ export function UserSettingsPage() {
                 <Popover open={avatarPopoverOpen} onOpenChange={setAvatarPopoverOpen}>
                   <PopoverTrigger asChild>
                     <button type="button" className="relative group rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                      <UserAvatar userId={userId} name={name || "?"} className="size-16 text-lg" cacheBust={avatarKey} />
+                      <UserAvatar userId={userId} name={name || "?"} className="size-24 text-2xl" cacheBust={avatarKey} />
                       <div className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
                         {avatarUploading
-                          ? <Loader2 className="size-5 text-white animate-spin" />
-                          : <Camera className="size-5 text-white" />}
+                          ? <Loader2 className="size-6 text-white animate-spin" />
+                          : <Camera className="size-6 text-white" />}
                       </div>
                     </button>
                   </PopoverTrigger>
