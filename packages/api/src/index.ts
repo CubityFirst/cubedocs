@@ -129,6 +129,53 @@ export default {
         return addCorsHeaders(Response.json({ ok: true, data: { name: trimmedName } }));
       }
 
+      // GET /avatar/:userId — public, serve avatar from R2
+      if (url.pathname.startsWith("/avatar/") && request.method === "GET") {
+        const userId = url.pathname.slice("/avatar/".length);
+        if (!userId) return addCorsHeaders(errorResponse(Errors.NOT_FOUND));
+        const obj = await env.ASSETS.get(`avatars/${userId}`);
+        if (!obj) return new Response(null, { status: 404 });
+        const contentType = obj.httpMetadata?.contentType ?? "application/octet-stream";
+        return new Response(await obj.arrayBuffer(), {
+          status: 200,
+          headers: {
+            "Content-Type": contentType,
+            "Cache-Control": "public, max-age=300",
+            ...corsHeaders(),
+          },
+        });
+      }
+
+      // POST /avatar — authenticated, upload avatar image
+      if (url.pathname === "/avatar" && request.method === "POST") {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        const contentType = request.headers.get("Content-Type") ?? "";
+        if (!contentType.includes("multipart/form-data")) return addCorsHeaders(errorResponse(Errors.BAD_REQUEST));
+        const form = await request.formData();
+        const file = form.get("file") as File | null;
+        if (!file) return addCorsHeaders(errorResponse(Errors.BAD_REQUEST));
+        const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+        if (!allowed.includes(file.type)) {
+          return addCorsHeaders(Response.json({ ok: false, error: "Invalid file type. Allowed: JPEG, PNG, WebP, GIF." }, { status: 400 }));
+        }
+        if (file.size > 5 * 1024 * 1024) {
+          return addCorsHeaders(Response.json({ ok: false, error: "File too large. Maximum size is 5MB." }, { status: 400 }));
+        }
+        await env.ASSETS.put(`avatars/${session.userId}`, await file.arrayBuffer(), {
+          httpMetadata: { contentType: file.type },
+        });
+        return addCorsHeaders(Response.json({ ok: true }));
+      }
+
+      // DELETE /avatar — authenticated, remove avatar
+      if (url.pathname === "/avatar" && request.method === "DELETE") {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        await env.ASSETS.delete(`avatars/${session.userId}`);
+        return addCorsHeaders(Response.json({ ok: true }));
+      }
+
       // Pending invites
       if (url.pathname.startsWith("/pending-invites")) {
         const session = await getSession(request, env);

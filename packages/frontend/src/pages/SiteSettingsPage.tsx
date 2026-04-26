@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { UserAvatar } from "@/components/UserAvatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -909,6 +910,7 @@ export function SiteSettingsPage() {
 
                   return (
                     <div key={member.userId} className="flex items-center gap-3 px-4 py-3">
+                      <UserAvatar userId={member.userId} name={member.name} className="size-8 shrink-0 text-xs" />
                       <div className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate text-sm font-medium">
                           {member.name}

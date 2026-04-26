@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import zxcvbn from "zxcvbn";
 import QRCode from "react-qr-code";
 import { startRegistration } from "@simplewebauthn/browser";
@@ -12,7 +12,9 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { use2FA } from "@/hooks/use2FA";
 import { getToken } from "@/lib/auth";
-import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertCircle } from "lucide-react";
+import { UserAvatar } from "@/components/UserAvatar";
+import { AvatarCropDialog } from "@/components/AvatarCropDialog";
+import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertCircle, Camera } from "lucide-react";
 
 interface WebAuthnCredential {
   id: string;
@@ -21,6 +23,7 @@ interface WebAuthnCredential {
 }
 
 export function UserSettingsPage() {
+  const [userId, setUserId] = useState("");
   const [name, setName] = useState("");
   const [currentName, setCurrentName] = useState("");
   const [email, setEmail] = useState("");
@@ -28,6 +31,12 @@ export function UserSettingsPage() {
   const [emailVerificationEnabled, setEmailVerificationEnabled] = useState(false);
   const [resendingVerification, setResendingVerification] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  const [avatarKey, setAvatarKey] = useState(0);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarPopoverOpen, setAvatarPopoverOpen] = useState(false);
+  const [cropFile, setCropFile] = useState<File | null>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
   // TOTP state
@@ -70,7 +79,7 @@ export function UserSettingsPage() {
     const token = getToken();
     if (!token) return;
     fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json() as Promise<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean } }>)
+      .then(r => r.json() as Promise<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean; userId: string } }>)
       .then(json => {
         if (json.ok && json.data) {
           setCurrentName(json.data.name);
@@ -78,6 +87,7 @@ export function UserSettingsPage() {
           setEmail(json.data.email);
           setEmailVerified(json.data.emailVerified);
           setEmailVerificationEnabled(json.data.emailVerificationEnabled);
+          setUserId(json.data.userId);
         }
       })
       .catch(() => {});
@@ -106,6 +116,47 @@ export function UserSettingsPage() {
       .catch(() => {})
       .finally(() => setWebauthnLoading(false));
   }, []);
+
+  function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAvatarPopoverOpen(false);
+    setCropFile(file);
+    if (avatarInputRef.current) avatarInputRef.current.value = "";
+  }
+
+  async function handleCropApply(blob: Blob) {
+    const token = getToken();
+    const form = new FormData();
+    form.append("file", new File([blob], "avatar.jpg", { type: blob.type }));
+    const res = await fetch("/api/avatar", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
+    const json = await res.json() as { ok: boolean; error?: string };
+    if (json.ok) {
+      setAvatarKey(k => k + 1);
+      setCropFile(null);
+      toast({ title: "Avatar updated" });
+    } else {
+      toast({ title: json.error ?? "Failed to upload avatar", variant: "destructive" });
+    }
+  }
+
+  async function handleRemoveAvatar() {
+    setAvatarUploading(true);
+    try {
+      const token = getToken();
+      await fetch("/api/avatar", { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+      setAvatarKey(k => k + 1);
+      toast({ title: "Avatar removed" });
+    } catch {
+      toast({ title: "Could not connect to the server", variant: "destructive" });
+    } finally {
+      setAvatarUploading(false);
+    }
+  }
 
   async function handleResendVerification() {
     if (!email) return;
@@ -422,6 +473,60 @@ export function UserSettingsPage() {
           <section id="account">
             <h2 className="text-base font-semibold">Account</h2>
             <p className="mt-0.5 text-sm text-muted-foreground">Update your personal information.</p>
+
+            {userId && (
+              <div className="mt-4">
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  className="hidden"
+                  onChange={handleAvatarChange}
+                />
+                <Popover open={avatarPopoverOpen} onOpenChange={setAvatarPopoverOpen}>
+                  <PopoverTrigger asChild>
+                    <button type="button" className="relative group rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                      <UserAvatar userId={userId} name={name || "?"} className="size-16 text-lg" cacheBust={avatarKey} />
+                      <div className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                        {avatarUploading
+                          ? <Loader2 className="size-5 text-white animate-spin" />
+                          : <Camera className="size-5 text-white" />}
+                      </div>
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-40 p-1" align="start">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="w-full justify-start"
+                      disabled={avatarUploading}
+                      onClick={() => avatarInputRef.current?.click()}
+                    >
+                      Upload photo
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="w-full justify-start text-destructive hover:text-destructive"
+                      disabled={avatarUploading}
+                      onClick={handleRemoveAvatar}
+                    >
+                      Remove photo
+                    </Button>
+                  </PopoverContent>
+                </Popover>
+
+                {cropFile && (
+                  <AvatarCropDialog
+                    file={cropFile}
+                    onApply={handleCropApply}
+                    onClose={() => setCropFile(null)}
+                  />
+                )}
+              </div>
+            )}
 
             <form onSubmit={handleSaveName} className="mt-4 flex flex-col gap-4">
               <div className="flex flex-col gap-1.5">
