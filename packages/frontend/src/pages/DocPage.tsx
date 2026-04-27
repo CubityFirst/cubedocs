@@ -6,6 +6,8 @@ import remarkFrontmatter from "remark-frontmatter";
 import { remarkCallouts } from "@/lib/remark-callouts";
 import { remarkImageAttrs } from "@/lib/remark-image-attrs";
 import { remarkUnderline } from "@/lib/remark-underline";
+import { remarkWikilinks, wikilinkUrlTransform } from "@/lib/remark-wikilinks";
+import { makeDocLink } from "@/components/DocLink";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { Callout, type CalloutType } from "@/components/Callout";
 import { MarkdownCode } from "@/components/CodeBlock";
@@ -151,7 +153,7 @@ function Code({ children }: { children: string }) {
   );
 }
 
-const remarkPlugins = [remarkFrontmatter, remarkGfm, remarkCallouts, remarkImageAttrs, remarkUnderline];
+const remarkPlugins = [remarkFrontmatter, remarkWikilinks, remarkGfm, remarkCallouts, remarkImageAttrs, remarkUnderline];
 
 function makeAuthenticatedImage(projectId: string) {
   return function AuthImg(props: React.ComponentPropsWithoutRef<"img">) {
@@ -226,13 +228,19 @@ export function DocPage() {
   const { projectId, docId } = useParams<{ projectId: string; docId: string }>();
   const location = useLocation();
   const navigate = useNavigate();
-  const { updateDocTitle, setBreadcrumbs, projectPublishedAt, changelogMode, docs: allDocs, aiEnabled, aiSummarizationType } = useOutletContext<DocsLayoutContext>();
+  const { updateDocTitle, setBreadcrumbs, projectName, projectPublishedAt, changelogMode, docs: allDocs, folders: allFolders, aiEnabled, aiSummarizationType } = useOutletContext<DocsLayoutContext>();
   const { toast } = useToast();
 
   const markdownComponents = useMemo(() => ({
     ...baseMarkdownComponents,
     img: makeAuthenticatedImage(projectId ?? ""),
-  }), [projectId]);
+    a: makeDocLink({
+      docs: allDocs,
+      folders: allFolders,
+      buildUrl: (docId, anchor) =>
+        `/projects/${projectId}/docs/${docId}${anchor ? "#" + anchor : ""}`,
+    }),
+  }), [projectId, allDocs, allFolders]);
 
   const [doc, setDoc] = useState<Doc | null>(null);
   const [myRole, setMyRole] = useState<string | null>(null);
@@ -287,13 +295,6 @@ export function DocPage() {
           setDoc(json.data);
           setMyRole(json.data.myRole ?? null);
           setMyPermission(json.data.myPermission ?? null);
-          const rawPath: { id: string | null; name: string }[] = location.state?.folderPath ?? [];
-          const folderPath: BreadcrumbItem[] = rawPath.map((crumb, i) => ({
-            id: crumb.id,
-            name: crumb.name,
-            onClick: () => navigate(`/projects/${projectId}`, { state: { restorePath: rawPath.slice(0, i + 1) } }),
-          }));
-          setBreadcrumbs([...folderPath, { id: docId, name: json.data.title }]);
           if (location.state?.isNew) {
             setTitleDraft(json.data.title);
             setDraft(json.data.content);
@@ -306,6 +307,43 @@ export function DocPage() {
       .finally(() => setLoading(false));
     return () => setBreadcrumbs([]);
   }, [docId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sets the breadcrumb folder path. Uses location.state.folderPath when the user
+  // navigates from the project sidebar (which knows the path it came from); otherwise
+  // — e.g. when a wikilink jumps here — derives the path from doc.folder_id walking
+  // up through the folder tree.
+  useEffect(() => {
+    if (!doc || !docId || doc.id !== docId) return;
+    const statePath = location.state?.folderPath as { id: string | null; name: string }[] | undefined;
+    // Folder ancestry without the project crumb. FileManager prefixes it; wikilink jumps don't.
+    let folderAncestry: { id: string | null; name: string }[];
+    if (statePath) {
+      folderAncestry = statePath.length > 0 && statePath[0].id === null ? statePath.slice(1) : statePath;
+    } else {
+      const built: { id: string | null; name: string }[] = [];
+      let currentId: string | null = doc.folder_id ?? null;
+      while (currentId) {
+        const folder = allFolders.find(f => f.id === currentId);
+        if (!folder) break;
+        built.unshift({ id: folder.id, name: folder.name });
+        currentId = folder.parent_id;
+      }
+      folderAncestry = built;
+    }
+    const projectCrumb: BreadcrumbItem = {
+      id: null,
+      name: projectName,
+      onClick: () => navigate(`/projects/${projectId}`),
+    };
+    const folderCrumbs: BreadcrumbItem[] = folderAncestry.map((crumb, i) => ({
+      id: crumb.id,
+      name: crumb.name,
+      onClick: () => navigate(`/projects/${projectId}`, {
+        state: { restorePath: [{ id: null, name: projectName }, ...folderAncestry.slice(0, i + 1)] },
+      }),
+    }));
+    setBreadcrumbs([projectCrumb, ...folderCrumbs, { id: docId, name: doc.title }]);
+  }, [doc, docId, allFolders, projectId, projectName, navigate, location.state, setBreadcrumbs]);
 
   function generateSummary() {
     if (!doc || aiSummaryLoading) return;
@@ -365,7 +403,6 @@ export function DocPage() {
       if (json.ok && json.data) {
         setDoc(json.data);
         updateDocTitle(docId, json.data.title);
-        setBreadcrumbs(prev => prev.map((c, i) => i === prev.length - 1 ? { ...c, name: json.data!.title } : c));
         setEditing(false);
       } else {
         setSaveError("Failed to save. Please try again.");
@@ -690,7 +727,7 @@ export function DocPage() {
               {titleDraft && <h1 className="mb-4 text-2xl font-bold">{titleDraft}</h1>}
               {draft.trim() ? (
                 <article className="prose prose-neutral dark:prose-invert max-w-none">
-                  <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>{draft}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents} urlTransform={wikilinkUrlTransform}>{draft}</ReactMarkdown>
                 </article>
               ) : (
                 <p className="text-sm text-muted-foreground/50">Nothing to preview yet.</p>
@@ -1081,7 +1118,7 @@ export function DocPage() {
                   </div>
                 ) : (
                   <div className="prose prose-sm prose-violet dark:prose-invert max-w-none text-violet-900/80 dark:text-violet-200/80 [&_ul]:my-1 [&_li]:my-0">
-                    <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>
+                    <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents} urlTransform={wikilinkUrlTransform}>
                       {doc.ai_summary ?? ""}
                     </ReactMarkdown>
                   </div>
@@ -1089,7 +1126,7 @@ export function DocPage() {
               </div>
             )}
             {(viewingRevision ? viewingRevision.content : doc.content).trim() ? (
-              <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>
+              <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents} urlTransform={wikilinkUrlTransform}>
                 {viewingRevision ? viewingRevision.content : doc.content}
               </ReactMarkdown>
             ) : (

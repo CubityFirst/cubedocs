@@ -6,6 +6,8 @@ import remarkGfm from "remark-gfm";
 import remarkFrontmatter from "remark-frontmatter";
 import { remarkCallouts } from "@/lib/remark-callouts";
 import { remarkImageAttrs } from "@/lib/remark-image-attrs";
+import { remarkWikilinks, wikilinkUrlTransform } from "@/lib/remark-wikilinks";
+import { makeDocLink } from "@/components/DocLink";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { Callout, type CalloutType } from "@/components/Callout";
 import { MarkdownCode } from "@/components/CodeBlock";
@@ -60,7 +62,7 @@ function extractHeadings(content: string): Heading[] {
   return headings;
 }
 
-const remarkPlugins = [remarkFrontmatter, remarkGfm, remarkCallouts, remarkImageAttrs];
+const remarkPlugins = [remarkFrontmatter, remarkWikilinks, remarkGfm, remarkCallouts, remarkImageAttrs];
 
 function makePublicImage(projectId: string) {
   return function PublicImage({ src, alt, ...props }: React.ComponentPropsWithoutRef<"img">) {
@@ -408,7 +410,15 @@ export function PublicDocPage() {
   const markdownComponents = useMemo(() => ({
     ...baseMarkdownComponents,
     img: makePublicImage(projectId ?? ""),
-  }), [projectId]);
+    a: makeDocLink({
+      docs: data?.docs ?? [],
+      folders: data?.folders ?? [],
+      buildUrl: (docId, anchor) => {
+        const slug = data?.project.vanity_slug ?? projectId ?? "";
+        return `/s/${slug}/${docId}${anchor ? "#" + anchor : ""}`;
+      },
+    }),
+  }), [projectId, data]);
 
   useEffect(() => {
     setHasToken(!!getToken());
@@ -633,7 +643,7 @@ export function PublicDocPage() {
                       </p>
                     )}
                     {data.doc.content.trim() ? (
-                      <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>
+                      <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents} urlTransform={wikilinkUrlTransform}>
                         {data.doc.content}
                       </ReactMarkdown>
                     ) : (

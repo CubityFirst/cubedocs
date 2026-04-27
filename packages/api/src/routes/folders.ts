@@ -34,30 +34,56 @@ export async function handleFolders(
     const rootFolderId = params.get("rootFolderId");
     const type = params.get("type") ?? "docs";
 
+    const all = params.get("all") === "1";
+
     if (role === "limited") {
-      const rows = await env.DB.prepare(`
-        WITH accessible_folder_ids AS (
-          SELECT DISTINCT d.folder_id
-          FROM docs d
-          JOIN doc_shares ds ON ds.doc_id = d.id AND ds.user_id = ?
-          WHERE d.project_id = ? AND d.folder_id IS NOT NULL
-        ),
-        ancestors(id, parent_id) AS (
-          SELECT f.id, f.parent_id FROM folders f WHERE f.id IN (SELECT folder_id FROM accessible_folder_ids)
-          UNION ALL
-          SELECT f.id, f.parent_id FROM folders f JOIN ancestors a ON f.id = a.parent_id
-        )
-        SELECT DISTINCT f.id, f.name, f.type, f.project_id, f.parent_id, f.created_at
-        FROM folders f
-        WHERE f.id IN (SELECT id FROM ancestors) AND f.project_id = ? AND f.type = ?
-          AND f.parent_id IS ?
-        ORDER BY f.name ASC
-      `).bind(user.userId, projectId, projectId, type, parentId ?? null).all<Folder>();
+      const rows = await env.DB.prepare(
+        all
+          ? `WITH accessible_folder_ids AS (
+               SELECT DISTINCT d.folder_id
+               FROM docs d
+               JOIN doc_shares ds ON ds.doc_id = d.id AND ds.user_id = ?
+               WHERE d.project_id = ? AND d.folder_id IS NOT NULL
+             ),
+             ancestors(id, parent_id) AS (
+               SELECT f.id, f.parent_id FROM folders f WHERE f.id IN (SELECT folder_id FROM accessible_folder_ids)
+               UNION ALL
+               SELECT f.id, f.parent_id FROM folders f JOIN ancestors a ON f.id = a.parent_id
+             )
+             SELECT DISTINCT f.id, f.name, f.type, f.project_id, f.parent_id, f.created_at
+             FROM folders f
+             WHERE f.id IN (SELECT id FROM ancestors) AND f.project_id = ? AND f.type = ?
+             ORDER BY f.name ASC`
+          : `WITH accessible_folder_ids AS (
+               SELECT DISTINCT d.folder_id
+               FROM docs d
+               JOIN doc_shares ds ON ds.doc_id = d.id AND ds.user_id = ?
+               WHERE d.project_id = ? AND d.folder_id IS NOT NULL
+             ),
+             ancestors(id, parent_id) AS (
+               SELECT f.id, f.parent_id FROM folders f WHERE f.id IN (SELECT folder_id FROM accessible_folder_ids)
+               UNION ALL
+               SELECT f.id, f.parent_id FROM folders f JOIN ancestors a ON f.id = a.parent_id
+             )
+             SELECT DISTINCT f.id, f.name, f.type, f.project_id, f.parent_id, f.created_at
+             FROM folders f
+             WHERE f.id IN (SELECT id FROM ancestors) AND f.project_id = ? AND f.type = ?
+               AND f.parent_id IS ?
+             ORDER BY f.name ASC`,
+      ).bind(
+        ...(all
+          ? [user.userId, projectId, projectId, type]
+          : [user.userId, projectId, projectId, type, parentId ?? null]),
+      ).all<Folder>();
       return okResponse(rows.results);
     }
 
     let rows;
-    if (rootFolderId) {
+    if (all) {
+      rows = await env.DB.prepare(
+        "SELECT * FROM folders WHERE project_id = ? AND type = ? ORDER BY name ASC",
+      ).bind(projectId, type).all<Folder>();
+    } else if (rootFolderId) {
       rows = await env.DB.prepare(`
         WITH RECURSIVE subtree(id, name, type, project_id, parent_id, created_at) AS (
           SELECT id, name, type, project_id, parent_id, created_at

@@ -41,6 +41,14 @@ interface Project {
 interface Doc {
   id: string;
   title: string;
+  display_title?: string | null;
+  folder_id?: string | null;
+}
+
+interface Folder {
+  id: string;
+  name: string;
+  parent_id: string | null;
 }
 
 const SECTIONS = [
@@ -65,8 +73,9 @@ export interface DocsLayoutContext {
   myRole: string | null;
   aiEnabled: boolean;
   aiSummarizationType: string;
-  docs: { id: string; title: string }[];
-  addDoc: (doc: { id: string; title: string }) => void;
+  docs: { id: string; title: string; display_title?: string | null; folder_id?: string | null }[];
+  folders: { id: string; name: string; parent_id: string | null }[];
+  addDoc: (doc: { id: string; title: string; display_title?: string | null; folder_id?: string | null }) => void;
   setBreadcrumbs: Dispatch<SetStateAction<BreadcrumbItem[]>>;
 }
 
@@ -168,6 +177,7 @@ export function DocsLayout() {
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [docs, setDocs] = useState<Doc[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([]);
 
   // site creation
@@ -224,7 +234,7 @@ export function DocsLayout() {
   }, [navigate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!projectId) { setDocs([]); return; }
+    if (!projectId) { setDocs([]); setFolders([]); return; }
     const token = getToken();
     if (!token) return;
     fetch(`/api/docs?projectId=${projectId}`, { headers: { Authorization: `Bearer ${token}` } })
@@ -244,6 +254,10 @@ export function DocsLayout() {
         }
         if (json.ok && json.data) setDocs(json.data);
       })
+      .catch(() => {});
+    fetch(`/api/folders?projectId=${projectId}&all=1`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json() as Promise<{ ok: boolean; data?: Folder[] }>)
+      .then(json => { if (json.ok && json.data) setFolders(json.data); })
       .catch(() => {});
   }, [navigate, projectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -300,7 +314,7 @@ export function DocsLayout() {
     setDocs(prev => prev.map(d => d.id === docId ? { ...d, title } : d));
   }
 
-  function addDoc(doc: { id: string; title: string }) {
+  function addDoc(doc: { id: string; title: string; folder_id?: string | null }) {
     setDocs(prev => prev.some(d => d.id === doc.id) ? prev : [...prev, doc]);
   }
 
@@ -313,6 +327,7 @@ export function DocsLayout() {
     aiEnabled: !!(currentProject?.ai_enabled),
     aiSummarizationType: currentProject?.ai_summarization_type ?? "manual",
     docs,
+    folders,
     addDoc,
     setBreadcrumbs,
   };

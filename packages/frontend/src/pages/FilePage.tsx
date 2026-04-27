@@ -42,7 +42,7 @@ function formatDate(iso: string): string {
 
 export function FilePage() {
   const { projectId, fileId } = useParams<{ projectId: string; fileId: string }>();
-  const { setBreadcrumbs } = useOutletContext<DocsLayoutContext>();
+  const { setBreadcrumbs, projectName } = useOutletContext<DocsLayoutContext>();
   const location = useLocation();
   const navigate = useNavigate();
   const [file, setFile] = useState<FileRecord | null>(null);
@@ -61,12 +61,21 @@ export function FilePage() {
           setFile(json.data);
           const rawPath: { id: string | null; name: string }[] = location.state?.folderPath ?? [];
           const basePath = location.state?.basePath ?? `/projects/${projectId}`;
-          const folderCrumbs: BreadcrumbItem[] = rawPath.map((crumb, i) => ({
+          // Folder ancestry without the project crumb. FileManager prefixes it; direct nav doesn't.
+          const folderAncestry = rawPath.length > 0 && rawPath[0].id === null ? rawPath.slice(1) : rawPath;
+          const projectCrumb: BreadcrumbItem = {
+            id: null,
+            name: projectName,
+            onClick: () => navigate(basePath),
+          };
+          const folderCrumbs: BreadcrumbItem[] = folderAncestry.map((crumb, i) => ({
             id: crumb.id,
             name: crumb.name,
-            onClick: () => navigate(basePath, { state: { restorePath: rawPath.slice(0, i + 1) } }),
+            onClick: () => navigate(basePath, {
+              state: { restorePath: [{ id: null, name: projectName }, ...folderAncestry.slice(0, i + 1)] },
+            }),
           }));
-          setBreadcrumbs([...folderCrumbs, { id: fileId ?? null, name: json.data.name }]);
+          setBreadcrumbs([projectCrumb, ...folderCrumbs, { id: fileId ?? null, name: json.data.name }]);
           if (json.data.mime_type.startsWith("audio/")) {
             fetch(`/api/files/${fileId}/content`, { headers: { Authorization: `Bearer ${token}` } })
               .then(r => r.blob())
