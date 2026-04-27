@@ -45,6 +45,19 @@ app.get("/api/verify", async (c) => {
   });
 });
 
+app.get("/api/avatar/:userId", async (c) => {
+  const userId = c.req.param("userId");
+  const obj = await c.env.ASSETS.get(`avatars/${userId}`);
+  if (!obj) return new Response(null, { status: 404 });
+  const contentType = obj.httpMetadata?.contentType ?? "application/octet-stream";
+  return new Response(await obj.arrayBuffer(), {
+    headers: {
+      "Content-Type": contentType,
+      "Cache-Control": "public, max-age=300",
+    },
+  });
+});
+
 app.use("/api/users", enforceAdmin);
 app.use("/api/users/*", enforceAdmin);
 app.use("/api/projects", enforceAdmin);

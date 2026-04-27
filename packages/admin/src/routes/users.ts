@@ -298,6 +298,16 @@ usersRouter.get("/:id", async (c) => {
   return c.json({ ok: true, data: details });
 });
 
+// DELETE /api/users/:id/avatar
+usersRouter.delete("/:id/avatar", async (c) => {
+  const session = await requireAdminSession(c.req.raw, c.env);
+  if (session instanceof Response) return session;
+
+  const id = c.req.param("id");
+  await c.env.ASSETS.delete(`avatars/${id}`);
+  return c.json({ ok: true });
+});
+
 // GET /api/users/:id/export - GDPR-style data export as .zip
 usersRouter.get("/:id/export", async (c) => {
   const session = await requireAdminSession(c.req.raw, c.env);

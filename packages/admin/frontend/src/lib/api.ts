@@ -155,6 +155,12 @@ export async function deleteProject(id: string): Promise<void> {
   if (!json.ok) throw new Error("Failed to delete project");
 }
 
+export async function deleteUserAvatar(id: string): Promise<void> {
+  const res = await authFetch(`/api/users/${id}/avatar`, { method: "DELETE" });
+  const json = (await res.json()) as { ok: boolean };
+  if (!json.ok) throw new Error("Failed to delete avatar");
+}
+
 export async function exportUserData(id: string, email: string): Promise<void> {
   const res = await authFetch(`/api/users/${id}/export`);
   if (!res.ok) throw new Error("Failed to export user data");

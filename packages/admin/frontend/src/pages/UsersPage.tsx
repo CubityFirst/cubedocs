@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { format } from "date-fns";
-import { CalendarDays, ChevronDown, ChevronRight, Download, Search, X } from "lucide-react";
+import { CalendarDays, ChevronDown, ChevronRight, Download, Search, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,9 +43,11 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   type AdminUser,
   type AdminUserDetails,
+  deleteUserAvatar,
   exportUserData,
   forceUserPasswordChange,
   getUserDetails,
@@ -53,6 +55,10 @@ import {
   updateUserModeration,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
+
+function initials(name: string): string {
+  return name.trim().split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase() ?? "").join("");
+}
 
 type ModerationState =
   | { kind: "active" }
@@ -329,6 +335,8 @@ function UserRow({ user, onUpdated }: UserRowProps) {
   const [pending, setPending] = useState(false);
   const [forcingPasswordChange, setForcingPasswordChange] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [avatarCacheBust, setAvatarCacheBust] = useState(0);
+  const [deletingAvatar, setDeletingAvatar] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [details, setDetails] = useState<AdminUserDetails | null>(null);
@@ -403,6 +411,19 @@ function UserRow({ user, onUpdated }: UserRowProps) {
       toast.error("Failed to export user data");
     } finally {
       setExporting(false);
+    }
+  }
+
+  async function handleDeleteAvatar() {
+    setDeletingAvatar(true);
+    try {
+      await deleteUserAvatar(user.id);
+      setAvatarCacheBust(v => v + 1);
+      toast.success("Avatar removed");
+    } catch {
+      toast.error("Failed to delete avatar");
+    } finally {
+      setDeletingAvatar(false);
     }
   }
 
@@ -528,8 +549,19 @@ function UserRow({ user, onUpdated }: UserRowProps) {
                   </SheetTrigger>
                   <SheetContent className="max-w-3xl">
                     <SheetHeader>
-                      <SheetTitle>{user.name}</SheetTitle>
-                      <SheetDescription>{user.email}</SheetDescription>
+                      <div className="flex items-center gap-3">
+                        <Avatar className="size-12">
+                          <AvatarImage
+                            src={`/api/avatar/${user.id}?v=${avatarCacheBust}`}
+                            alt={user.name}
+                          />
+                          <AvatarFallback>{initials(user.name)}</AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <SheetTitle>{user.name}</SheetTitle>
+                          <SheetDescription>{user.email}</SheetDescription>
+                        </div>
+                      </div>
                     </SheetHeader>
                     <SheetBody>
                       {detailsLoading && !details
@@ -539,7 +571,29 @@ function UserRow({ user, onUpdated }: UserRowProps) {
                           : <p className="text-sm text-muted-foreground">User details could not be loaded.</p>}
                     </SheetBody>
                     <SheetFooter className="flex flex-row justify-end gap-2">
-                      <Button type="button" variant="outline" disabled={detailsLoading} onClick={() => void loadDetails(true)}>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button type="button" variant="outline" disabled={deletingAvatar} className="mr-auto">
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Delete avatar
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete avatar?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This will permanently remove the avatar for <strong>{user.name}</strong>.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={handleDeleteAvatar}>
+                              Delete
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                      <Button type="button" variant="outline" disabled={detailsLoading} onClick={() => { setAvatarCacheBust(v => v + 1); void loadDetails(true); }}>
                         Refresh details
                       </Button>
                       <Button type="button" variant="outline" disabled={exporting} onClick={handleExport}>

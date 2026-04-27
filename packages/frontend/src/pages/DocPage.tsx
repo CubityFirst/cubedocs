@@ -736,6 +736,7 @@ export function DocPage() {
           </div>
         </div>
 
+        {/* Markdown reference dialog / Markdown Hintsheet */}
         <Dialog open={markdownHelpOpen} onOpenChange={setMarkdownHelpOpen}>
           <DialogContent className="sm:max-w-lg">
             <DialogHeader>
@@ -752,6 +753,9 @@ export function DocPage() {
                 </Section>
                 <Section title="Links & images">
                   <Code>{`[link text](https://example.com)\n![alt text](https://example.com/img.png)`}</Code>
+                </Section>
+                <Section title="Document links">
+                  <Code>{`[[My Document]]                   link by title\n[[My Document|custom label]]      link with display text\n[[My Document#section]]           link to a heading anchor\n[[My Document#section|see this]]  anchor link with label`}</Code>
                 </Section>
                 <Section title="Lists">
                   <Code>{`- unordered item\n- another item\n\n1. ordered item\n2. another item`}</Code>
