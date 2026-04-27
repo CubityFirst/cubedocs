@@ -11,6 +11,7 @@ import { makeDocLink } from "@/components/DocLink";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { Callout, type CalloutType } from "@/components/Callout";
 import { MarkdownCode } from "@/components/CodeBlock";
+import { GraphView, type GraphData } from "@/components/GraphView";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
@@ -18,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { getToken } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import { BookOpen, FileText, Folder, House, ChevronLeft, ChevronRight, Search, X, Image, FileCode, FileArchive, File, Music, Download, ImageOff } from "lucide-react";
+import { BookOpen, FileText, Folder, House, ChevronLeft, ChevronRight, Search, X, Image, FileCode, FileArchive, File, Music, Download, ImageOff, Network } from "lucide-react";
 
 function toId(text: string): string {
   return text.toLowerCase().replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-");
@@ -139,7 +140,7 @@ interface NavFile {
 interface PublicData {
   doc: { id: string; title: string; display_title: string | null; hide_title: boolean | null; content: string; showHeading: boolean; showLastUpdated: boolean; updatedAt: string };
   sitePublished: boolean;
-  project: { id: string; name: string; vanity_slug: string | null; home_doc_id: string | null };
+  project: { id: string; name: string; vanity_slug: string | null; home_doc_id: string | null; graph_enabled: number };
   docs: NavDoc[] | null;
   folders: NavFolder[] | null;
   files: NavFile[] | null;
@@ -393,8 +394,10 @@ function PublicFileView({ file, projectId }: { file: NavFile; projectId: string 
 
 export function PublicDocPage() {
   const { projectId, docId } = useParams<{ projectId: string; docId: string }>();
+  const isGraph = docId === "graph";
   const navigate = useNavigate();
   const [data, setData] = useState<PublicData | null>(null);
+  const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -446,6 +449,35 @@ export function PublicDocPage() {
       return;
     }
 
+    if (isGraph) {
+      if (!data) setLoading(true);
+      setNotFound(false);
+      setSelectedFile(null);
+      Promise.all([
+        fetch(`/api/public/projects/${projectId}`).then(r => r.json() as Promise<{ ok: boolean; data?: { id: string; name: string; vanity_slug: string | null; home_doc_id: string | null; graph_enabled: number; docs: NavDoc[]; folders: NavFolder[]; files: NavFile[] } }>),
+        fetch(`/api/public/projects/${projectId}/graph`).then(r => r.json() as Promise<{ ok: boolean; data?: GraphData }>),
+      ])
+        .then(([projJson, graphJson]) => {
+          if (projJson.ok && projJson.data) {
+            const p = projJson.data;
+            setData({
+              doc: { id: "", title: "", display_title: null, hide_title: null, content: "", showHeading: false, showLastUpdated: false, updatedAt: "" },
+              sitePublished: true,
+              project: { id: p.id, name: p.name, vanity_slug: p.vanity_slug, home_doc_id: p.home_doc_id, graph_enabled: p.graph_enabled },
+              docs: p.docs ?? [],
+              folders: p.folders ?? [],
+              files: p.files ?? [],
+            });
+          } else {
+            setNotFound(true);
+          }
+          setGraphData(graphJson.ok && graphJson.data ? graphJson.data : { nodes: [], edges: [] });
+        })
+        .catch(() => setNotFound(true))
+        .finally(() => setLoading(false));
+      return;
+    }
+
     if (!data) setLoading(true);
     setNotFound(false);
     setSelectedFile(null);
@@ -460,7 +492,7 @@ export function PublicDocPage() {
       })
       .catch(() => setNotFound(true))
       .finally(() => setLoading(false));
-  }, [projectId, docId, navigate]);
+  }, [projectId, docId, isGraph, navigate]);
 
   // Redirect raw UUID to vanity slug once we know it
   useEffect(() => {
@@ -546,6 +578,19 @@ export function PublicDocPage() {
           </div>
           <ScrollArea className="flex-1 px-2 py-1">
             <nav className="flex flex-col gap-0.5">
+              {data.project.graph_enabled === 1 && (
+                <NavLink
+                  to={`/s/${data.project.vanity_slug ?? data.project.id}/graph`}
+                  className={({ isActive }) =>
+                    `flex items-center gap-2 rounded-md py-1.5 pl-2 pr-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground ${
+                      isActive ? "bg-accent text-accent-foreground font-medium" : "text-foreground/80"
+                    }`
+                  }
+                >
+                  <Network className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="truncate">Graph</span>
+                </NavLink>
+              )}
               {filteredDocs !== null ? (
                 filteredDocs.length === 0 ? (
                   <p className="px-2 py-4 text-center text-xs text-muted-foreground">No results</p>
@@ -622,6 +667,22 @@ export function PublicDocPage() {
             <h1 className="text-sm font-medium text-muted-foreground truncate">{data.project.name}</h1>
           </header>
         )}
+        {isGraph ? (
+          <div className="flex-1 min-h-0">
+            {graphData && graphData.nodes.length > 0 ? (
+              <GraphView
+                data={graphData}
+                onNodeClick={id => navigate(`/s/${data.project.vanity_slug ?? data.project.id}/${id}`)}
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center">
+                <p className="text-sm text-muted-foreground">
+                  {graphData ? "No documents to graph yet." : "Loading graph…"}
+                </p>
+              </div>
+            )}
+          </div>
+        ) : (
         <ScrollArea className="flex-1">
           {selectedFile ? (
             <PublicFileView file={selectedFile} projectId={projectId ?? ""} />
@@ -723,6 +784,7 @@ export function PublicDocPage() {
             </div>
           )}
         </ScrollArea>
+        )}
       </div>
     </div>
   );

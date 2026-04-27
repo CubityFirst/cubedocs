@@ -10,6 +10,7 @@ import { handleAi } from "./routes/ai";
 import { handleInviteLinks, handleInvitePublic } from "./routes/inviteLinks";
 import { handleDocShares } from "./routes/docShares";
 import { handlePendingInvites } from "./routes/pendingInvites";
+import { handleGraph, handlePublicGraph } from "./routes/graph";
 
 export interface Env {
   DB: D1Database;
@@ -181,6 +182,8 @@ export default {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
         response = await handlePendingInvites(request, env, session, url);
+      } else if (/^\/public\/projects\/[^/]+\/graph$/.test(url.pathname)) {
+        response = await handlePublicGraph(env, url);
       } else if (url.pathname.startsWith("/public")) {
         response = await handlePublic(request, env, url);
       } else if (url.pathname.startsWith("/invites/")) {
@@ -197,6 +200,10 @@ export default {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
         response = await handleDocShares(request, env, session, url);
+      } else if (/^\/projects\/[^/]+\/graph$/.test(url.pathname)) {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        response = await handleGraph(request, env, session, url);
       } else if (url.pathname.startsWith("/projects")) {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;

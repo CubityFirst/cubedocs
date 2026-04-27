@@ -11,6 +11,7 @@ import { DocPage } from "./pages/DocPage";
 import { FilePage } from "./pages/FilePage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { SiteSettingsPage } from "./pages/SiteSettingsPage";
+import { GraphPage } from "./pages/GraphPage";
 import { UserSettingsPage } from "./pages/UserSettingsPage";
 import { PublicDocPage } from "./pages/PublicDocPage";
 import { AcceptInvitePage } from "./pages/AcceptInvitePage";
@@ -30,6 +31,7 @@ export function App() {
         <Route path="/projects/:projectId/docs/:docId" element={<DocPage />} />
         <Route path="/projects/:projectId/files/:fileId" element={<FilePage />} />
         <Route path="/projects/:projectId/settings" element={<SiteSettingsPage />} />
+        <Route path="/projects/:projectId/graph" element={<GraphPage />} />
         <Route path="/settings" element={<UserSettingsPage />} />
         <Route path="/invites/pending" element={<PendingInvitesPage />} />
       </Route>

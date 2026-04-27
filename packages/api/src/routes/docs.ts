@@ -1,5 +1,6 @@
 import { okResponse, errorResponse, Errors, ROLE_RANK, type Session, type Doc, type Role } from "../lib";
 import { parseFrontmatter } from "../lib/frontmatter";
+import { indexDocLinks, invalidateProjectGraphIndex } from "../lib/docLinks";
 import type { Env } from "../index";
 
 type BlameEntry = { u: string; n: string; t: string; c: string | null } | null;
@@ -146,6 +147,9 @@ export async function handleDocs(
       "INSERT INTO docs (id, title, project_id, author_id, folder_id, sidebar_position, published_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)",
     ).bind(id, body.title, body.projectId, user.userId, folderId, sidebarPosition, now, now).run();
 
+    // A new doc may be the target of references in other docs, so the whole project's graph index must be recomputed.
+    await invalidateProjectGraphIndex(env, body.projectId);
+
     return okResponse(
       { id, title: body.title, content, projectId: body.projectId, authorId: user.userId, folderId, publishedAt: null, createdAt: now, updatedAt: now },
       201,
@@ -268,6 +272,7 @@ export async function handleDocs(
         await env.DB.prepare(
           "INSERT INTO asset_revisions (id, asset_type, asset_id, project_id, editor_id, editor_name, created_at, data, changelog) VALUES (?, 'doc', ?, ?, ?, ?, ?, NULL, ?)",
         ).bind(revisionId, docId, doc.project_id, user.userId, caller.name, now, body.changelog ?? null).run();
+        await indexDocLinks(env, doc.project_id, docId, body.content);
       }
     }
 
@@ -287,6 +292,11 @@ export async function handleDocs(
     if (body.folderId !== undefined) {
       await env.DB.prepare("UPDATE docs SET folder_id = ? WHERE id = ?")
         .bind(body.folderId, docId).run();
+    }
+
+    // Title or folder changes affect how *other* docs' wikilinks resolve, so the project-wide index must be rebuilt.
+    if ((body.title && body.title !== doc.title) || body.folderId !== undefined) {
+      await invalidateProjectGraphIndex(env, doc.project_id);
     }
 
     if (returnContent === undefined) {
@@ -325,6 +335,8 @@ export async function handleDocs(
       ...revisions.results.map(r => env.ASSETS.delete(`${doc.project_id}/${docId}/v/${r.id}`)),
     ]);
     await env.DB.prepare("DELETE FROM docs WHERE id = ?").bind(docId).run();
+    // doc_links rows for this doc cascade away, but the deleted title may have shadowed another doc's resolution, so reindex.
+    await invalidateProjectGraphIndex(env, doc.project_id);
     return okResponse({ deleted: true });
   }
 

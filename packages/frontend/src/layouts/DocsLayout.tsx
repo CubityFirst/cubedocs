@@ -24,6 +24,7 @@ import {
   FileText,
   SlidersHorizontal,
   Check,
+  Network,
 } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 
@@ -35,6 +36,7 @@ interface Project {
   changelog_mode: string;
   ai_enabled: number;
   ai_summarization_type: string;
+  graph_enabled: number;
   is_favourite: number;
 }
 
@@ -51,9 +53,10 @@ interface Folder {
   parent_id: string | null;
 }
 
-const SECTIONS = [
-  { id: "documents", label: "Documents", icon: FileText },
-] as const;
+type Section = { id: "documents" | "graph"; label: string; icon: typeof FileText };
+
+const DOCUMENTS_SECTION: Section = { id: "documents", label: "Documents", icon: FileText };
+const GRAPH_SECTION: Section = { id: "graph", label: "Graph", icon: Network };
 
 export interface BreadcrumbItem {
   id: string | null;
@@ -391,19 +394,29 @@ export function DocsLayout() {
           <ScrollArea className="flex-1 px-2 py-3">
             {/* Sections */}
             <nav className="flex flex-col gap-1">
-              {SECTIONS.map(section => (
+              <div className="flex items-center mb-1">
                 <NavLink
-                  key={section.id}
-                  to={section.id === "documents" ? `/projects/${projectId}` : `/projects/${projectId}/${section.id}`}
-                  end={section.id === "documents"}
+                  to={`/projects/${projectId}`}
+                  end
                   className={({ isActive }) =>
-                    cn(buttonVariants({ variant: "ghost", size: "sm" }), "mb-1 w-full justify-start", isActive ? "bg-accent text-foreground" : "text-muted-foreground")
+                    cn(buttonVariants({ variant: "ghost", size: "sm" }), "flex-1 justify-start", isActive ? "bg-accent text-foreground" : "text-muted-foreground")
                   }
                 >
-                  <section.icon className="h-3.5 w-3.5 shrink-0" />
-                  {section.label}
+                  <FileText className="h-3.5 w-3.5 shrink-0" />
+                  Documents
                 </NavLink>
-              ))}
+                {currentProject?.graph_enabled ? (
+                  <NavLink
+                    to={`/projects/${projectId}/graph`}
+                    className={({ isActive }) =>
+                      cn(buttonVariants({ variant: "ghost", size: "sm" }), "shrink-0 px-2", isActive ? "bg-accent text-foreground" : "text-muted-foreground")
+                    }
+                    title="Graph"
+                  >
+                    <Network className="h-3.5 w-3.5" />
+                  </NavLink>
+                ) : null}
+              </div>
             </nav>
           </ScrollArea>
         ) : (

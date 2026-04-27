@@ -39,6 +39,7 @@ export interface Project {
   vanity_slug: string | null;
   features: number;
   ai_enabled: number;
+  graph_enabled: number;
   home_doc_id: string | null;
 }
 
