@@ -73,7 +73,7 @@ export function GraphView({ data, onNodeClick }: GraphViewProps) {
       id: n.id,
       title: n.title,
       links: n.links,
-      radius: 3 + Math.sqrt(n.links) * 2,
+      radius: 3 + Math.sqrt(n.links) * 0.8,
     }));
     const links: GraphLink[] = data.edges.map(e => ({ source: e.source, target: e.target }));
     return { nodes, links };
@@ -92,29 +92,31 @@ export function GraphView({ data, onNodeClick }: GraphViewProps) {
     if (!fg) return;
     const charge = fg.d3Force("charge") as unknown as { strength?: (n: number) => unknown } | null;
     charge?.strength?.(-90);
-    const link = fg.d3Force("link") as unknown as { distance?: (n: number) => unknown } | null;
+    const link = fg.d3Force("link") as unknown as {
+      distance?: (n: number) => unknown;
+      strength?: (n: number) => unknown;
+    } | null;
     link?.distance?.(40);
+    link?.strength?.(0.92);
 
     // Gravity — pull every node toward the origin so the graph stays bounded.
     type SimNode = { x?: number; y?: number; vx?: number; vy?: number };
     type GravityForce = ((alpha: number) => void) & { initialize?: (nodes: SimNode[]) => void };
     let simNodes: SimNode[] = [];
-    const strength = 0.04;
-    const gravity: GravityForce = (alpha: number) => {
+    const gravityFn: GravityForce = (alpha: number) => {
       for (const n of simNodes) {
-        n.vx = (n.vx ?? 0) - (n.x ?? 0) * strength * alpha;
-        n.vy = (n.vy ?? 0) - (n.y ?? 0) * strength * alpha;
+        n.vx = (n.vx ?? 0) - (n.x ?? 0) * 0.095 * alpha;
+        n.vy = (n.vy ?? 0) - (n.y ?? 0) * 0.095 * alpha;
       }
     };
-    gravity.initialize = (nodes: SimNode[]) => { simNodes = nodes; };
-    fg.d3Force("gravity", gravity as unknown as Parameters<typeof fg.d3Force>[1]);
+    gravityFn.initialize = (nodes: SimNode[]) => { simNodes = nodes; };
+    fg.d3Force("gravity", gravityFn as unknown as Parameters<typeof fg.d3Force>[1]);
     fg.d3ReheatSimulation();
   }, [graph]);
 
   const showLabels = zoom > 1.6;
   const fgColor = tokens.fg || "#111";
   const mutedColor = tokens.muted || "#888";
-  const borderColor = tokens.border || "#ddd";
   const accentColor = tokens.accent || "#3b82f6";
 
   return (
@@ -129,8 +131,19 @@ export function GraphView({ data, onNodeClick }: GraphViewProps) {
           cooldownTicks={120}
           warmupTicks={20}
           d3VelocityDecay={0.3}
-          linkColor={() => borderColor}
-          linkWidth={1}
+          linkCanvasObject={(link, ctx) => {
+            const src = link.source as GraphNode;
+            const tgt = link.target as GraphNode;
+            ctx.save();
+            ctx.globalAlpha = 0.3;
+            ctx.beginPath();
+            ctx.moveTo(src.x ?? 0, src.y ?? 0);
+            ctx.lineTo(tgt.x ?? 0, tgt.y ?? 0);
+            ctx.strokeStyle = mutedColor;
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+            ctx.restore();
+          }}
           onZoom={t => setZoom(t.k)}
           onNodeHover={(node) => {
             setHoverId(node?.id != null ? String(node.id) : null);
@@ -154,7 +167,7 @@ export function GraphView({ data, onNodeClick }: GraphViewProps) {
             const isHover = hoverId === n.id;
             ctx.beginPath();
             ctx.arc(n.x ?? 0, n.y ?? 0, r, 0, 2 * Math.PI);
-            ctx.fillStyle = isHover ? accentColor : fgColor;
+            ctx.fillStyle = isHover ? accentColor : mutedColor;
             ctx.fill();
 
             if (showLabels || isHover) {
@@ -164,7 +177,7 @@ export function GraphView({ data, onNodeClick }: GraphViewProps) {
               ctx.textBaseline = "top";
               const label = n.title;
               const padY = r + 2;
-              ctx.fillStyle = isHover ? accentColor : mutedColor;
+              ctx.fillStyle = isHover ? accentColor : fgColor;
               ctx.fillText(label, n.x ?? 0, (n.y ?? 0) + padY);
             }
           }}
