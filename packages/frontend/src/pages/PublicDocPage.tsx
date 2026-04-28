@@ -557,8 +557,8 @@ export function PublicDocPage() {
             <span className="font-semibold tracking-tight">{data.project.name}</span>
           </div>
           <Separator />
-          <div className="px-3 py-2">
-            <div className="relative">
+          <div className="px-3 py-2 flex items-center gap-2">
+            <div className="relative flex-1">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
               <Input
                 placeholder="Search…"
@@ -575,22 +575,22 @@ export function PublicDocPage() {
                 </button>
               )}
             </div>
+            {data.project.graph_enabled === 1 && (
+              <NavLink
+                to={`/s/${data.project.vanity_slug ?? data.project.id}/graph`}
+                title="Graph"
+                className={({ isActive }) =>
+                  `shrink-0 flex items-center justify-center rounded-md h-8 w-8 transition-colors hover:bg-accent hover:text-accent-foreground ${
+                    isActive ? "bg-accent text-accent-foreground" : "text-muted-foreground"
+                  }`
+                }
+              >
+                <Network className="h-3.5 w-3.5" />
+              </NavLink>
+            )}
           </div>
           <ScrollArea className="flex-1 px-2 py-1">
             <nav className="flex flex-col gap-0.5">
-              {data.project.graph_enabled === 1 && (
-                <NavLink
-                  to={`/s/${data.project.vanity_slug ?? data.project.id}/graph`}
-                  className={({ isActive }) =>
-                    `flex items-center gap-2 rounded-md py-1.5 pl-2 pr-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground ${
-                      isActive ? "bg-accent text-accent-foreground font-medium" : "text-foreground/80"
-                    }`
-                  }
-                >
-                  <Network className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <span className="truncate">Graph</span>
-                </NavLink>
-              )}
               {filteredDocs !== null ? (
                 filteredDocs.length === 0 ? (
                   <p className="px-2 py-4 text-center text-xs text-muted-foreground">No results</p>
