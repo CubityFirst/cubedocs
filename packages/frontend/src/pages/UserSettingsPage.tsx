@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import zxcvbn from "zxcvbn";
 import QRCode from "react-qr-code";
 import { startRegistration } from "@simplewebauthn/browser";
@@ -471,9 +471,9 @@ export function UserSettingsPage() {
     try {
       const res = await fetch("/api/projects", { headers: { Authorization: `Bearer ${token}` } });
       const json = await res.json() as { ok: boolean; data?: Array<{ name: string; role: string }> };
-      const owned = (json.data ?? []).filter(p => p.role === "owner").map(p => p.name);
+      const owned = (json.data ?? []).filter(p => p.role === "owner").map(p => ({ id: p.id, name: p.name }));
       if (owned.length > 0) {
-        setOwnedSiteNames(owned);
+        setOwnedSites(owned);
         setOwnedSitesOpen(true);
         return;
       }
@@ -919,10 +919,18 @@ export function UserSettingsPage() {
                 <AlertDialogTitle>Transfer or delete your sites first</AlertDialogTitle>
                 <AlertDialogDescription asChild>
                   <div>
-                    <p>You own the following {ownedSiteNames.length === 1 ? "site" : "sites"} and cannot delete your account until you transfer ownership or delete {ownedSiteNames.length === 1 ? "it" : "them"}:</p>
+                    <p>You own the following {ownedSites.length === 1 ? "site" : "sites"} and cannot delete your account until you transfer ownership or delete {ownedSites.length === 1 ? "it" : "them"}:</p>
                     <ul className="mt-2 list-disc pl-5 space-y-1">
-                      {ownedSiteNames.map(name => (
-                        <li key={name} className="font-medium text-foreground">{name}</li>
+                      {ownedSites.map(site => (
+                        <li key={site.id}>
+                          <Link
+                            to={`/projects/${site.id}`}
+                            className="font-medium text-foreground underline underline-offset-2 hover:text-foreground/80"
+                            onClick={() => setOwnedSitesOpen(false)}
+                          >
+                            {site.name}
+                          </Link>
+                        </li>
                       ))}
                     </ul>
                   </div>
