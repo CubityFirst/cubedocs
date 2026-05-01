@@ -22,6 +22,7 @@ import { handleAdminHandoffStart } from "./routes/admin-handoff-start";
 import { handleAdminHandoffExchange } from "./routes/admin-handoff-exchange";
 import { handleVerifyEmail } from "./routes/verify-email";
 import { handleVerifyEmailResend } from "./routes/verify-email-resend";
+import { handleDeleteAccount } from "./routes/delete-account";
 
 export interface Env {
   DB: D1Database;
@@ -119,6 +120,8 @@ export default {
         response = await handleWebauthnCredentialsDelete(request, env);
       } else if (url.pathname === "/totp/backup-codes/generate" && request.method === "POST") {
         response = await handleTotpBackupCodesGenerate(request, env);
+      } else if (url.pathname === "/delete-account" && request.method === "POST") {
+        response = await handleDeleteAccount(request, env);
       } else {
         response = errorResponse(Errors.NOT_FOUND);
       }

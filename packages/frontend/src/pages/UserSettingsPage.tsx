@@ -1,9 +1,20 @@
 import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import zxcvbn from "zxcvbn";
 import QRCode from "react-qr-code";
 import { startRegistration } from "@simplewebauthn/browser";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { Label } from "@/components/ui/label";
@@ -11,7 +22,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { use2FA } from "@/hooks/use2FA";
-import { getToken } from "@/lib/auth";
+import { getToken, clearToken } from "@/lib/auth";
 import { UserAvatar } from "@/components/UserAvatar";
 import { AvatarCropDialog } from "@/components/AvatarCropDialog";
 import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertCircle, Camera } from "lucide-react";
@@ -23,6 +34,7 @@ interface WebAuthnCredential {
 }
 
 export function UserSettingsPage() {
+  const navigate = useNavigate();
   const [userId, setUserId] = useState("");
   const [name, setName] = useState("");
   const [currentName, setCurrentName] = useState("");
@@ -62,6 +74,12 @@ export function UserSettingsPage() {
   const [backupCodesOpen, setBackupCodesOpen] = useState(false);
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [backupCodesLoading, setBackupCodesLoading] = useState(false);
+
+  // Delete account state
+  const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [ownedSitesOpen, setOwnedSitesOpen] = useState(false);
+  const [ownedSites, setOwnedSites] = useState<Array<{ id: string; name: string }>>([]);
 
   // Change password state
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
@@ -448,6 +466,51 @@ export function UserSettingsPage() {
     setSetupCode("");
   }
 
+  async function handleDeleteButtonClick() {
+    const token = getToken();
+    try {
+      const res = await fetch("/api/projects", { headers: { Authorization: `Bearer ${token}` } });
+      const json = await res.json() as { ok: boolean; data?: Array<{ name: string; role: string }> };
+      const owned = (json.data ?? []).filter(p => p.role === "owner").map(p => p.name);
+      if (owned.length > 0) {
+        setOwnedSiteNames(owned);
+        setOwnedSitesOpen(true);
+        return;
+      }
+    } catch {
+      // fall through to confirmation if we can't check
+    }
+    setDeleteAccountOpen(true);
+  }
+
+  async function handleDeleteAccount() {
+    setDeleteAccountOpen(false);
+    await runWithTwoFA(async (verification) => {
+      setDeletingAccount(true);
+      try {
+        const token = getToken();
+        const res = await fetch("/api/me", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify(verification),
+        });
+        const json = await res.json() as { ok: boolean; error?: string };
+        if (json.ok) {
+          clearToken();
+          navigate("/login");
+          return undefined;
+        }
+        if (json.error === "invalid_totp") return "Invalid authenticator code.";
+        if (json.error === "invalid_backup_code") return "Invalid backup code.";
+        return "Failed to delete account. Please try again.";
+      } catch {
+        return "Could not connect to the server.";
+      } finally {
+        setDeletingAccount(false);
+      }
+    });
+  }
+
   const twoFactorProtected = totpEnabled || webauthnCredentials.length > 0;
 
   return (
@@ -459,6 +522,7 @@ export function UserSettingsPage() {
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">On this page</p>
             <a href="#account" className="py-1 text-sm text-muted-foreground transition-colors hover:text-foreground">Account</a>
             <a href="#two-factor" className="py-1 text-sm text-muted-foreground transition-colors hover:text-foreground">Security</a>
+            <a href="#danger" className="py-1 text-sm text-destructive/70 transition-colors hover:text-destructive">Danger Zone</a>
           </nav>
         </aside>
 
@@ -829,8 +893,68 @@ export function UserSettingsPage() {
                 Change password
               </Button>
             </div>
+          </section>
 
-            <Dialog open={changePasswordOpen} onOpenChange={open => { if (!open) resetPasswordDialog(); setChangePasswordOpen(open); }}>
+          <Separator className="my-6" />
+
+          {/* Danger zone */}
+          <section id="danger">
+            <h2 className="text-base font-semibold text-destructive">Danger Zone</h2>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Permanently delete your account. You must transfer or delete any sites you own first.
+            </p>
+            <Button
+              variant="destructive"
+              className="mt-4"
+              disabled={deletingAccount || twoFABusy}
+              onClick={handleDeleteButtonClick}
+            >
+              {deletingAccount ? "Deleting…" : "Delete account"}
+            </Button>
+          </section>
+
+          <AlertDialog open={ownedSitesOpen} onOpenChange={setOwnedSitesOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Transfer or delete your sites first</AlertDialogTitle>
+                <AlertDialogDescription asChild>
+                  <div>
+                    <p>You own the following {ownedSiteNames.length === 1 ? "site" : "sites"} and cannot delete your account until you transfer ownership or delete {ownedSiteNames.length === 1 ? "it" : "them"}:</p>
+                    <ul className="mt-2 list-disc pl-5 space-y-1">
+                      {ownedSiteNames.map(name => (
+                        <li key={name} className="font-medium text-foreground">{name}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogAction onClick={() => setOwnedSitesOpen(false)}>OK</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          <AlertDialog open={deleteAccountOpen} onOpenChange={setDeleteAccountOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete your account?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will permanently delete your account and all associated data. This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  onClick={handleDeleteAccount}
+                >
+                  Yes, delete my account
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          <Dialog open={changePasswordOpen} onOpenChange={open => { if (!open) resetPasswordDialog(); setChangePasswordOpen(open); }}>
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>Change password</DialogTitle>
@@ -899,7 +1023,6 @@ export function UserSettingsPage() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
-          </section>
         </div>
       </div>
 

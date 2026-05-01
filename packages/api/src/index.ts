@@ -177,6 +177,45 @@ export default {
         return addCorsHeaders(Response.json({ ok: true }));
       }
 
+      // DELETE /me — delete the authenticated user's account
+      if (url.pathname === "/me" && request.method === "DELETE") {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+
+        const ownedCount = await env.DB.prepare(
+          "SELECT COUNT(*) as count FROM projects WHERE owner_id = ?",
+        ).bind(session.userId).first<{ count: number }>();
+        if (ownedCount && ownedCount.count > 0) {
+          return addCorsHeaders(Response.json({ ok: false, error: "owns_projects" }, { status: 400 }));
+        }
+
+        const body = await request.json<Record<string, unknown>>();
+        const authHeader = request.headers.get("Authorization");
+        const authRes = await env.AUTH.fetch("https://auth/delete-account", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
+          body: JSON.stringify(body),
+        });
+        const authJson = await authRes.json<{ ok: boolean; error?: string }>();
+        if (!authJson.ok) return addCorsHeaders(Response.json(authJson, { status: authRes.status }));
+
+        // Delete projects the user owns (cascades to docs, members, etc.)
+        const ownedProjects = await env.DB.prepare(
+          "SELECT id FROM projects WHERE owner_id = ?",
+        ).bind(session.userId).all<{ id: string }>();
+        for (const proj of ownedProjects.results) {
+          await env.DB.prepare("DELETE FROM projects WHERE id = ?").bind(proj.id).run();
+        }
+
+        // Remove user from any remaining project memberships
+        await env.DB.prepare("DELETE FROM project_members WHERE user_id = ?").bind(session.userId).run();
+
+        // Delete avatar
+        await env.ASSETS.delete(`avatars/${session.userId}`);
+
+        return addCorsHeaders(Response.json({ ok: true }));
+      }
+
       // Pending invites
       if (url.pathname.startsWith("/pending-invites")) {
         const session = await getSession(request, env);
