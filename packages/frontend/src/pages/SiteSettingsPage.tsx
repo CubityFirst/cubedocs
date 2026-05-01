@@ -37,7 +37,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { getToken } from "@/lib/auth";
 import { Switch } from "@/components/ui/switch";
-import { Globe, House, Link, Lock, Copy, Check, X, Network } from "lucide-react";
+import { Globe, House, Link, Lock, Copy, Check, X, Network, Plus, ChevronDown, RefreshCw } from "lucide-react";
 
 type Role = "limited" | "viewer" | "editor" | "admin" | "owner";
 
@@ -73,6 +73,8 @@ interface Project {
   ai_enabled: number;
   ai_summarization_type: string;
   graph_enabled: number;
+  graph_tag_colors: string | null;
+  graph_reindex_available_at: string | null;
   home_doc_id: string | null;
   role: Role;
 }
@@ -176,6 +178,14 @@ export function SiteSettingsPage() {
   const [savingSlug, setSavingSlug] = useState(false);
   const [slugError, setSlugError] = useState<string | null>(null);
 
+  interface TagColorRule { id: number; tag: string; color: string }
+  const [tagColorRules, setTagColorRules] = useState<TagColorRule[]>([{ id: 0, tag: "", color: "#6366f1" }]);
+  const [nextRuleId, setNextRuleId] = useState(1);
+  const [savingTagColors, setSavingTagColors] = useState(false);
+  const [tagColorsOpen, setTagColorsOpen] = useState(false);
+  const [reindexAvailableAt, setReindexAvailableAt] = useState<Date | null>(null);
+  const [reindexing, setReindexing] = useState(false);
+
   const token = getToken();
   const currentUser = token ? parseToken(token) : null;
 
@@ -191,6 +201,18 @@ export function SiteSettingsPage() {
           setDescription(json.data.description ?? "");
           setVanitySlug(json.data.vanity_slug ?? "");
           setMyRole(json.data.role);
+          if (json.data.graph_tag_colors) {
+            try {
+              const parsed = JSON.parse(json.data.graph_tag_colors) as { tag: string; color: string }[];
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                setTagColorRules(parsed.map((r, i) => ({ id: i, tag: r.tag, color: r.color })));
+                setNextRuleId(parsed.length);
+              }
+            } catch {}
+          }
+          if (json.data.graph_reindex_available_at) {
+            setReindexAvailableAt(new Date(json.data.graph_reindex_available_at));
+          }
         }
       })
       .catch(() => {});
@@ -497,6 +519,71 @@ export function SiteSettingsPage() {
       toast({ title: "Could not connect to the server.", variant: "destructive" });
     } finally {
       setTogglingGraph(false);
+    }
+  }
+
+  async function handleReindex() {
+    if (!projectId) return;
+    setReindexing(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/graph/reindex`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json() as { ok: boolean; data?: { nextAvailableAt: string }; nextAvailableAt?: string; error?: string };
+      if (json.ok && json.data?.nextAvailableAt) {
+        setReindexAvailableAt(new Date(json.data.nextAvailableAt));
+        toast({ title: "Graph reindexed." });
+      } else if (res.status === 429 && json.nextAvailableAt) {
+        setReindexAvailableAt(new Date(json.nextAvailableAt));
+        toast({ title: "Reindex is rate limited.", variant: "destructive" });
+      } else {
+        toast({ title: "Failed to reindex graph.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Could not connect to the server.", variant: "destructive" });
+    } finally {
+      setReindexing(false);
+    }
+  }
+
+  function addTagRule() {
+    setTagColorRules(prev => [...prev, { id: nextRuleId, tag: "", color: "#6366f1" }]);
+    setNextRuleId(prev => prev + 1);
+  }
+
+  function updateTagRuleTag(id: number, tag: string) {
+    setTagColorRules(prev => prev.map(r => r.id === id ? { ...r, tag } : r));
+  }
+
+  function updateTagRuleColor(id: number, color: string) {
+    setTagColorRules(prev => prev.map(r => r.id === id ? { ...r, color } : r));
+  }
+
+  function removeTagRule(id: number) {
+    setTagColorRules(prev => prev.filter(r => r.id !== id));
+  }
+
+  async function saveTagColors() {
+    if (!projectId) return;
+    setSavingTagColors(true);
+    try {
+      const rules = tagColorRules.filter(r => r.tag.trim());
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ graphTagColors: rules.map(r => ({ tag: r.tag.trim(), color: r.color })) }),
+      });
+      const json = await res.json() as { ok: boolean; data?: Project };
+      if (json.ok) {
+        toast({ title: "Tag colors saved." });
+      } else {
+        toast({ title: "Failed to save tag colors.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Could not connect to the server.", variant: "destructive" });
+    } finally {
+      setSavingTagColors(false);
     }
   }
 
@@ -891,21 +978,125 @@ export function SiteSettingsPage() {
                 disabled={togglingHomeDoc}
               />
             </div>
-            <div className="flex items-center justify-between rounded-md border border-border px-4 py-3">
-              <div className="flex flex-col gap-0.5">
-                <p className="text-sm font-medium flex items-center gap-2">
-                  <Network className="h-4 w-4 text-muted-foreground" />
-                  Graph View
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Show an interactive graph of how documents link to each other.
-                </p>
+            <div className="rounded-md border border-border">
+              <div className="flex items-center justify-between px-4 py-3">
+                <div className="flex flex-col gap-0.5">
+                  <p className="text-sm font-medium flex items-center gap-2">
+                    <Network className="h-4 w-4 text-muted-foreground" />
+                    Graph View
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Show an interactive graph of how documents link to each other.
+                  </p>
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  {project.graph_enabled === 1 && (() => {
+                    const now = new Date();
+                    const locked = reindexAvailableAt !== null && reindexAvailableAt > now;
+                    const minsLeft = locked ? Math.ceil((reindexAvailableAt!.getTime() - now.getTime()) / 60000) : 0;
+                    return (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                        disabled={locked || reindexing}
+                        onClick={handleReindex}
+                        title={locked ? `Reindex available in ${minsLeft} min` : "Reindex graph"}
+                      >
+                        <RefreshCw className={`h-3.5 w-3.5 ${reindexing ? "animate-spin" : ""}`} />
+                      </Button>
+                    );
+                  })()}
+                  <Switch
+                    checked={project.graph_enabled === 1}
+                    onCheckedChange={handleToggleGraph}
+                    disabled={togglingGraph}
+                  />
+                </div>
               </div>
-              <Switch
-                checked={project.graph_enabled === 1}
-                onCheckedChange={handleToggleGraph}
-                disabled={togglingGraph}
-              />
+              {project.graph_enabled === 1 && (
+                <>
+                  <div className="border-t border-border">
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between px-4 py-2.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+                      onClick={() => setTagColorsOpen(o => !o)}
+                    >
+                      Tag Colors
+                      <ChevronDown className={`h-3.5 w-3.5 transition-transform ${tagColorsOpen ? "rotate-180" : ""}`} />
+                    </button>
+                  </div>
+                  {tagColorsOpen && (
+                    <div className="border-t border-border px-4 py-3 flex flex-col gap-2.5">
+                      <p className="text-xs text-muted-foreground">
+                        Color graph nodes by frontmatter tag. The first matching tag wins.
+                      </p>
+                      <div className="flex flex-col gap-2">
+                        {tagColorRules.map(rule => (
+                          <div key={rule.id} className="flex items-center gap-2">
+                            <Input
+                              placeholder="tag-name"
+                              value={rule.tag}
+                              onChange={e => updateTagRuleTag(rule.id, e.target.value)}
+                              className="flex-1 h-8 text-sm"
+                            />
+                            <div className="relative shrink-0">
+                              <button
+                                type="button"
+                                className="w-6 h-6 rounded-full border border-border cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                style={{ backgroundColor: rule.color }}
+                                aria-label="Pick color"
+                                onClick={() => {
+                                  const el = document.getElementById(`tag-color-${rule.id}`);
+                                  if (el) (el as HTMLInputElement).click();
+                                }}
+                              />
+                              <input
+                                id={`tag-color-${rule.id}`}
+                                type="color"
+                                className="sr-only"
+                                value={rule.color}
+                                onChange={e => updateTagRuleColor(rule.id, e.target.value)}
+                              />
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 shrink-0 text-muted-foreground hover:text-destructive"
+                              onClick={() => removeTagRule(rule.id)}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-3 pt-0.5">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="gap-1.5 h-7 text-xs"
+                          onClick={addTagRule}
+                        >
+                          <Plus className="h-3 w-3" />
+                          Add another tag
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-7 text-xs"
+                          disabled={savingTagColors}
+                          onClick={saveTagColors}
+                        >
+                          {savingTagColors ? "Saving…" : "Save"}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
         </>

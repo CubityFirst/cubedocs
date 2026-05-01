@@ -1,3 +1,4 @@
+import { parseFrontmatter } from "./frontmatter";
 import type { Env } from "../index";
 
 export interface DocRow {
@@ -146,13 +147,19 @@ export async function reindexProject(env: Env, projectId: string): Promise<void>
     env.DB.prepare("DELETE FROM doc_links WHERE project_id = ?").bind(projectId),
   ];
   for (let i = 0; i < docs.length; i++) {
-    const targets = computeLinksForDoc(docs[i].id, contents[i], ctx);
+    const content = contents[i];
+    const targets = computeLinksForDoc(docs[i].id, content, ctx);
     for (const t of targets) {
       stmts.push(
         env.DB.prepare("INSERT OR IGNORE INTO doc_links (source_doc_id, target_doc_id, project_id) VALUES (?, ?, ?)")
           .bind(docs[i].id, t, projectId),
       );
     }
+    const tags = parseFrontmatter(content).tags ?? null;
+    stmts.push(
+      env.DB.prepare("UPDATE docs SET tags = ? WHERE id = ?")
+        .bind(tags ? JSON.stringify(tags) : null, docs[i].id),
+    );
   }
   stmts.push(env.DB.prepare("UPDATE projects SET graph_indexed_at = ? WHERE id = ?").bind(new Date().toISOString(), projectId));
   await env.DB.batch(stmts);

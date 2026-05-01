@@ -1,11 +1,14 @@
-import { okResponse, errorResponse, Errors, type Session, type Role } from "../lib";
+import { okResponse, errorResponse, Errors, ROLE_RANK, type Session, type Role } from "../lib";
 import { reindexProject } from "../lib/docLinks";
 import type { Env } from "../index";
+
+const REINDEX_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
 
 interface GraphNode {
   id: string;
   title: string;
   links: number;
+  tags: string[];
 }
 
 interface GraphEdge {
@@ -26,7 +29,7 @@ export async function buildGraph(
   }
 
   const [docsResult, edgesResult] = await Promise.all([
-    env.DB.prepare("SELECT id, title FROM docs WHERE project_id = ?").bind(projectId).all<{ id: string; title: string }>(),
+    env.DB.prepare("SELECT id, title, tags FROM docs WHERE project_id = ?").bind(projectId).all<{ id: string; title: string; tags: string | null }>(),
     env.DB.prepare("SELECT source_doc_id, target_doc_id FROM doc_links WHERE project_id = ?").bind(projectId).all<{ source_doc_id: string; target_doc_id: string }>(),
   ]);
 
@@ -49,6 +52,7 @@ export async function buildGraph(
     id: d.id,
     title: d.title,
     links: linkCount.get(d.id) ?? 0,
+    tags: d.tags ? (JSON.parse(d.tags) as string[]) : [],
   }));
   return { nodes, edges };
 }
@@ -70,8 +74,8 @@ export async function handleGraph(
   ).bind(projectId, user.userId).first<{ role: Role }>();
   if (!member) return errorResponse(Errors.FORBIDDEN);
 
-  const proj = await env.DB.prepare("SELECT graph_enabled FROM projects WHERE id = ?")
-    .bind(projectId).first<{ graph_enabled: number }>();
+  const proj = await env.DB.prepare("SELECT graph_enabled, graph_tag_colors FROM projects WHERE id = ?")
+    .bind(projectId).first<{ graph_enabled: number; graph_tag_colors: string | null }>();
   if (!proj) return errorResponse(Errors.NOT_FOUND);
   if (!proj.graph_enabled) return errorResponse(Errors.FORBIDDEN);
 
@@ -84,7 +88,10 @@ export async function handleGraph(
   }
 
   const graph = await buildGraph(env, projectId, allowed);
-  return okResponse(graph);
+  const tagColors: { tag: string; color: string }[] = proj.graph_tag_colors
+    ? (JSON.parse(proj.graph_tag_colors) as { tag: string; color: string }[])
+    : [];
+  return okResponse({ ...graph, tagColors });
 }
 
 export async function handlePublicGraph(
@@ -96,11 +103,58 @@ export async function handlePublicGraph(
   const slug = match[1];
 
   const project = await env.DB.prepare(
-    "SELECT id, graph_enabled FROM projects WHERE (id = ? OR vanity_slug = ?) AND published_at IS NOT NULL",
-  ).bind(slug, slug).first<{ id: string; graph_enabled: number }>();
+    "SELECT id, graph_enabled, graph_tag_colors FROM projects WHERE (id = ? OR vanity_slug = ?) AND published_at IS NOT NULL",
+  ).bind(slug, slug).first<{ id: string; graph_enabled: number; graph_tag_colors: string | null }>();
   if (!project) return errorResponse(Errors.NOT_FOUND);
   if (!project.graph_enabled) return errorResponse(Errors.FORBIDDEN);
 
   const graph = await buildGraph(env, project.id, null);
-  return okResponse(graph);
+  const tagColors: { tag: string; color: string }[] = project.graph_tag_colors
+    ? (JSON.parse(project.graph_tag_colors) as { tag: string; color: string }[])
+    : [];
+  return okResponse({ ...graph, tagColors });
+}
+
+export async function handleGraphReindex(
+  request: Request,
+  env: Env,
+  user: Session,
+  url: URL,
+): Promise<Response> {
+  if (request.method !== "POST") return errorResponse(Errors.NOT_FOUND);
+
+  const match = url.pathname.match(/^\/projects\/([^/]+)\/graph\/reindex$/);
+  if (!match) return errorResponse(Errors.NOT_FOUND);
+  const projectId = match[1];
+
+  const member = await env.DB.prepare(
+    "SELECT role FROM project_members WHERE project_id = ? AND user_id = ? AND accepted = 1",
+  ).bind(projectId, user.userId).first<{ role: Role }>();
+  if (!member) return errorResponse(Errors.FORBIDDEN);
+  if (ROLE_RANK[member.role] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
+
+  const proj = await env.DB.prepare(
+    "SELECT graph_enabled, graph_reindex_available_at FROM projects WHERE id = ?",
+  ).bind(projectId).first<{ graph_enabled: number; graph_reindex_available_at: string | null }>();
+  if (!proj) return errorResponse(Errors.NOT_FOUND);
+  if (!proj.graph_enabled) return errorResponse(Errors.FORBIDDEN);
+
+  const now = Date.now();
+  if (proj.graph_reindex_available_at) {
+    const availableAt = new Date(proj.graph_reindex_available_at).getTime();
+    if (now < availableAt) {
+      return Response.json(
+        { ok: false, error: "Rate limited", nextAvailableAt: proj.graph_reindex_available_at },
+        { status: 429 },
+      );
+    }
+  }
+
+  const nextAvailableAt = new Date(now + REINDEX_COOLDOWN_MS).toISOString();
+  await env.DB.prepare("UPDATE projects SET graph_reindex_available_at = ? WHERE id = ?")
+    .bind(nextAvailableAt, projectId).run();
+
+  await reindexProject(env, projectId);
+
+  return okResponse({ nextAvailableAt });
 }

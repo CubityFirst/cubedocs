@@ -2,15 +2,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import ForceGraph2D, { type ForceGraphMethods, type NodeObject, type LinkObject } from "react-force-graph-2d";
 
 export interface GraphData {
-  nodes: { id: string; title: string; links: number }[];
+  nodes: { id: string; title: string; links: number; tags?: string[] }[];
   edges: { source: string; target: string }[];
+  tagColors?: { tag: string; color: string }[];
 }
 
 interface GraphNode extends NodeObject {
   id: string;
   title: string;
   links: number;
+  tags: string[];
   radius: number;
+  tagColor: string | null;
 }
 
 type GraphLink = LinkObject<GraphNode>;
@@ -69,12 +72,25 @@ export function GraphView({ data, onNodeClick }: GraphViewProps) {
   const [hoverId, setHoverId] = useState<string | null>(null);
 
   const graph = useMemo(() => {
-    const nodes: GraphNode[] = data.nodes.map(n => ({
-      id: n.id,
-      title: n.title,
-      links: n.links,
-      radius: 3 + Math.sqrt(n.links) * 0.8,
-    }));
+    const rules = data.tagColors ?? [];
+    const nodes: GraphNode[] = data.nodes.map(n => {
+      const tags = n.tags ?? [];
+      let tagColor: string | null = null;
+      for (const rule of rules) {
+        if (rule.tag && tags.includes(rule.tag)) {
+          tagColor = rule.color;
+          break;
+        }
+      }
+      return {
+        id: n.id,
+        title: n.title,
+        links: n.links,
+        tags,
+        radius: 3 + Math.sqrt(n.links) * 0.8,
+        tagColor,
+      };
+    });
     const links: GraphLink[] = data.edges.map(e => ({ source: e.source, target: e.target }));
     return { nodes, links };
   }, [data]);
@@ -112,7 +128,7 @@ export function GraphView({ data, onNodeClick }: GraphViewProps) {
     gravityFn.initialize = (nodes: SimNode[]) => { simNodes = nodes; };
     fg.d3Force("gravity", gravityFn as unknown as Parameters<typeof fg.d3Force>[1]);
     fg.d3ReheatSimulation();
-  }, [graph]);
+  }, [graph, width, height]);
 
   const showLabels = zoom > 1.6;
   const fgColor = tokens.fg || "#111";
@@ -165,9 +181,10 @@ export function GraphView({ data, onNodeClick }: GraphViewProps) {
             const n = node as GraphNode;
             const r = n.radius;
             const isHover = hoverId === n.id;
+            const nodeColor = isHover ? accentColor : (n.tagColor ?? mutedColor);
             ctx.beginPath();
             ctx.arc(n.x ?? 0, n.y ?? 0, r, 0, 2 * Math.PI);
-            ctx.fillStyle = isHover ? accentColor : mutedColor;
+            ctx.fillStyle = nodeColor;
             ctx.fill();
 
             if (showLabels || isHover) {

@@ -10,7 +10,7 @@ import { handleAi } from "./routes/ai";
 import { handleInviteLinks, handleInvitePublic } from "./routes/inviteLinks";
 import { handleDocShares } from "./routes/docShares";
 import { handlePendingInvites } from "./routes/pendingInvites";
-import { handleGraph, handlePublicGraph } from "./routes/graph";
+import { handleGraph, handlePublicGraph, handleGraphReindex } from "./routes/graph";
 
 export interface Env {
   DB: D1Database;
@@ -200,6 +200,10 @@ export default {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
         response = await handleDocShares(request, env, session, url);
+      } else if (/^\/projects\/[^/]+\/graph\/reindex$/.test(url.pathname)) {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        response = await handleGraphReindex(request, env, session, url);
       } else if (/^\/projects\/[^/]+\/graph$/.test(url.pathname)) {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;

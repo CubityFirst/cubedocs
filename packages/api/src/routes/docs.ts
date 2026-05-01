@@ -141,11 +141,12 @@ export async function handleDocs(
     const folderId = body.folderId ?? null;
     const fm = parseFrontmatter(content);
     const sidebarPosition = fm.sidebar_position ?? null;
+    const tags = fm.tags ? JSON.stringify(fm.tags) : null;
 
     await env.ASSETS.put(`${body.projectId}/${id}`, content);
     await env.DB.prepare(
-      "INSERT INTO docs (id, title, project_id, author_id, folder_id, sidebar_position, published_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)",
-    ).bind(id, body.title, body.projectId, user.userId, folderId, sidebarPosition, now, now).run();
+      "INSERT INTO docs (id, title, project_id, author_id, folder_id, sidebar_position, tags, published_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)",
+    ).bind(id, body.title, body.projectId, user.userId, folderId, sidebarPosition, tags, now, now).run();
 
     // A new doc may be the target of references in other docs, so the whole project's graph index must be recomputed.
     await invalidateProjectGraphIndex(env, body.projectId);
@@ -278,7 +279,9 @@ export async function handleDocs(
 
     const showHeading = body.showHeading !== undefined ? (body.showHeading ? 1 : 0) : null;
     const showLastUpdated = body.showLastUpdated !== undefined ? (body.showLastUpdated ? 1 : 0) : null;
-    const newSidebarPosition = body.content !== undefined ? (parseFrontmatter(body.content).sidebar_position ?? null) : undefined;
+    const newFm = body.content !== undefined ? parseFrontmatter(body.content) : undefined;
+    const newSidebarPosition = newFm !== undefined ? (newFm.sidebar_position ?? null) : undefined;
+    const newTags = newFm !== undefined ? (newFm.tags ? JSON.stringify(newFm.tags) : null) : undefined;
 
     await env.DB.prepare(
       "UPDATE docs SET title = COALESCE(?, title), published_at = ?, show_heading = COALESCE(?, show_heading), show_last_updated = COALESCE(?, show_last_updated), updated_at = ? WHERE id = ?",
@@ -287,6 +290,11 @@ export async function handleDocs(
     if (newSidebarPosition !== undefined) {
       await env.DB.prepare("UPDATE docs SET sidebar_position = ? WHERE id = ?")
         .bind(newSidebarPosition, docId).run();
+    }
+
+    if (newTags !== undefined) {
+      await env.DB.prepare("UPDATE docs SET tags = ? WHERE id = ?")
+        .bind(newTags, docId).run();
     }
 
     if (body.folderId !== undefined) {
