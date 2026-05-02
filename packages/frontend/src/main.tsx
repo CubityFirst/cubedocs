@@ -9,7 +9,7 @@ if (import.meta.env.DEV) {
 }
 
 if (import.meta.env.VITE_BRANCH === "dev") {
-  document.title = "CubeDocs (dev)";
+  document.title = "Annex (dev)";
 }
 
 createRoot(document.getElementById("app")!).render(

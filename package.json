@@ -1,14 +1,14 @@
 {
-  "name": "cubedocs",
+  "name": "annex",
   "private": true,
   "version": "0.0.2",
   "scripts": {
-    "dev": "concurrently \"pnpm --filter frontend dev\" \"pnpm --filter api dev\" \"pnpm --filter auth dev\" \"pnpm --filter @cubedocs/admin dev\"",
-    "build": "concurrently \"pnpm --filter frontend build\" \"pnpm --filter api build\" \"pnpm --filter auth build\" \"pnpm --filter @cubedocs/admin build\"",
-    "deploy": "concurrently \"pnpm --filter frontend deploy\" \"pnpm --filter api deploy\" \"pnpm --filter auth deploy\" \"pnpm --filter @cubedocs/admin deploy\"",
-    "typecheck": "concurrently \"pnpm --filter frontend typecheck\" \"pnpm --filter api typecheck\" \"pnpm --filter auth typecheck\" \"pnpm --filter @cubedocs/admin typecheck\"",
+    "dev": "concurrently \"pnpm --filter frontend dev\" \"pnpm --filter api dev\" \"pnpm --filter auth dev\" \"pnpm --filter @annex/admin dev\"",
+    "build": "concurrently \"pnpm --filter frontend build\" \"pnpm --filter api build\" \"pnpm --filter auth build\" \"pnpm --filter @annex/admin build\"",
+    "deploy": "concurrently \"pnpm --filter frontend deploy\" \"pnpm --filter api deploy\" \"pnpm --filter auth deploy\" \"pnpm --filter @annex/admin deploy\"",
+    "typecheck": "concurrently \"pnpm --filter frontend typecheck\" \"pnpm --filter api typecheck\" \"pnpm --filter auth typecheck\" \"pnpm --filter @annex/admin typecheck\"",
 "migrate": "pnpm --filter api migrate && pnpm --filter auth migrate",
-    "test": "concurrently \"pnpm --filter api test\" \"pnpm --filter auth test\" \"pnpm --filter @cubedocs/admin test\" \"pnpm --filter @cubedocs/admin-frontend test\""
+    "test": "concurrently \"pnpm --filter api test\" \"pnpm --filter auth test\" \"pnpm --filter @annex/admin test\" \"pnpm --filter @annex/admin-frontend test\""
   },
   "devDependencies": {
     "concurrently": "^9.0.0",

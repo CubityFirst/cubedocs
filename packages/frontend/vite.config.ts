@@ -14,8 +14,8 @@ export default defineConfig(({ mode }) => {
       VitePWA({
         registerType: "autoUpdate",
         manifest: {
-          name: isDev ? "CubeDocs (Dev)" : "CubeDocs",
-          short_name: isDev ? "CubeDocs Dev" : "CubeDocs",
+          name: isDev ? "Annex (Dev)" : "Annex",
+          short_name: isDev ? "Annex Dev" : "Annex",
           description: "Documentation and password vault",
           start_url: "/",
           display: "standalone",

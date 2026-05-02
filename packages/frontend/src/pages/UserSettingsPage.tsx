@@ -470,7 +470,7 @@ export function UserSettingsPage() {
     const token = getToken();
     try {
       const res = await fetch("/api/projects", { headers: { Authorization: `Bearer ${token}` } });
-      const json = await res.json() as { ok: boolean; data?: Array<{ name: string; role: string }> };
+      const json = await res.json() as { ok: boolean; data?: Array<{ id: string; name: string; role: string }> };
       const owned = (json.data ?? []).filter(p => p.role === "owner").map(p => ({ id: p.id, name: p.name }));
       if (owned.length > 0) {
         setOwnedSites(owned);

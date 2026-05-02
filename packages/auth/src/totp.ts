@@ -74,7 +74,7 @@ export function generateSecret(): string {
   return base32Encode(bytes);
 }
 
-export function buildOtpauthUri(secret: string, email: string, issuer = "CubeDocs"): string {
+export function buildOtpauthUri(secret: string, email: string, issuer = "Annex"): string {
   const label = encodeURIComponent(`${issuer}:${email}`);
   return `otpauth://totp/${label}?secret=${secret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
 }

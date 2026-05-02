@@ -75,7 +75,7 @@ export function RegisterPage() {
   return (
     <AuthForm
       title="Create an account"
-      subtitle="Get started with CubeDocs"
+      subtitle="Get started with Annex"
       submitLabel="Create account"
       loading={loading}
       error={error}

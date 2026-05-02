@@ -1,4 +1,4 @@
-name = "cubedocs-auth"
+name = "annex-auth"
 main = "src/index.ts"
 compatibility_date = "2026-02-24"
 compatibility_flags = ["nodejs_compat"]
@@ -15,7 +15,7 @@ JWT_ISSUER = "https://auth.cubedocs.com"
 ADMIN_APP_ORIGIN = "https://admin.cubityfir.st"
 APP_ORIGIN = "https://docs.cubityfir.st"
 WEBAUTHN_RP_ID = "docs.cubityfir.st"
-WEBAUTHN_RP_NAME = "CubeDocs"
+WEBAUTHN_RP_NAME = "Annex"
 WEBAUTHN_ORIGIN = "https://docs.cubityfir.st"
 REQUIRE_EMAIL_VERIFICATION = "false"
 

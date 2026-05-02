@@ -13,6 +13,7 @@ interface AuthFormProps {
   children: React.ReactNode;
   footer: React.ReactNode;
   hideSubmit?: boolean;
+  wordmark?: React.ReactNode;
 }
 
 export function AuthForm({
@@ -25,14 +26,19 @@ export function AuthForm({
   children,
   footer,
   hideSubmit,
+  wordmark,
 }: AuthFormProps) {
   return (
     <div className="flex min-h-screen bg-background text-foreground">
       <div className="flex w-full max-w-md flex-col items-center justify-center px-10">
         <div className="w-full max-w-sm space-y-6">
           <div className="flex flex-col items-center gap-2 text-center">
-            <BookOpen className="h-8 w-8 text-primary" />
-            <h1 className="text-2xl font-semibold">{title}</h1>
+            {wordmark ?? (
+              <>
+                <BookOpen className="h-8 w-8 text-primary" />
+                <h1 className="text-2xl font-semibold">{title}</h1>
+              </>
+            )}
             <p className="text-sm text-muted-foreground">{subtitle}</p>
           </div>
 

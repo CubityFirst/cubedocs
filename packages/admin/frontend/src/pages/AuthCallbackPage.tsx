@@ -48,7 +48,7 @@ export function AuthCallbackPage({ onAuthenticated }: AuthCallbackPageProps) {
       } catch (err) {
         if (!cancelled) {
           if (err instanceof AdminHandoffError && err.code === "not_admin") {
-            setError("This CubeDocs account does not have admin access.");
+            setError("This Annex account does not have admin access.");
           } else {
             setError("The admin sign-in handoff expired or failed. Please try again.");
           }
@@ -68,7 +68,7 @@ export function AuthCallbackPage({ onAuthenticated }: AuthCallbackPageProps) {
       <Card className="w-full max-w-md">
         <CardHeader className="flex flex-col items-center gap-2 text-center">
           <Shield className="h-8 w-8 text-primary" />
-          <CardTitle className="text-2xl">CubeDocs Admin</CardTitle>
+          <CardTitle className="text-2xl">Annex Admin</CardTitle>
           <p className="text-sm text-muted-foreground">
             {error ? "Admin sign-in needs attention" : "Finishing your sign-in..."}
           </p>
@@ -80,12 +80,12 @@ export function AuthCallbackPage({ onAuthenticated }: AuthCallbackPageProps) {
                 {error}
               </div>
               <Button asChild>
-                <a href={buildDocsAdminLoginUrl(nextPath)}>Return to CubeDocs sign-in</a>
+                <a href={buildDocsAdminLoginUrl(nextPath)}>Return to Annex sign-in</a>
               </Button>
             </>
           ) : (
             <p className="text-sm text-muted-foreground">
-              We&apos;re exchanging your CubeDocs session for an admin session now.
+              We&apos;re exchanging your Annex session for an admin session now.
             </p>
           )}
         </CardContent>

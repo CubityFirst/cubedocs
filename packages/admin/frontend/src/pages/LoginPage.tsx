@@ -17,17 +17,17 @@ export function LoginPage() {
       <Card className="w-full max-w-md">
         <CardHeader className="flex flex-col items-center gap-2 text-center">
           <Shield className="h-8 w-8 text-primary" />
-          <CardTitle className="text-2xl">CubeDocs Admin</CardTitle>
+          <CardTitle className="text-2xl">Annex Admin</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Continue in CubeDocs to sign in with your existing security methods.
+            Continue in Annex to sign in with your existing security methods.
           </p>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <p className="text-sm text-muted-foreground">
-            You&apos;ll be redirected to the main CubeDocs sign-in flow so passkeys, security keys, and the rest of your auth methods can complete there.
+            You&apos;ll be redirected to the main Annex sign-in flow so passkeys, security keys, and the rest of your auth methods can complete there.
           </p>
           <Button asChild>
-            <a href={loginUrl}>Continue to CubeDocs sign-in</a>
+            <a href={loginUrl}>Continue to Annex sign-in</a>
           </Button>
         </CardContent>
       </Card>

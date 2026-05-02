@@ -1,4 +1,4 @@
-name = "cubedocs-frontend"
+name = "annex-frontend"
 main = "worker/index.ts"
 compatibility_date = "2026-02-24"
 
@@ -8,7 +8,7 @@ binding = "ASSETS"
 
 [[services]]
 binding = "API"
-service = "cubedocs-api"
+service = "annex-api"
 
 [[routes]]
 pattern = "docs.cubityfir.st"

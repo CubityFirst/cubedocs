@@ -24,7 +24,7 @@ function AdminLayout({
       <header className="flex items-center gap-6 border-b border-border px-6 py-3">
         <div className="flex items-center gap-2 text-sm font-semibold">
           <Shield className="h-4 w-4" />
-          CubeDocs Admin
+          Annex Admin
         </div>
 
         <nav className="flex gap-1">

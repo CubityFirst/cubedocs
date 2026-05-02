@@ -18,7 +18,7 @@ export function LandingPage() {
       <div className="flex flex-col items-center gap-6 text-center">
         <BookOpen className="h-12 w-12 text-primary" />
         <div className="space-y-2">
-          <h1 className="text-4xl font-bold tracking-tight">CubeDocs</h1>
+          <h1 className="text-4xl font-bold tracking-tight">Annex</h1>
           <p className="text-lg text-muted-foreground">
             Building knowledge one step at a time.
           </p>

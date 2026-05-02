@@ -384,7 +384,7 @@ export function DocsLayout() {
           ) : (
             <>
               <BookOpen className="h-5 w-5 text-primary" />
-              <span className="font-semibold tracking-tight">CubeDocs</span>
+              <span className="font-semibold tracking-tight">Annex</span>
             </>
           )}
         </div>

@@ -4,7 +4,7 @@ import { AuthForm } from "./AuthForm";
 
 function renderForm(overrides?: Partial<React.ComponentProps<typeof AuthForm>>) {
   const defaults = {
-    title: "CubeDocs",
+    title: "Annex",
     subtitle: "Sign in to your account",
     submitLabel: "Sign in",
     onSubmit: vi.fn(),
@@ -17,7 +17,7 @@ function renderForm(overrides?: Partial<React.ComponentProps<typeof AuthForm>>) 
 describe("AuthForm", () => {
   it("renders the title", () => {
     renderForm();
-    expect(screen.getByText("CubeDocs")).toBeInTheDocument();
+    expect(screen.getByText("Annex")).toBeInTheDocument();
   });
 
   it("renders the subtitle", () => {

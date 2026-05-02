@@ -9,9 +9,9 @@ export async function sendVerificationEmail(
     await env.EMAIL.send({
       to: toEmail,
       from: "noreply@docs.cubityfir.st",
-      subject: "Verify your CubeDocs email address",
+      subject: "Verify your Annex email address",
       text: [
-        "Welcome to CubeDocs!",
+        "Welcome to Annex!",
         "",
         "Did you create an account? If so, click the link below to verify your email address:",
         "",
@@ -23,7 +23,7 @@ export async function sendVerificationEmail(
 <html>
 <body style="font-family:sans-serif;max-width:480px;margin:40px auto;color:#111">
   <h2 style="margin-bottom:8px">Verify your email address</h2>
-  <p>Welcome to CubeDocs!</p>
+  <p>Welcome to Annex!</p>
   <p>Did you create an account? If so, click the button below to verify your email address.</p>
   <p style="margin:32px 0">
     <a href="${verifyUrl}"

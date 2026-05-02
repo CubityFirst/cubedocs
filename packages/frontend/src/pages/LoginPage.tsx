@@ -34,11 +34,13 @@ function normalizeAdminReturnTo(returnTo: string | null): string | null {
 
 function adminHandoffErrorMessage(error?: string): string {
   if (error === "not_admin") {
-    return "This CubeDocs account is signed in, but it does not have admin access.";
+    return "This Annex account is signed in, but it does not have admin access.";
   }
 
   return "Could not continue to the admin panel. Please try again.";
 }
+
+const annexWordmark = <img src="/annexwordmark.svg" alt="Annex" className="h-10 w-auto invert" />;
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -329,7 +331,8 @@ export function LoginPage() {
   if (step === "email_unverified") {
     return (
       <AuthForm
-        title="CubeDocs"
+        wordmark={annexWordmark}
+        title="Annex"
         subtitle="Verify your email"
         submitLabel=""
         loading={false}
@@ -370,7 +373,8 @@ export function LoginPage() {
   if (step === "force_password_change") {
     return (
       <AuthForm
-        title="CubeDocs"
+        wordmark={annexWordmark}
+        title="Annex"
         subtitle="Change your password"
         submitLabel="Set password"
         loading={loading}
@@ -409,7 +413,8 @@ export function LoginPage() {
   if (step === "totp") {
     return (
       <AuthForm
-        title="CubeDocs"
+        wordmark={annexWordmark}
+        title="Annex"
         subtitle="Two-factor authentication"
         submitLabel="Verify"
         loading={loading}
@@ -482,7 +487,8 @@ export function LoginPage() {
   if (step === "method_picker") {
     return (
       <AuthForm
-        title="CubeDocs"
+        wordmark={annexWordmark}
+        title="Annex"
         subtitle="Choose verification method"
         submitLabel=""
         loading={false}
@@ -542,7 +548,8 @@ export function LoginPage() {
   if (step === "webauthn") {
     return (
       <AuthForm
-        title="CubeDocs"
+        wordmark={annexWordmark}
+        title="Annex"
         subtitle="Security key"
         submitLabel=""
         loading={false}
@@ -578,8 +585,8 @@ export function LoginPage() {
 
   return (
     <AuthForm
-      title="CubeDocs"
-      subtitle={adminReturnTo ? "Sign in to continue to CubeDocs Admin" : "Sign in to your account"}
+      title="Annex"
+      subtitle={adminReturnTo ? "Sign in to continue to Annex Admin" : "Sign in to your account"}
       submitLabel="Sign in"
       loading={loading}
       error={error}

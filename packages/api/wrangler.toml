@@ -1,4 +1,4 @@
-name = "cubedocs-api"
+name = "annex-api"
 main = "src/index.ts"
 compatibility_date = "2026-02-24"
 compatibility_flags = ["nodejs_compat"]
@@ -17,7 +17,7 @@ bucket_name = "cubedocs-assets"
 # Service binding to auth worker (zero-latency internal calls)
 [[services]]
 binding = "AUTH"
-service = "cubedocs-auth"
+service = "annex-auth"
 
 [vars]
 ENVIRONMENT = "production"
