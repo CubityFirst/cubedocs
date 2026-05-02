@@ -203,6 +203,7 @@ interface Doc {
   blame?: (BlameEntry | null)[];
   ai_summary?: string | null;
   ai_summary_version?: string | null;
+  tags?: string | null;
 }
 
 type SharePermission = "view" | "edit";
@@ -1139,6 +1140,24 @@ export function DocPage() {
               </p>
             )}
           </article>
+
+          {(() => {
+            const tags: string[] = doc.tags ? JSON.parse(doc.tags) : [];
+            if (!tags.length) return null;
+            return (
+              <div className="not-prose mt-8 flex flex-wrap gap-1.5">
+                {tags.map(tag => (
+                  <button
+                    key={tag}
+                    onClick={() => navigate(`/projects/${projectId}/tags/${encodeURIComponent(tag)}`)}
+                    className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
 
           {(() => {
             const idx = allDocs.findIndex(d => d.id === docId);

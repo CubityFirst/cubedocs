@@ -45,6 +45,7 @@ interface Doc {
   title: string;
   display_title?: string | null;
   folder_id?: string | null;
+  tags?: string | null;
 }
 
 interface Folder {
@@ -76,9 +77,9 @@ export interface DocsLayoutContext {
   myRole: string | null;
   aiEnabled: boolean;
   aiSummarizationType: string;
-  docs: { id: string; title: string; display_title?: string | null; folder_id?: string | null }[];
+  docs: { id: string; title: string; display_title?: string | null; folder_id?: string | null; tags?: string | null }[];
   folders: { id: string; name: string; parent_id: string | null }[];
-  addDoc: (doc: { id: string; title: string; display_title?: string | null; folder_id?: string | null }) => void;
+  addDoc: (doc: { id: string; title: string; display_title?: string | null; folder_id?: string | null; tags?: string | null }) => void;
   setBreadcrumbs: Dispatch<SetStateAction<BreadcrumbItem[]>>;
 }
 

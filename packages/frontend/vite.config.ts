@@ -17,7 +17,7 @@ export default defineConfig(({ mode }) => {
           name: isDev ? "Annex (Dev)" : "Annex",
           short_name: isDev ? "Annex Dev" : "Annex",
           description: "Documentation and password vault",
-          start_url: "/",
+          start_url: "/dashboard",
           display: "standalone",
           background_color: "#09090b",
           theme_color: "#09090b",

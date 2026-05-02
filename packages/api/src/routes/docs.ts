@@ -82,7 +82,7 @@ export async function handleDocs(
     type DocWithAuthor = Doc & { author_name: string; author_role: string | null; is_home: number };
 
     const docWithAuthor = (sharesJoin: boolean) => `
-      SELECT d.id, d.title, d.folder_id, d.author_id, d.created_at, d.updated_at, d.sidebar_position,
+      SELECT d.id, d.title, d.folder_id, d.author_id, d.created_at, d.updated_at, d.sidebar_position, d.tags,
         COALESCE(pm.name, d.author_id) AS author_name,
         pm.role AS author_role,
         CASE WHEN p.home_doc_id = d.id THEN 1 ELSE 0 END AS is_home

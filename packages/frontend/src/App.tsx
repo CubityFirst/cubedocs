@@ -16,6 +16,7 @@ import { UserSettingsPage } from "./pages/UserSettingsPage";
 import { PublicDocPage } from "./pages/PublicDocPage";
 import { AcceptInvitePage } from "./pages/AcceptInvitePage";
 import { PendingInvitesPage } from "./pages/PendingInvitesPage";
+import { TagPage } from "./pages/TagPage";
 
 export function App() {
   return (
@@ -32,6 +33,7 @@ export function App() {
         <Route path="/projects/:projectId/files/:fileId" element={<FilePage />} />
         <Route path="/projects/:projectId/settings" element={<SiteSettingsPage />} />
         <Route path="/projects/:projectId/graph" element={<GraphPage />} />
+        <Route path="/projects/:projectId/tags/:tag" element={<TagPage />} />
         <Route path="/settings" element={<UserSettingsPage />} />
         <Route path="/invites/pending" element={<PendingInvitesPage />} />
       </Route>
