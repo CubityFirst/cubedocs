@@ -7,6 +7,8 @@ import { AuthForm } from "@/components/AuthForm";
 import { Turnstile } from "@/components/Turnstile";
 import { getToken } from "@/lib/auth";
 
+const annexWordmark = <img src="/annexwordmark.svg" alt="Annex" className="h-10 w-auto invert" />;
+
 const STRENGTH_LABELS = ["Very weak", "Weak", "Fair", "Strong", "Very strong"];
 const STRENGTH_COLORS = [
   "bg-red-500",
@@ -74,8 +76,9 @@ export function RegisterPage() {
 
   return (
     <AuthForm
-      title="Create an account"
-      subtitle="Get started with Annex"
+      wordmark={annexWordmark}
+      title="Annex"
+      subtitle="Create an account"
       submitLabel="Create account"
       loading={loading}
       error={error}

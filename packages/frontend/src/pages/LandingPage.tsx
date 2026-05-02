@@ -1,65 +1,42 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
+import {
+  History,
+  Layers,
+  Paintbrush,
+  Users,
+  Search,
+  Globe,
+  type LucideIcon,
+} from "lucide-react";
 import { getToken } from "@/lib/auth";
+import "./LandingPage.css";
 
 const WORDS = ["research", "campaigns", "ideas", "knowledge", "writing"];
 
-const FEATURES = [
-  {
-    title: "Version History",
-    desc: "Every edit is recorded. Roll back, branch off, compare — nothing is ever lost.",
-  },
-  {
-    title: "Flexible Structure",
-    desc: "Nested pages, tags, cross-links. Build any hierarchy that fits your content.",
-  },
-  {
-    title: "Rich Media",
-    desc: "Embed images, tables, code blocks, and callouts in any doc.",
-  },
-  {
-    title: "Live Collaboration",
-    desc: "Work together in real time. See who's editing, leave comments inline.",
-    comingSoon: true,
-  },
-  {
-    title: "Fast Search",
-    desc: "Full-text search across every page, heading, and tag in your workspace.",
-    comingSoon: true,
-  },
-  {
-    title: "Publish Anywhere",
-    desc: "Share a private link or publish a fully styled public site in one click.",
-  },
-];
-
 function useTypewriter(
   words: string[],
-  { typingSpeed = 80, deletingSpeed = 45, pause = 1600 } = {}
+  { typingSpeed = 75, deletingSpeed = 42, pause = 1700 } = {}
 ) {
   const [displayed, setDisplayed] = useState("");
   const [wordIdx, setWordIdx] = useState(0);
-  const [phase, setPhase] = useState<"typing" | "pausing" | "deleting">(
-    "typing"
-  );
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [phase, setPhase] = useState<"typing" | "deleting">("typing");
+  const t = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const word = words[wordIdx];
     if (phase === "typing") {
       if (displayed.length < word.length) {
-        timeoutRef.current = setTimeout(
+        t.current = setTimeout(
           () => setDisplayed(word.slice(0, displayed.length + 1)),
           typingSpeed
         );
       } else {
-        timeoutRef.current = setTimeout(() => setPhase("pausing"), pause);
+        t.current = setTimeout(() => setPhase("deleting"), pause);
       }
-    } else if (phase === "pausing") {
-      setPhase("deleting");
-    } else if (phase === "deleting") {
+    } else {
       if (displayed.length > 0) {
-        timeoutRef.current = setTimeout(
+        t.current = setTimeout(
           () => setDisplayed(displayed.slice(0, -1)),
           deletingSpeed
         );
@@ -68,9 +45,7 @@ function useTypewriter(
         setPhase("typing");
       }
     }
-    return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    };
+    return () => { if (t.current) clearTimeout(t.current); };
   }, [displayed, phase, wordIdx, words, typingSpeed, deletingSpeed, pause]);
 
   return displayed;
@@ -99,7 +74,7 @@ const LOGO_PATHS = [
   },
 ];
 
-function AnnexLogo({ fill = "#f0ede8", height = 24 }: { fill?: string; height?: number }) {
+function AnnexLogo({ fill = "#e8e4de", height = 16 }: { fill?: string; height?: number }) {
   return (
     <svg
       height={height}
@@ -118,131 +93,105 @@ function AnnexLogo({ fill = "#f0ede8", height = 24 }: { fill?: string; height?: 
   );
 }
 
+type TabKey = "api-reference.md" | "authentication.md" | "getting-started.md" | "dnd-campaign.md";
+
+const TABS: Record<TabKey, {
+  h: string;
+  p: string;
+  code: { c: string; t: string }[];
+  lines: number[];
+  badges: string[];
+}> = {
+  "api-reference.md": {
+    h: "API Reference",
+    p: "Programmatically create, read, update and delete docs in your Annex workspace using the REST API.",
+    code: [
+      { c: "#555", t: "BASE_URL = https://api.annex.app/v1" },
+      { c: "#444", t: "Content-Type: application/json" },
+    ],
+    lines: [88, 72, 80, 65],
+    badges: ["REST", "v1", "docs"],
+  },
+  "authentication.md": {
+    h: "Authentication",
+    p: "All requests require a bearer token in the Authorization header. Tokens are generated from workspace settings.",
+    code: [
+      { c: "#555", t: "POST /v1/auth/token" },
+      { c: "#4a4a4a", t: "Authorization: Bearer <YOUR_TOKEN>" },
+      { c: "#3a3a3a", t: '→  { "token": "ak_...", "expires": 3600 }' },
+    ],
+    lines: [82, 68, 74],
+    badges: ["OAuth2", "bearer", "tokens"],
+  },
+  "getting-started.md": {
+    h: "Getting Started",
+    p: "Create your first workspace, invite collaborators, and publish your first doc in under five minutes.",
+    code: [
+      { c: "#555", t: "1. Create workspace" },
+      { c: "#444", t: "2. Add your first page" },
+    ],
+    lines: [92, 78, 65, 74],
+    badges: ["quickstart", "setup"],
+  },
+  "dnd-campaign.md": {
+    h: "The Curse of Thornwall Keep",
+    p: "Session 4 — the party arrives at Ironhaven and discovers the cult's true motives...",
+    code: [
+      { c: "#555", t: "Location: Ironhaven, Dusk Quarter" },
+      { c: "#444", t: "Party level: 6  ·  Players: 4" },
+    ],
+    lines: [88, 70, 60, 80],
+    badges: ["combat", "session-4", "lore"],
+  },
+};
+
+const TAB_ORDER: TabKey[] = [
+  "api-reference.md",
+  "authentication.md",
+  "getting-started.md",
+  "dnd-campaign.md",
+];
+
 function EditorMockup() {
+  const [active, setActive] = useState<TabKey>("api-reference.md");
+  const tab = TABS[active];
   return (
-    <div
-      style={{
-        width: "100%",
-        maxWidth: 810,
-        background: "#1c1c1c",
-        border: "1px solid #2e2e2e",
-        borderRadius: 6,
-        boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
-        overflow: "hidden",
-        flexShrink: 0,
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 9,
-          padding: "12px 18px",
-          borderBottom: "1px solid #2a2a2a",
-          background: "#181818",
-        }}
-      >
-        {[0, 1, 2].map((i) => (
-          <div
-            key={i}
-            style={{ width: 12, height: 12, borderRadius: "50%", background: "#444" }}
-          />
-        ))}
-        <span
-          style={{
-            fontSize: 15,
-            fontFamily: "'DM Mono', monospace",
-            color: "#888",
-            marginLeft: 12,
-            padding: "3px 12px",
-            borderRadius: 3,
-            background: "#222",
-            border: "1px solid #333",
-          }}
-        >
-          ttrpg-campaign.md
-        </span>
-      </div>
-      <div style={{ padding: "24px 27px" }}>
-        <div
-          style={{ fontSize: 23, fontWeight: 600, color: "#e0ddd8", marginBottom: 12 }}
-        >
-          The Curse of Thornwall Keep
+    <div className="l-editor">
+      <div className="l-editor-titlebar">
+        <div className="l-editor-dots">
+          <div className="l-editor-dot" />
+          <div className="l-editor-dot" />
+          <div className="l-editor-dot" />
         </div>
-        <div
-          style={{
-            fontSize: 17,
-            color: "#7a7a7a",
-            lineHeight: 1.7,
-            marginBottom: 15,
-          }}
-        >
-          Session 4 — the party arrives at Ironhaven and discovers the cult's true
-          motives...
-        </div>
-        {[90, 75, 60].map((w) => (
-          <div
-            key={w}
-            style={{
-              height: 12,
-              borderRadius: 3,
-              background: "#2e2e2e",
-              marginBottom: 8,
-              width: `${w}%`,
-            }}
-          />
-        ))}
-        <div
-          style={{
-            height: 105,
-            background: "#242424",
-            borderRadius: 5,
-            margin: "15px 0",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <span
-            style={{
-              fontSize: 14,
-              color: "#555",
-              fontFamily: "'DM Mono', monospace",
-            }}
-          >
-            [ map placeholder ]
-          </span>
-        </div>
-        {[85, 50].map((w) => (
-          <div
-            key={w}
-            style={{
-              height: 12,
-              borderRadius: 3,
-              background: "#2e2e2e",
-              marginBottom: 8,
-              width: `${w}%`,
-            }}
-          />
-        ))}
-        <div style={{ marginTop: 12 }}>
-          {["combat", "session-4", "lore"].map((tag) => (
-            <span
-              key={tag}
-              style={{
-                display: "inline-block",
-                fontSize: 14,
-                fontFamily: "'DM Mono', monospace",
-                color: "#6a6a6a",
-                background: "#1c1c1c",
-                border: "1px solid #353535",
-                padding: "3px 11px",
-                borderRadius: 3,
-                marginRight: 6,
-              }}
+        <div className="l-editor-tabs">
+          {TAB_ORDER.map((k) => (
+            <button
+              key={k}
+              onClick={() => setActive(k)}
+              className={`l-editor-tab ${active === k ? "l-editor-tab-active" : "l-editor-tab-inactive"}`}
             >
-              {tag}
-            </span>
+              {k}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="l-editor-body">
+        <div className="l-editor-h">{tab.h}</div>
+        <div className="l-editor-p">{tab.p}</div>
+        {tab.lines.slice(0, 2).map((w, i) => (
+          <div key={i} className="l-editor-line" style={{ width: `${w}%` }} />
+        ))}
+        <div className="l-editor-code">
+          {tab.code.map((l, i) => (
+            <span key={i} style={{ color: l.c }}>{l.t}</span>
+          ))}
+        </div>
+        {tab.lines.slice(2).map((w, i) => (
+          <div key={i} className="l-editor-line" style={{ width: `${w}%` }} />
+        ))}
+        <div>
+          {tab.badges.map((b) => (
+            <span key={b} className="l-editor-badge">{b}</span>
           ))}
         </div>
       </div>
@@ -250,321 +199,128 @@ function EditorMockup() {
   );
 }
 
-export function LandingPage() {
-  const navigate = useNavigate();
-  const word = useTypewriter(WORDS, { typingSpeed: 70, deletingSpeed: 40 });
+const FEATURES: {
+  Icon: LucideIcon;
+  title: string;
+  desc: string;
+  soon?: boolean;
+  link?: string;
+}[] = [
+  { Icon: History, title: "Version History", desc: "Every edit is recorded. Roll back, branch off, compare — nothing is ever lost." },
+  { Icon: Layers, title: "Flexible Structure", desc: "Nested pages, tags, cross-links. Build any hierarchy that fits your content." },
+  {
+    Icon: Paintbrush,
+    title: "Rich Media",
+    desc: "Embed images, tables, code blocks, and callouts in any doc.",
+    link: "https://docs.cubityfir.st/s/help/a0ea410e-95ff-455b-a495-cdf00ea5a890",
+  },
+  { Icon: Users, title: "Live Collaboration", desc: "Work together in real time. See who's editing, leave inline comments.", soon: true },
+  { Icon: Search, title: "Fast Search", desc: "Full-text search across every page, heading, and tag in your workspace.", soon: true },
+  { Icon: Globe, title: "Publish Anywhere", desc: "Share a private link or publish a styled public site in one click." },
+];
 
-  useEffect(() => {
-    if (getToken()) {
-      navigate("/dashboard", { replace: true });
-    }
-  }, [navigate]);
+export function LandingPage() {
+  const word = useTypewriter(WORDS);
+  const isLoggedIn = !!getToken();
 
   return (
-    <div
-      style={{
-        background: "#111",
-        height: "100vh",
-        overflowY: "auto",
-        fontFamily: "'DM Sans', sans-serif",
-        color: "#e8e5e0",
-      }}
-    >
-      {/* Nav */}
-      <nav
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "0 48px",
-          height: 78,
-          borderBottom: "1px solid #222",
-        }}
-      >
-        <AnnexLogo />
-        <div style={{ display: "flex", gap: 36, alignItems: "center" }}>
-          <a
-            href="#features"
-            style={{ fontSize: 18, color: "#666", textDecoration: "none" }}
-          >
-            features
-          </a>
-          <a
-            href="#"
-            style={{ fontSize: 18, color: "#666", textDecoration: "none" }}
-          >
-            pricing
-          </a>
-          <Link
-            to="/login"
-            style={{ fontSize: 18, color: "#666", textDecoration: "none" }}
-          >
-            login
-          </Link>
-          <Link
-            to="/register"
-            style={{
-              fontSize: 17,
-              fontWeight: 500,
-              color: "#f0ede8",
-              border: "1px solid #f0ede8",
-              padding: "8px 21px",
-              borderRadius: 3,
-              textDecoration: "none",
-            }}
-          >
-            get started
-          </Link>
+    <div className="landing">
+      {/* NAV */}
+      <nav className="l-nav">
+        <div className="l-nav-inner">
+          <AnnexLogo height={21} />
+          <div className="l-nav-links">
+            <a className="l-nav-link" href="#features">features</a>
+            <a className="l-nav-link" href="#pricing">pricing</a>
+            {!isLoggedIn && <Link className="l-nav-link" to="/login">login</Link>}
+            {isLoggedIn
+              ? <Link className="l-nav-cta" to="/dashboard">go to dashboard</Link>
+              : <Link className="l-nav-cta" to="/register">get started</Link>}
+          </div>
         </div>
       </nav>
 
-      {/* Hero */}
-      <section
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          textAlign: "center",
-          padding: "84px 90px 60px",
-        }}
-      >
-        <div
-          style={{
-            fontSize: 15,
-            letterSpacing: "0.12em",
-            textTransform: "uppercase",
-            color: "#666",
-            marginBottom: 15,
-            fontFamily: "'DM Mono', monospace",
-          }}
-        >
-          an annex for your mind
-        </div>
-        <h1
-          style={{
-            fontSize: 63,
-            fontWeight: 300,
-            lineHeight: 1.15,
-            color: "#e8e5e0",
-            letterSpacing: "-0.02em",
-            margin: 0,
-          }}
-        >
-          A place to keep
-        </h1>
-        <div
-          style={{
-            fontSize: 63,
-            fontWeight: 600,
-            lineHeight: 1.15,
-            color: "#e8e5e0",
-            letterSpacing: "-0.02em",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            minHeight: "1.2em",
-            marginBottom: 27,
-          }}
-        >
-          your&nbsp;
-          <span
-            style={{
-              display: "inline-block",
-              borderRight: "4px solid #e8e5e0",
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-            }}
-          >
-            {word}
-          </span>
-        </div>
-        <p
-          style={{
-            fontSize: 20,
-            color: "#888",
-            lineHeight: 1.6,
-            maxWidth: 570,
-            margin: "0 auto 36px",
-            fontWeight: 300,
-          }}
-        >
-          Annex is the flexible writing platform for any kind of structured
-          thought. From tabletop campaigns to technical specs.
-        </p>
-        <div
-          style={{
-            display: "flex",
-            gap: 15,
-            alignItems: "center",
-            justifyContent: "center",
-            marginBottom: 54,
-          }}
-        >
-          <Link
-            to="/register"
-            style={{
-              fontSize: 18,
-              fontWeight: 500,
-              background: "#e8e5e0",
-              color: "#111",
-              padding: "14px 33px",
-              borderRadius: 3,
-              textDecoration: "none",
-            }}
-          >
-            Create your Annex →
-          </Link>
-          <a
-            href="https://docs.cubityfir.st/s/help"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              fontSize: 18,
-              color: "#666",
-              textDecoration: "underline",
-              textUnderlineOffset: 3,
-              textDecorationColor: "#444",
-              fontFamily: "'DM Sans', sans-serif",
-            }}
-          >
-            See a demo
-          </a>
-        </div>
-        <EditorMockup />
-      </section>
-
-      {/* Features */}
-      <section
-        id="features"
-        style={{ padding: "60px 60px 48px", borderTop: "1px solid #242424" }}
-      >
-        <div
-          style={{
-            fontSize: 14,
-            letterSpacing: "0.14em",
-            textTransform: "uppercase",
-            color: "#555",
-            fontFamily: "'DM Mono', monospace",
-            marginBottom: 30,
-          }}
-        >
-          What it does
-        </div>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(3, 1fr)",
-            gap: 30,
-          }}
-        >
-          {FEATURES.map((f) => (
-            <div
-              key={f.title}
-              style={{
-                padding: 24,
-                border: "1px solid #2a2a2a",
-                borderRadius: 5,
-                background: "#181818",
-              }}
-            >
-              <div
-                style={{
-                  width: 36,
-                  height: 36,
-                  background: "#252525",
-                  borderRadius: 5,
-                  marginBottom: 15,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <svg width="18" height="18" viewBox="0 0 12 12" fill="none">
-                  <rect
-                    x="1"
-                    y="1"
-                    width="10"
-                    height="10"
-                    rx="1.5"
-                    stroke="#888"
-                    strokeWidth="1.2"
-                  />
-                  <path
-                    d="M3 6h6M6 3v6"
-                    stroke="#888"
-                    strokeWidth="1.2"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </div>
-              <div
-                style={{
-                  fontSize: 18,
-                  fontWeight: 600,
-                  color: "#d4d0c8",
-                  marginBottom: 8,
-                }}
-              >
-                {f.title}
-                {f.comingSoon && (
-                  <span
-                    style={{
-                      display: "inline-block",
-                      fontSize: 12,
-                      fontFamily: "'DM Mono', monospace",
-                      letterSpacing: "0.06em",
-                      textTransform: "uppercase",
-                      color: "#555",
-                      border: "1px solid #2e2e2e",
-                      padding: "2px 8px",
-                      borderRadius: 3,
-                      marginLeft: 9,
-                      verticalAlign: "middle",
-                      position: "relative",
-                      top: -1,
-                    }}
-                  >
-                    soon
-                  </span>
-                )}
-              </div>
-              <div
-                style={{
-                  fontSize: 17,
-                  color: "#7e7e7e",
-                  lineHeight: 1.5,
-                  fontWeight: 300,
-                }}
-              >
-                {f.desc}
-              </div>
+      {/* HERO */}
+      <section className="l-hero">
+        <div className="l-hero-inner">
+          <div className="l-hero-copy">
+            <div className="l-hero-pre">an annex for your mind</div>
+            <div className="l-hero-headline">A place to keep</div>
+            <div className="l-hero-headline-b">
+              your&nbsp;<span>{word}</span><span className="l-tw-cursor">&nbsp;</span>
             </div>
-          ))}
+            <p className="l-hero-sub">
+              Annex is the flexible writing platform for any kind of structured thought,
+              from technical specs to tabletop campaigns.
+            </p>
+            <div className="l-hero-ctas">
+              <Link className="l-btn-primary" to="/register">Create your Annex →</Link>
+              <a
+                className="l-btn-ghost"
+                href="https://docs.cubityfir.st/s/help/"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                See a demo
+              </a>
+            </div>
+          </div>
+          <EditorMockup />
         </div>
       </section>
 
-      {/* Footer */}
-      <footer
-        style={{
-          borderTop: "1px solid #222",
-          padding: "24px 60px",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          background: "#0e0e0e",
-        }}
-      >
-        <AnnexLogo fill="#555" height={18} />
-        <div style={{ display: "flex", gap: 30 }}>
-          {["Privacy", "Terms", "Docs", "GitHub"].map((l) => (
-            <a
-              key={l}
-              href="#"
-              style={{ fontSize: 15, color: "#555", textDecoration: "none" }}
-            >
-              {l}
-            </a>
-          ))}
+      {/* FEATURES */}
+      <hr className="l-section-divider" />
+      <section id="features" className="l-features">
+        <div className="site-wrap">
+          <div className="l-features-label">What it does</div>
+          <div className="l-features-grid">
+            {FEATURES.map((f) => {
+              const inner = (
+                <>
+                  <div className="l-feature-icon">
+                    <f.Icon size={21} />
+                  </div>
+                  <div className="l-feature-title">
+                    {f.title}
+                    {f.soon && <span className="l-feature-soon">soon</span>}
+                  </div>
+                  <div className="l-feature-desc">{f.desc}</div>
+                </>
+              );
+              return f.link ? (
+                <a key={f.title} className="l-feature-card" href={f.link}>
+                  {inner}
+                </a>
+              ) : (
+                <div key={f.title} className="l-feature-card">
+                  {inner}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* CTA BAND */}
+      <section className="l-cta-band">
+        <div className="site-wrap">
+          <div className="l-cta-band-headline">
+            Ready to build your <b>Annex?</b>
+          </div>
+          <Link className="l-btn-primary" to="/register">Create your Annex →</Link>
+        </div>
+      </section>
+
+      {/* FOOTER */}
+      <footer className="l-footer">
+        <div className="l-footer-inner">
+          <AnnexLogo height={18} fill="#383430" />
+          <div className="l-footer-links">
+            {["Docs", "GitHub", "Privacy", "Terms"].map((l) => (
+              <a key={l} className="l-footer-link" href="#">{l}</a>
+            ))}
+          </div>
         </div>
       </footer>
     </div>
