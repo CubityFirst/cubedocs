@@ -585,6 +585,7 @@ export function LoginPage() {
 
   return (
     <AuthForm
+      wordmark={annexWordmark}
       title="Annex"
       subtitle={adminReturnTo ? "Sign in to continue to Annex Admin" : "Sign in to your account"}
       submitLabel="Sign in"

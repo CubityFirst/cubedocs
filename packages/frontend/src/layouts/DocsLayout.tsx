@@ -382,10 +382,13 @@ export function DocsLayout() {
               </NavLink>
             </>
           ) : (
-            <>
-              <BookOpen className="h-5 w-5 text-primary" />
-              <span className="font-semibold tracking-tight">Annex</span>
-            </>
+            <button
+              onClick={() => navigate("/dashboard")}
+              className="flex items-center cursor-pointer"
+              aria-label="Go to dashboard"
+            >
+              <img src="/annexwordmark.svg" alt="Annex" className="h-5 w-auto invert" />
+            </button>
           )}
         </div>
 
