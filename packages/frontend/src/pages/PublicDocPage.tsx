@@ -254,8 +254,10 @@ function NavTree({
   onDocClick: () => void;
   selectedFileId: string | null;
 }) {
+  const HIDDEN_FOLDER_NAMES = ["hidden", "doc_assets"];
   const childFolders = folders
     .filter(f => f.parent_id === parentId)
+    .filter(f => !HIDDEN_FOLDER_NAMES.includes(f.name.toLowerCase()))
     .filter(f => folderHasItems(f.id, folders, docs, files));
   const childDocs = docs.filter(d => d.folder_id === parentId);
   const childFiles = files.filter(f => f.folder_id === parentId);
