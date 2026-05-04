@@ -1,5 +1,6 @@
-import { useState, useEffect, type Dispatch, type SetStateAction } from "react";
+import { useState, useEffect, useCallback, type Dispatch, type SetStateAction } from "react";
 import { useSwipeGesture } from "@/hooks/useSwipeGesture";
+import { SearchPalette } from "@/components/SearchPalette";
 import { cn } from "@/lib/utils";
 import { Outlet, useMatch, useNavigate, useLocation, NavLink } from "react-router-dom";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -25,6 +26,7 @@ import {
   SlidersHorizontal,
   Check,
   Network,
+  Search,
 } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 
@@ -208,6 +210,20 @@ export function DocsLayout() {
   const projectMatch = useMatch("/projects/:projectId/*");
   const projectId = projectMatch?.params.projectId ?? null;
   const currentProject = projectId ? projects.find(p => p.id === projectId) ?? null : null;
+
+  // full-text search palette
+  const [searchOpen, setSearchOpen] = useState(false);
+  const openSearch = useCallback(() => { if (projectId) setSearchOpen(true); }, [projectId]);
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        openSearch();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [openSearch]);
 
   useEffect(() => {
     const token = getToken();
@@ -398,6 +414,18 @@ export function DocsLayout() {
           <ScrollArea className="flex-1 px-2 py-3">
             {/* Sections */}
             <nav className="flex flex-col gap-1">
+              <button
+                onClick={openSearch}
+                className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "w-full justify-between text-muted-foreground")}
+              >
+                <span className="flex items-center gap-1.5">
+                  <Search className="h-3.5 w-3.5 shrink-0" />
+                  Search
+                </span>
+                <kbd className="pointer-events-none hidden select-none rounded border border-border bg-muted px-1 font-mono text-[10px] sm:inline-flex">
+                  {/Mac|iPhone|iPad|iPod/.test(navigator.userAgent) ? "⌘K" : "Ctrl+K"}
+                </kbd>
+              </button>
               <div className="flex items-center mb-1">
                 <NavLink
                   to={`/projects/${projectId}`}
@@ -568,6 +596,13 @@ export function DocsLayout() {
         </div>
       </main>
       </div>
+      {projectId && (
+        <SearchPalette
+          open={searchOpen}
+          onOpenChange={setSearchOpen}
+          projectId={projectId}
+        />
+      )}
       <Toaster />
     </div>
   );

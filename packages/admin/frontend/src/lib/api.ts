@@ -155,6 +155,13 @@ export async function deleteProject(id: string): Promise<void> {
   if (!json.ok) throw new Error("Failed to delete project");
 }
 
+export async function reindexProjectFts(id: string): Promise<{ indexed: number }> {
+  const res = await authFetch(`/api/projects/${id}/reindex`, { method: "POST" });
+  const json = (await res.json()) as { ok: boolean; data?: { indexed: number } };
+  if (!json.ok || !json.data) throw new Error("Failed to reindex project");
+  return json.data;
+}
+
 export async function deleteUserAvatar(id: string): Promise<void> {
   const res = await authFetch(`/api/users/${id}/avatar`, { method: "DELETE" });
   const json = (await res.json()) as { ok: boolean };

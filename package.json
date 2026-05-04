@@ -8,6 +8,8 @@
     "deploy": "concurrently \"pnpm --filter frontend deploy\" \"pnpm --filter api deploy\" \"pnpm --filter auth deploy\" \"pnpm --filter @annex/admin deploy\"",
     "typecheck": "concurrently \"pnpm --filter frontend typecheck\" \"pnpm --filter api typecheck\" \"pnpm --filter auth typecheck\" \"pnpm --filter @annex/admin typecheck\"",
 "migrate": "pnpm --filter api migrate && pnpm --filter auth migrate",
+    "migrations:local": "node scripts/migrate.mjs local",
+    "migrations:remote": "node scripts/migrate.mjs remote",
     "test": "concurrently \"pnpm --filter api test\" \"pnpm --filter auth test\" \"pnpm --filter @annex/admin test\" \"pnpm --filter @annex/admin-frontend test\""
   },
   "devDependencies": {

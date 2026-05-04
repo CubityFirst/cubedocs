@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { ChevronDown, ChevronRight, Search, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronRight, RefreshCw, Search, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,7 +29,7 @@ import {
   SheetBody,
   SheetFooter,
 } from "@/components/ui/sheet";
-import { type AdminProject, listProjects, updateProjectFeatures, deleteProject } from "@/lib/api";
+import { type AdminProject, listProjects, updateProjectFeatures, deleteProject, reindexProjectFts } from "@/lib/api";
 
 const ProjectFeatures = {
   CUSTOM_LINK: 1,
@@ -70,6 +70,7 @@ function ProjectRow({ project, onSaved, onDeleted }: ProjectRowProps) {
   const [pendingFeatures, setPendingFeatures] = useState(project.features);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [reindexing, setReindexing] = useState(false);
 
   useEffect(() => {
     setSavedFeatures(project.features);
@@ -105,6 +106,18 @@ function ProjectRow({ project, onSaved, onDeleted }: ProjectRowProps) {
     } catch {
       toast.error("Failed to delete project");
       setDeleting(false);
+    }
+  }
+
+  async function handleReindex() {
+    setReindexing(true);
+    try {
+      const result = await reindexProjectFts(project.id);
+      toast.success(`Search index rebuilt (${result.indexed} docs)`);
+    } catch {
+      toast.error("Failed to reindex search");
+    } finally {
+      setReindexing(false);
     }
   }
 
@@ -167,6 +180,11 @@ function ProjectRow({ project, onSaved, onDeleted }: ProjectRowProps) {
                   </SheetFooter>
                 </SheetContent>
               </Sheet>
+
+              <Button size="sm" variant="outline" disabled={reindexing} onClick={handleReindex}>
+                <RefreshCw className={`h-3.5 w-3.5 ${reindexing ? "animate-spin" : ""}`} />
+                {reindexing ? "Reindexing..." : "Reindex search"}
+              </Button>
 
               <AlertDialog>
                 <AlertDialogTrigger asChild>

@@ -1,6 +1,29 @@
 import { Hono } from "hono";
 import type { Env } from "../index";
 
+function stripFrontmatter(content: string): string {
+  if (!content.startsWith("---")) return content;
+  const end = content.indexOf("\n---", 3);
+  return end === -1 ? content : content.slice(end + 4);
+}
+
+function stripMarkdown(content: string): string {
+  let text = stripFrontmatter(content);
+  text = text.replace(/```[\s\S]*?```/g, " ");
+  text = text.replace(/`[^`\n]+`/g, " ");
+  text = text.replace(/!\[.*?\]\(.*?\)/g, " ");
+  text = text.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
+  text = text.replace(/#{1,6}\s+/g, "");
+  text = text.replace(/(\*\*|__)(.+?)\1/g, "$2");
+  text = text.replace(/(\*|_)(.+?)\1/g, "$2");
+  text = text.replace(/^>\s*/gm, "");
+  text = text.replace(/^[-*+]\s+/gm, "");
+  text = text.replace(/^\d+\.\s+/gm, "");
+  text = text.replace(/\|/g, " ");
+  text = text.replace(/[~_*[\]]/g, "");
+  return text.replace(/\s+/g, " ").trim();
+}
+
 const projectsRouter = new Hono<{ Bindings: Env }>();
 
 // GET /api/projects?q=
@@ -29,6 +52,33 @@ projectsRouter.patch("/:id/features", async (c) => {
     .bind(body.features, id)
     .run();
   return c.json({ ok: true });
+});
+
+// POST /api/projects/:id/reindex — rebuild FTS index for all docs in a project
+projectsRouter.post("/:id/reindex", async (c) => {
+  const projectId = c.req.param("id");
+
+  const exists = await c.env.DB.prepare("SELECT id FROM projects WHERE id = ?")
+    .bind(projectId).first<{ id: string }>();
+  if (!exists) return c.json({ ok: false, error: "Not found" }, 404);
+
+  const docs = await c.env.DB.prepare("SELECT id, title FROM docs WHERE project_id = ?")
+    .bind(projectId).all<{ id: string; title: string }>();
+
+  let indexed = 0;
+  for (const doc of docs.results) {
+    const obj = await c.env.ASSETS.get(`${projectId}/${doc.id}`);
+    const content = obj ? await obj.text() : "";
+    const body = stripMarkdown(content);
+    await c.env.DB.batch([
+      c.env.DB.prepare("DELETE FROM docs_fts WHERE doc_id = ?").bind(doc.id),
+      c.env.DB.prepare("INSERT INTO docs_fts(doc_id, project_id, title, body) VALUES (?, ?, ?, ?)")
+        .bind(doc.id, projectId, doc.title, body),
+    ]);
+    indexed++;
+  }
+
+  return c.json({ ok: true, data: { indexed } });
 });
 
 // DELETE /api/projects/:id

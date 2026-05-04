@@ -1,4 +1,5 @@
 import { okResponse, errorResponse, Errors, ROLE_RANK, ProjectFeatures, type Session, type Project, type Role } from "../lib";
+import { upsertFtsRow, deleteFtsForProject } from "../lib/fts";
 import type { Env } from "../index";
 
 const VANITY_SLUG_REGEX = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/;
@@ -117,6 +118,7 @@ export async function handleProjects(
         await env.DB.prepare(
           "INSERT INTO docs (id, title, project_id, author_id, folder_id, published_at, created_at, updated_at) VALUES (?, ?, ?, ?, NULL, NULL, ?, ?)",
         ).bind(docId, "Home", projectId, user.userId, now, now).run();
+        await upsertFtsRow(env.DB, docId, projectId, "Home", "");
         fields.push("home_doc_id = ?");
         values.push(docId);
       }
@@ -136,6 +138,29 @@ export async function handleProjects(
 
     const updated = await env.DB.prepare("SELECT * FROM projects WHERE id = ?").bind(projectId).first<Project>();
     return okResponse(updated);
+  }
+
+  // POST /projects/:id/reindex — owner only, rebuilds the FTS index for all docs in this project
+  const subPath = url.pathname.replace(/^\/projects\/[^/]+/, "");
+  if (projectId && subPath === "/reindex" && request.method === "POST") {
+    const role = await getCallerRole(env.DB, projectId, user.userId);
+    if (role !== "owner") return errorResponse(Errors.FORBIDDEN);
+
+    const rows = await env.DB.prepare("SELECT id, title FROM docs WHERE project_id = ?")
+      .bind(projectId).all<{ id: string; title: string }>();
+
+    const CHUNK = 50;
+    let indexed = 0;
+    for (let i = 0; i < rows.results.length; i += CHUNK) {
+      const chunk = rows.results.slice(i, i + CHUNK);
+      for (const doc of chunk) {
+        const r2 = await env.ASSETS.get(`${projectId}/${doc.id}`);
+        const content = r2 ? await r2.text() : "";
+        await upsertFtsRow(env.DB, doc.id, projectId, doc.title, content);
+      }
+      indexed += chunk.length;
+    }
+    return okResponse({ indexed });
   }
 
   // DELETE /projects/:id — owner only
@@ -174,6 +199,7 @@ export async function handleProjects(
     }
 
     await env.DB.prepare("DELETE FROM projects WHERE id = ?").bind(projectId).run();
+    await deleteFtsForProject(env.DB, projectId);
     return okResponse({ deleted: true });
   }
 

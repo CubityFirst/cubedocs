@@ -11,6 +11,7 @@ import { handleInviteLinks, handleInvitePublic } from "./routes/inviteLinks";
 import { handleDocShares } from "./routes/docShares";
 import { handlePendingInvites } from "./routes/pendingInvites";
 import { handleGraph, handlePublicGraph, handleGraphReindex } from "./routes/graph";
+import { handleSearch, handlePublicSearch } from "./routes/search";
 
 export interface Env {
   DB: D1Database;
@@ -223,6 +224,8 @@ export default {
         response = await handlePendingInvites(request, env, session, url);
       } else if (/^\/public\/projects\/[^/]+\/graph$/.test(url.pathname)) {
         response = await handlePublicGraph(env, url);
+      } else if (url.pathname === "/public/search") {
+        response = await handlePublicSearch(request, env, url);
       } else if (url.pathname.startsWith("/public")) {
         response = await handlePublic(request, env, url);
       } else if (url.pathname.startsWith("/invites/")) {
@@ -266,6 +269,10 @@ export default {
       } else if (url.pathname.startsWith("/files")) {
         const session = await authenticate(request, env);
         response = await handleFiles(request, env, session, url);
+      } else if (url.pathname === "/search") {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        response = await handleSearch(request, env, session, url);
       } else if (url.pathname.startsWith("/ai")) {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;

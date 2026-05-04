@@ -1,6 +1,7 @@
 import { okResponse, errorResponse, Errors, ROLE_RANK, type Session, type Doc, type Role } from "../lib";
 import { parseFrontmatter } from "../lib/frontmatter";
 import { indexDocLinks, invalidateProjectGraphIndex } from "../lib/docLinks";
+import { upsertFtsRow, deleteFtsRow } from "../lib/fts";
 import type { Env } from "../index";
 
 type BlameEntry = { u: string; n: string; t: string; c: string | null } | null;
@@ -147,6 +148,7 @@ export async function handleDocs(
     await env.DB.prepare(
       "INSERT INTO docs (id, title, project_id, author_id, folder_id, sidebar_position, tags, published_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)",
     ).bind(id, body.title, body.projectId, user.userId, folderId, sidebarPosition, tags, now, now).run();
+    await upsertFtsRow(env.DB, id, body.projectId, body.title, content);
 
     // A new doc may be the target of references in other docs, so the whole project's graph index must be recomputed.
     await invalidateProjectGraphIndex(env, body.projectId);
@@ -311,6 +313,7 @@ export async function handleDocs(
       const r2Object = await env.ASSETS.get(`${doc.project_id}/${docId}`);
       returnContent = r2Object ? await r2Object.text() : "";
     }
+    await upsertFtsRow(env.DB, docId, doc.project_id, body.title ?? doc.title, returnContent);
     const updated = {
       ...doc,
       title: body.title ?? doc.title,
@@ -343,6 +346,7 @@ export async function handleDocs(
       ...revisions.results.map(r => env.ASSETS.delete(`${doc.project_id}/${docId}/v/${r.id}`)),
     ]);
     await env.DB.prepare("DELETE FROM docs WHERE id = ?").bind(docId).run();
+    await deleteFtsRow(env.DB, docId);
     // doc_links rows for this doc cascade away, but the deleted title may have shadowed another doc's resolution, so reindex.
     await invalidateProjectGraphIndex(env, doc.project_id);
     return okResponse({ deleted: true });

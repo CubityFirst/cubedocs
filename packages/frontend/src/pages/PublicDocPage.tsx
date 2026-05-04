@@ -1,5 +1,6 @@
-import { useState, useEffect, useMemo, isValidElement } from "react";
+import { useState, useEffect, useCallback, useMemo, isValidElement } from "react";
 import { useSwipeGesture } from "@/hooks/useSwipeGesture";
+import { SearchPalette } from "@/components/SearchPalette";
 import { useParams, useNavigate, NavLink } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -406,6 +407,18 @@ export function PublicDocPage() {
   const [selectedFile, setSelectedFile] = useState<NavFile | null>(null);
   const [hasToken, setHasToken] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 768);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const openSearch = useCallback(() => { if (data?.sitePublished && projectId) setSearchOpen(true); }, [data?.sitePublished, projectId]);
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        openSearch();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [openSearch]);
 
   useSwipeGesture({
     onSwipeLeft: () => setSidebarOpen(false),
@@ -563,7 +576,7 @@ export function PublicDocPage() {
             <div className="relative flex-1">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
               <Input
-                placeholder="Search…"
+                placeholder={`Filter titles… (${/Mac|iPhone|iPad|iPod/.test(navigator.userAgent) ? "⌘K" : "Ctrl+K"} for full search)`}
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 className="pl-8 pr-7 h-8 text-sm"
@@ -788,6 +801,14 @@ export function PublicDocPage() {
         </ScrollArea>
         )}
       </div>
+      {data?.sitePublished && projectId && (
+        <SearchPalette
+          open={searchOpen}
+          onOpenChange={setSearchOpen}
+          projectId={projectId}
+          isPublic
+        />
+      )}
     </div>
   );
 }
