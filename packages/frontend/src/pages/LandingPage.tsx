@@ -215,7 +215,7 @@ const FEATURES: {
     link: "https://docs.cubityfir.st/s/help/a0ea410e-95ff-455b-a495-cdf00ea5a890",
   },
   { Icon: Users, title: "Live Collaboration", desc: "Work together in real time. See who's editing, leave inline comments.", soon: true },
-  { Icon: Search, title: "Fast Search", desc: "Full-text search across every page, heading, and tag in your workspace.", soon: true },
+  { Icon: Search, title: "Fast Search", desc: "Full-text search across every page, heading, and tag in your workspace." },
   { Icon: Globe, title: "Publish Anywhere", desc: "Share a private link or publish a styled public site in one click." },
 ];
 
