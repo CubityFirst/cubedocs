@@ -75,6 +75,11 @@ export default {
       if (shareMatch) {
         const [, projectSlug, docId] = shareMatch;
         try {
+          const cache = caches.default;
+          const cacheKey = new Request(`https://share-meta.internal/${projectSlug}/${docId}`);
+          const cached = await cache.match(cacheKey);
+          if (cached) return cached;
+
           const metaRes = await env.API.fetch(
             new Request(`https://api/public/docs/${projectSlug}/${docId}`, { method: "GET" }),
           );
@@ -104,10 +109,15 @@ export default {
                   description ? `<meta name="description" content="${escapeHtml(description)}" />` : "",
                 ].filter(Boolean).join("\n");
                 html = html.replace(/<\/head>/, `${ogTags}\n</head>`);
-                return new Response(html, {
+                const response = new Response(html, {
                   status: 200,
-                  headers: { "Content-Type": "text/html; charset=UTF-8" },
+                  headers: {
+                    "Content-Type": "text/html; charset=UTF-8",
+                    "Cache-Control": "public, max-age=43200",
+                  },
                 });
+                await cache.put(cacheKey, response.clone());
+                return response;
               }
             }
           }
