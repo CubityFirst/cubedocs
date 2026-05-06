@@ -17,6 +17,8 @@ import { PublicDocPage } from "./pages/PublicDocPage";
 import { AcceptInvitePage } from "./pages/AcceptInvitePage";
 import { PendingInvitesPage } from "./pages/PendingInvitesPage";
 import { TagPage } from "./pages/TagPage";
+import { PrivacyPage } from "./pages/PrivacyPage";
+import { TermsPage } from "./pages/TermsPage";
 
 export function App() {
   return (
@@ -37,6 +39,8 @@ export function App() {
         <Route path="/settings" element={<UserSettingsPage />} />
         <Route path="/invites/pending" element={<PendingInvitesPage />} />
       </Route>
+      <Route path="/privacy" element={<PrivacyPage />} />
+      <Route path="/terms" element={<TermsPage />} />
       <Route path="/invite/:token" element={<AcceptInvitePage />} />
       <Route path="/s/:projectId" element={<PublicDocPage />} />
       <Route path="/s/:projectId/:docId" element={<PublicDocPage />} />
