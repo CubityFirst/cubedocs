@@ -37,6 +37,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { getToken } from "@/lib/auth";
 import { Switch } from "@/components/ui/switch";
+import { useOutletContext } from "react-router-dom";
+import type { DocsLayoutContext } from "@/layouts/DocsLayout";
 import { UserProfileCard } from "@/components/UserProfileCard";
 import { Globe, House, Link, Lock, Copy, Check, X, Network, Plus, ChevronDown, RefreshCw } from "lucide-react";
 
@@ -191,6 +193,9 @@ export function SiteSettingsPage() {
 
   const token = getToken();
   const currentUser = token ? parseToken(token) : null;
+
+  const { setBreadcrumbs } = useOutletContext<DocsLayoutContext>();
+  useEffect(() => { setBreadcrumbs([]); }, []);
 
   useEffect(() => {
     if (!token || !projectId) return;

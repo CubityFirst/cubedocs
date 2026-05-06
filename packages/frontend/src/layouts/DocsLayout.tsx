@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Textarea } from "@/components/ui/textarea";
 import { Toaster } from "@/components/ui/toaster";
 import { Badge } from "@/components/ui/badge";
+import { Kbd } from "@/components/ui/kbd";
 import { clearToken, getToken } from "@/lib/auth";
 import {
   BookOpen,
@@ -434,9 +435,9 @@ export function DocsLayout() {
                   <Search className="h-3.5 w-3.5 shrink-0" />
                   Search
                 </span>
-                <kbd className="pointer-events-none hidden select-none rounded border border-border bg-muted px-1 font-mono text-[10px] sm:inline-flex">
+                <Kbd className="hidden sm:inline-flex">
                   {/Mac|iPhone|iPad|iPod/.test(navigator.userAgent) ? "⌘K" : "Ctrl+K"}
-                </kbd>
+                </Kbd>
               </button>
               <div className="flex items-center mb-1">
                 <NavLink
