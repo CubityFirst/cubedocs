@@ -37,6 +37,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { getToken } from "@/lib/auth";
 import { Switch } from "@/components/ui/switch";
+import { UserProfileCard } from "@/components/UserProfileCard";
 import { Globe, House, Link, Lock, Copy, Check, X, Network, Plus, ChevronDown, RefreshCw } from "lucide-react";
 
 type Role = "limited" | "viewer" | "editor" | "admin" | "owner";
@@ -1172,14 +1173,18 @@ export function SiteSettingsPage() {
 
                   return (
                     <div key={member.userId} className="flex items-center gap-3 px-4 py-3">
-                      <UserAvatar userId={member.userId} name={member.name} className="size-8 shrink-0 text-xs" />
-                      <div className="flex min-w-0 flex-1 flex-col">
-                        <span className="truncate text-sm font-medium">
-                          {member.name}
-                          {isMe && <span className="ml-1.5 text-xs text-muted-foreground">(you)</span>}
-                        </span>
-                        <span className="truncate text-xs text-muted-foreground">{member.email}</span>
-                      </div>
+                      <UserProfileCard userId={member.userId} name={member.name}>
+                        <button type="button" className="-mx-1 flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded px-1 py-0.5 text-left transition-colors hover:bg-muted/50">
+                          <UserAvatar userId={member.userId} name={member.name} className="size-8 shrink-0 text-xs" />
+                          <div className="flex min-w-0 flex-1 flex-col">
+                            <span className="truncate text-sm font-medium">
+                              {member.name}
+                              {isMe && <span className="ml-1.5 text-xs text-muted-foreground">(you)</span>}
+                            </span>
+                            <span className="truncate text-xs text-muted-foreground">{member.email}</span>
+                          </div>
+                        </button>
+                      </UserProfileCard>
 
                       <div className="flex shrink-0 items-center gap-3">
                         {isPending ? (

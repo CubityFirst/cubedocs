@@ -229,6 +229,43 @@ export default {
         return addCorsHeaders(Response.json({ ok: true }));
       }
 
+      // GET /users/:userId — authenticated, returns user profile + shared projects
+      const userProfileMatch = url.pathname.match(/^\/users\/([^/]+)$/);
+      if (userProfileMatch && request.method === "GET") {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        const targetUserId = userProfileMatch[1];
+
+        const lookupRes = await env.AUTH.fetch("https://auth/lookup-by-id", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: targetUserId }),
+        });
+        if (!lookupRes.ok) {
+          return addCorsHeaders(lookupRes.status === 404 ? errorResponse(Errors.NOT_FOUND) : errorResponse(Errors.INTERNAL));
+        }
+        const lookupData = await lookupRes.json<{ ok: boolean; data?: { userId: string; name: string; email: string; createdAt: string } }>();
+        if (!lookupData.ok || !lookupData.data) return addCorsHeaders(errorResponse(Errors.NOT_FOUND));
+
+        const sharedRows = await env.DB.prepare(
+          `SELECT p.id, p.name, target.role as their_role
+           FROM projects p
+           JOIN project_members caller ON caller.project_id = p.id AND caller.user_id = ? AND caller.accepted = 1
+           JOIN project_members target ON target.project_id = p.id AND target.user_id = ? AND target.accepted = 1
+           ORDER BY p.name ASC`,
+        ).bind(session.userId, targetUserId).all<{ id: string; name: string; their_role: string }>();
+
+        return addCorsHeaders(Response.json({
+          ok: true,
+          data: {
+            userId: lookupData.data.userId,
+            name: lookupData.data.name,
+            createdAt: lookupData.data.createdAt,
+            sharedProjects: sharedRows.results.map(r => ({ id: r.id, name: r.name, theirRole: r.their_role })),
+          },
+        }));
+      }
+
       // Pending invites
       if (url.pathname.startsWith("/pending-invites")) {
         const session = await getSession(request, env);
