@@ -34,6 +34,7 @@ import { type AdminProject, listProjects, updateProjectFeatures, deleteProject, 
 const ProjectFeatures = {
   CUSTOM_LINK: 1,
   AI_FEATURES: 2,
+  REALTIME:    4,
 } as const;
 
 const FEATURE_FLAGS = [
@@ -46,6 +47,11 @@ const FEATURE_FLAGS = [
     bit: ProjectFeatures.AI_FEATURES,
     label: "AI Features",
     description: "Enables AI-generated summaries for documents in this project.",
+  },
+  {
+    bit: ProjectFeatures.REALTIME,
+    label: "Realtime Collaboration",
+    description: "Enables live co-editing, presence avatars, and per-user cursors in the document editor.",
   },
 ] as const;
 

@@ -4,6 +4,14 @@ compatibility_date = "2026-02-24"
 compatibility_flags = ["nodejs_compat"]
 workers_dev = false
 
+[[durable_objects.bindings]]
+name = "DOC_COLLAB"
+class_name = "DocCollabRoom"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["DocCollabRoom"]
+
 [[d1_databases]]
 binding = "DB"
 database_name = "cubedocs-main"

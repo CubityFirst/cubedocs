@@ -29,6 +29,7 @@ export interface Doc {
 export const ProjectFeatures = {
   CUSTOM_LINK: 1,
   AI_FEATURES: 2,
+  REALTIME:    4,
 } as const;
 
 export interface Project {

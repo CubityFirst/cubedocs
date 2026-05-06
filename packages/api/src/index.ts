@@ -1,4 +1,4 @@
-import { errorResponse, Errors, Session } from "./lib";
+import { errorResponse, Errors, ProjectFeatures, ROLE_RANK, Session } from "./lib";
 import { authenticate } from "./auth";
 import { handleProjects } from "./routes/projects";
 import { handleDocs } from "./routes/docs";
@@ -12,11 +12,15 @@ import { handleDocShares } from "./routes/docShares";
 import { handlePendingInvites } from "./routes/pendingInvites";
 import { handleGraph, handlePublicGraph, handleGraphReindex } from "./routes/graph";
 import { handleSearch, handlePublicSearch } from "./routes/search";
+import { DocCollabRoom } from "./collab/DocCollabRoom";
+
+export { DocCollabRoom };
 
 export interface Env {
   DB: D1Database;
   ASSETS: R2Bucket;
   AUTH: Fetcher; // Service binding to cubedocs-auth
+  DOC_COLLAB?: DurableObjectNamespace;
   JWT_SECRET: string;
   OPENAI_API_KEY?: string;
 }
@@ -27,6 +31,13 @@ export default {
 
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: corsHeaders() });
+    }
+
+    // WebSocket upgrade for real-time collab — must be handled before addCorsHeaders
+    // because wrapping a 101 response loses the webSocket property.
+    const collabMatch = url.pathname.match(/^\/docs\/([^/]+)\/collab$/);
+    if (collabMatch && request.headers.get("Upgrade") === "websocket") {
+      return handleCollabUpgrade(request, url, env, collabMatch[1]);
     }
 
     let response: Response;
@@ -288,6 +299,52 @@ export default {
     return addCorsHeaders(response);
   },
 };
+
+async function handleCollabUpgrade(request: Request, url: URL, env: Env, docId: string): Promise<Response> {
+  if (!env.DOC_COLLAB) return new Response("Not available", { status: 503 });
+
+  // Token arrives as a query param (browsers can't set headers on WS).
+  // Re-wrap it as a Bearer header so authenticate() / the AUTH service binding handles it
+  // the same way every other route does — works in local dev without JWT_SECRET.
+  const token = url.searchParams.get("token");
+  if (!token) return new Response("Unauthorized", { status: 401 });
+  const authReq = new Request("https://placeholder/", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const session = await authenticate(authReq, env);
+  if (!session) return new Response("Unauthorized", { status: 401 });
+
+  const docRow = await env.DB.prepare("SELECT project_id FROM docs WHERE id = ?")
+    .bind(docId).first<{ project_id: string }>();
+  if (!docRow) return new Response("Not found", { status: 404 });
+
+  const projectRow = await env.DB.prepare("SELECT features FROM projects WHERE id = ?")
+    .bind(docRow.project_id).first<{ features: number }>();
+  if (!projectRow || !(projectRow.features & ProjectFeatures.REALTIME)) {
+    return new Response("Forbidden", { status: 403 });
+  }
+
+  const caller = await env.DB.prepare("SELECT role, name FROM project_members WHERE project_id = ? AND user_id = ?")
+    .bind(docRow.project_id, session.userId).first<{ role: string; name: string }>();
+  if (!caller || ROLE_RANK[caller.role as keyof typeof ROLE_RANK] < ROLE_RANK["editor"]) {
+    return new Response("Forbidden", { status: 403 });
+  }
+
+  const id = env.DOC_COLLAB.idFromName(`${docRow.project_id}:${docId}`);
+  const stub = env.DOC_COLLAB.get(id);
+
+  const upstream = new Request(request.url, {
+    method: request.method,
+    headers: new Headers({
+      ...Object.fromEntries(request.headers),
+      "X-User-Id": session.userId,
+      "X-User-Name": caller.name,
+      "X-Project-Id": docRow.project_id,
+      "X-Doc-Id": docId,
+    }),
+  });
+  return stub.fetch(upstream);
+}
 
 async function getSession(request: Request, env: Env): Promise<Session | Response> {
   const user = await authenticate(request, env);

@@ -3,7 +3,8 @@
     "allow": [
       "Bash(pnpm typecheck:*)",
       "Bash(npx tsc *)",
-      "WebFetch(domain:api.anthropic.com)"
+      "WebFetch(domain:api.anthropic.com)",
+      "Bash(pnpm --filter @annex/api test)"
     ]
   }
 }

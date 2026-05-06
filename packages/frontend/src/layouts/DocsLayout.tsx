@@ -40,6 +40,7 @@ interface Project {
   ai_summarization_type: string;
   graph_enabled: number;
   is_favourite: number;
+  features: number;
 }
 
 interface Doc {
@@ -79,6 +80,8 @@ export interface DocsLayoutContext {
   myRole: string | null;
   aiEnabled: boolean;
   aiSummarizationType: string;
+  projectFeatures: number;
+  currentUser: { id: string; name: string } | null;
   docs: { id: string; title: string; display_title?: string | null; folder_id?: string | null; tags?: string | null }[];
   folders: { id: string; name: string; parent_id: string | null }[];
   addDoc: (doc: { id: string; title: string; display_title?: string | null; folder_id?: string | null; tags?: string | null }) => void;
@@ -198,6 +201,7 @@ export function DocsLayout() {
 
   // current user
   const [userName, setUserName] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -229,8 +233,13 @@ export function DocsLayout() {
     const token = getToken();
     if (!token) return;
     fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json() as Promise<{ ok: boolean; data?: { name: string } }>)
-      .then(json => { if (json.ok && json.data) setUserName(json.data.name); })
+      .then(r => r.json() as Promise<{ ok: boolean; data?: { name: string; userId: string } }>)
+      .then(json => {
+        if (json.ok && json.data) {
+          setUserName(json.data.name);
+          setUserId(json.data.userId);
+        }
+      })
       .catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -346,6 +355,8 @@ export function DocsLayout() {
     myRole: currentProject?.role ?? null,
     aiEnabled: !!(currentProject?.ai_enabled),
     aiSummarizationType: currentProject?.ai_summarization_type ?? "manual",
+    projectFeatures: currentProject?.features ?? 0,
+    currentUser: userId && userName ? { id: userId, name: userName } : null,
     docs,
     folders,
     addDoc,

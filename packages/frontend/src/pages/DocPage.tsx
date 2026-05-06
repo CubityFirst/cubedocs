@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo, isValidElement } from "react";
+import { useState, useEffect, useRef, useMemo, isValidElement } from "react";
 import { useParams, useLocation, useNavigate, useOutletContext } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -16,6 +16,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
+import { MarkdownEditor } from "@/components/MarkdownEditor";
+import { EditorPresence } from "@/components/EditorPresence";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -103,40 +105,6 @@ function timeAgo(iso: string): string {
   return `${Math.floor(months / 12)}y ago`;
 }
 
-
-
-function applyMarker(value: string, start: number, end: number, marker: string) {
-  const ml = marker.length;
-  const selected = value.slice(start, end);
-
-  // True iff `str` is wrapped in exactly `marker` (not a longer marker like ** vs *)
-  const exactWrap = (str: string) => {
-    if (str.length < ml * 2 + 1 || !str.startsWith(marker) || !str.endsWith(marker)) return false;
-    if (marker === "*") return str[ml] !== "*" && str[str.length - ml - 1] !== "*";
-    return true;
-  };
-
-  // Case 1: markers sit just outside the current selection
-  const before = start >= ml ? value.slice(start - ml, start) : "";
-  const after = value.slice(end, end + ml);
-  const outerMatch =
-    before === marker &&
-    after === marker &&
-    (marker !== "*" || (value[start - ml - 1] !== "*" && value[end + ml] !== "*"));
-
-  if (outerMatch) {
-    return { value: value.slice(0, start - ml) + selected + value.slice(end + ml), start: start - ml, end: end - ml };
-  }
-
-  // Case 2: selection itself includes the markers
-  if (exactWrap(selected)) {
-    const inner = selected.slice(ml, selected.length - ml);
-    return { value: value.slice(0, start) + inner + value.slice(end), start, end: start + inner.length };
-  }
-
-  // Case 3: add markers
-  return { value: value.slice(0, start) + marker + selected + marker + value.slice(end), start: start + ml, end: end + ml };
-}
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -229,7 +197,9 @@ export function DocPage() {
   const { projectId, docId } = useParams<{ projectId: string; docId: string }>();
   const location = useLocation();
   const navigate = useNavigate();
-  const { updateDocTitle, setBreadcrumbs, projectName, projectPublishedAt, changelogMode, docs: allDocs, folders: allFolders, aiEnabled, aiSummarizationType } = useOutletContext<DocsLayoutContext>();
+  const { updateDocTitle, setBreadcrumbs, projectName, projectPublishedAt, changelogMode, docs: allDocs, folders: allFolders, aiEnabled, aiSummarizationType, projectFeatures, currentUser } = useOutletContext<DocsLayoutContext>();
+  const REALTIME = 4;
+  const realtimeEnabled = !!(projectFeatures & REALTIME);
   const { toast } = useToast();
 
   const markdownComponents = useMemo(() => ({
@@ -274,13 +244,7 @@ export function DocPage() {
   const [folderShareLoading, setFolderShareLoading] = useState(false);
   const [pendingAddPermission, setPendingAddPermission] = useState<Record<string, SharePermission>>({});
 
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  const handleEditorActivity = useCallback((e: React.MouseEvent<HTMLTextAreaElement> | React.KeyboardEvent<HTMLTextAreaElement>) => {
-    const ta = e.currentTarget;
-    const beforeCursor = ta.value.slice(0, ta.selectionStart ?? 0);
-    setActiveLine(beforeCursor.split("\n").length - 1);
-  }, []);
+  const [remoteEditors, setRemoteEditors] = useState<{ userId: string; name: string; color: string }[]>([]);
 
 
 
@@ -641,6 +605,7 @@ export function DocPage() {
             autoFocus={location.state?.isNew}
           />
           <div className="ml-auto flex items-center gap-2">
+            {realtimeEnabled && <EditorPresence editors={remoteEditors} />}
             {saveError && <p className="text-xs text-destructive">{saveError}</p>}
             <Button variant="ghost" size="sm" onClick={cancelEditing} className="gap-1.5">
               <X className="h-3.5 w-3.5" />
@@ -667,36 +632,15 @@ export function DocPage() {
               </button>
             </div>
             <div className="relative flex-1 overflow-hidden">
-              <Textarea
-                ref={textareaRef}
-                className="absolute inset-0 rounded-none border-0 bg-background p-4 font-mono text-sm leading-relaxed shadow-none ring-0 focus-visible:ring-0"
+              <MarkdownEditor
                 value={draft}
-                onChange={e => setDraft(e.target.value)}
-                onKeyDown={e => {
-                  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-                    e.preventDefault();
-                    handleSaveClick();
-                    return;
-                  }
-                  if ((e.ctrlKey || e.metaKey) && ['b', 'i', 'u'].includes(e.key)) {
-                    e.preventDefault();
-                    const ta = e.currentTarget;
-                    const marker = e.key === 'b' ? '**' : e.key === 'i' ? '*' : '__';
-                    const result = applyMarker(ta.value, ta.selectionStart, ta.selectionEnd, marker);
-                    setDraft(result.value);
-                    requestAnimationFrame(() => {
-                      if (textareaRef.current) {
-                        textareaRef.current.setSelectionRange(result.start, result.end);
-                      }
-                    });
-                  }
-                }}
-                onClick={handleEditorActivity}
-                onKeyUp={handleEditorActivity}
-                onScroll={e => setEditorScrollTop(e.currentTarget.scrollTop)}
-                placeholder="Write your document in Markdown…"
+                onChange={setDraft}
+                onCursorLine={setActiveLine}
+                onScrollTop={setEditorScrollTop}
+                onSave={handleSaveClick}
                 autoFocus={!location.state?.isNew}
-                spellCheck={false}
+                collab={realtimeEnabled && currentUser ? { docId: doc.id, user: currentUser } : undefined}
+                onAwarenessChange={realtimeEnabled ? setRemoteEditors : undefined}
               />
               {(() => {
                 const entry = doc.blame?.[activeLine] ?? null;
