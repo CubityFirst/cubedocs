@@ -85,6 +85,12 @@ export class DocCollabRoom implements DurableObject {
   }
 
   async fetch(request: Request): Promise<Response> {
+    // WebSocket upgrade must be checked first — upgrade requests are GET requests too,
+    // so checking method before Upgrade header would intercept them with the wrong branch.
+    if (request.headers.get("Upgrade") === "websocket") {
+      return this.handleWebSocket(request);
+    }
+
     // Internal — returns and clears the set of users who have contributed edits
     if (request.method === "GET") {
       const stored = await this.ctx.storage.get<{ id: string; name: string }[]>("editors") ?? [];
@@ -107,10 +113,10 @@ export class DocCollabRoom implements DurableObject {
       return new Response(null, { status: 204 });
     }
 
-    if (request.headers.get("Upgrade") !== "websocket") {
-      return new Response("Expected WebSocket upgrade", { status: 426 });
-    }
+    return new Response("Method not allowed", { status: 405 });
+  }
 
+  private async handleWebSocket(request: Request): Promise<Response> {
     const userId = request.headers.get("X-User-Id") ?? "";
     const userName = request.headers.get("X-User-Name") ?? "";
     const projectId = request.headers.get("X-Project-Id") ?? "";

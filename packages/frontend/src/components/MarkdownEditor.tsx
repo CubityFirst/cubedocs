@@ -175,7 +175,17 @@ class CollabProvider {
 
         switch (syncType) {
           case 0: {
-            // Server sent its state vector (step 1) — reply with our diff (step 2)
+            // Server sent its state vector (step 1).
+            // If DO already has content (non-empty SV), discard our locally pre-seeded
+            // content before sending step 2 — otherwise both inserts survive the CRDT
+            // merge and the text duplicates on every new editing session.
+            const [numEntries] = readVarUint(payload, 0);
+            if (numEntries > 0) {
+              const yText = this.ydoc.getText("content");
+              if (yText.length > 0) {
+                this.ydoc.transact(() => { yText.delete(0, yText.length); });
+              }
+            }
             const diff = Y.encodeStateAsUpdate(this.ydoc, payload);
             this.sendSyncPayload(1, diff);
             break;
