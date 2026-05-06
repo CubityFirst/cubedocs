@@ -48,7 +48,7 @@ const editorTheme = EditorView.theme({
     boxSizing: "border-box",
   },
   ".cm-content": {
-    padding: "0",
+    padding: "0 0 22.75px 0",
     caretColor: "currentColor",
   },
   ".cm-line": { padding: "0" },
@@ -320,6 +320,7 @@ export function MarkdownEditor({
   const onAwarenessChangeRef = useRef(onAwarenessChange);
   onAwarenessChangeRef.current = onAwarenessChange;
 
+  const initialValueRef = useRef(value);
   const collabRef = useRef(collab);
 
   useEffect(() => {
@@ -378,9 +379,12 @@ export function MarkdownEditor({
       ydoc = new Y.Doc();
       const yText = ydoc.getText("content");
 
-      // Seed Y.Text with current value before connecting (server state takes priority via CRDT merge)
-      if (value.length > 0 && yText.toString().length === 0) {
-        ydoc.transact(() => { yText.insert(0, value); });
+      // Seed yText immediately so the editor is never blank while connecting.
+      // The DO's state takes precedence: if DO already has content, Y.applyUpdate
+      // will merge and yCollab will reflect the authoritative state.
+      const initialValue = initialValueRef.current;
+      if (initialValue.length > 0) {
+        ydoc.transact(() => { yText.insert(0, initialValue); });
       }
 
       awareness = new Awareness(ydoc);
@@ -428,7 +432,7 @@ export function MarkdownEditor({
     }
 
     const state = EditorState.create({
-      doc: collabOpts ? (ydoc!.getText("content").toString() || value) : value,
+      doc: collabOpts ? (ydoc!.getText("content").toString() || initialValueRef.current) : value,
       extensions,
     });
 

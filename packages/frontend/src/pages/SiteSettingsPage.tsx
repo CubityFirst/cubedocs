@@ -159,6 +159,8 @@ export function SiteSettingsPage() {
   const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null);
   const [revokingLinkId, setRevokingLinkId] = useState<string | null>(null);
 
+  const [exporting, setExporting] = useState(false);
+
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -657,6 +659,34 @@ export function SiteSettingsPage() {
       setLeaveError("Could not connect to the server.");
     } finally {
       setLeaving(false);
+    }
+  }
+
+  async function handleExport() {
+    if (!projectId) return;
+    setExporting(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/export`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        toast({ title: "Failed to export site.", variant: "destructive" });
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${project!.name}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast({ title: "Site exported." });
+    } catch {
+      toast({ title: "Could not connect to the server.", variant: "destructive" });
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -1345,6 +1375,20 @@ export function SiteSettingsPage() {
 
           <div id="danger" className="flex flex-col gap-3">
             <h3 className="text-base font-semibold text-destructive">Danger Zone</h3>
+
+            {isAdminOrOwner && (
+              <div className="flex items-start justify-between gap-4 rounded-md border border-border px-4 py-3">
+                <div className="flex flex-col gap-0.5">
+                  <p className="text-sm font-medium">Export site</p>
+                  <p className="text-xs text-muted-foreground">
+                    Download a .zip of every document and uploaded file in this site, with folders preserved.
+                  </p>
+                </div>
+                <Button variant="outline" onClick={handleExport} disabled={exporting} className="shrink-0">
+                  {exporting ? "Exporting…" : "Export site"}
+                </Button>
+              </div>
+            )}
 
             {isOwner ? (
               <>

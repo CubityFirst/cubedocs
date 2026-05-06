@@ -697,7 +697,7 @@ export function DocPage() {
                   <Code>{`**bold**       Ctrl+B\n*italic*       Ctrl+I\n__underline__  Ctrl+U\n~~strikethrough~~`}</Code>
                 </Section>
                 <Section title="Links & images">
-                  <Code>{`[link text](https://example.com)\n![alt text](https://example.com/img.png)`}</Code>
+                  <Code>{`[link text](https://example.com)\n![alt text](https://example.com/img.png)\n![alt](img.png){width=300}             fixed width (px)\n![alt](img.png){width=50%}             percentage width\n![alt](img.png){width=400 height=200}  width and height`}</Code>
                 </Section>
                 <Section title="Document links">
                   <Code>{`[[My Document]]                   link by title\n[[My Document|custom label]]      link with display text\n[[My Document#section]]           link to a heading anchor\n[[My Document#section|see this]]  anchor link with label`}</Code>
@@ -1033,7 +1033,15 @@ export function DocPage() {
 
           {viewingRevision && (
             <HistoryBanner
-              editorName={viewingRevision.editor_name}
+              editorName={(() => {
+                if (viewingRevision.contributors) {
+                  try {
+                    const cs = JSON.parse(viewingRevision.contributors) as { id: string; name: string }[];
+                    if (cs.length > 1) return cs.map(c => c.name).join(", ");
+                  } catch { /* */ }
+                }
+                return viewingRevision.editor_name;
+              })()}
               createdAt={viewingRevision.created_at}
               onBack={() => setViewingRevision(null)}
               onRevert={isEditor ? handleRevert : undefined}

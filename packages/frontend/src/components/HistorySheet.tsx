@@ -7,6 +7,17 @@ export interface RevisionMeta {
   editor_name: string;
   created_at: string;
   changelog: string | null;
+  contributors: string | null; // JSON: {id: string; name: string}[]
+}
+
+function displayName(rev: RevisionMeta): string {
+  if (rev.contributors) {
+    try {
+      const cs = JSON.parse(rev.contributors) as { id: string; name: string }[];
+      if (cs.length > 1) return cs.map(c => c.name).join(", ");
+    } catch { /* */ }
+  }
+  return rev.editor_name;
 }
 
 function formatDateTime(iso: string): string {
@@ -62,7 +73,7 @@ export function HistorySheet({ open, onOpenChange, revisions, selectedId, loadin
                   disabled={loading}
                 >
                   <div className="flex flex-col gap-0.5">
-                    <span className="text-sm font-medium">{rev.editor_name}</span>
+                    <span className="text-sm font-medium">{displayName(rev)}</span>
                     <span className="text-xs text-muted-foreground">{formatDateTime(rev.created_at)} · <span className="text-muted-foreground/60">{timeAgo(rev.created_at)}</span></span>
                     {rev.changelog && (
                       <span className="text-xs text-foreground/70 italic line-clamp-2">{rev.changelog}</span>

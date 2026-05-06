@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { BookOpen, Globe, Mail, Sparkles, Star, Users } from "lucide-react";
+import { useNavigate, useOutletContext } from "react-router-dom";
+import { BookOpen, Globe, Mail, Plus, Sparkles, Star, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { getToken } from "@/lib/auth";
+import type { DocsLayoutContext } from "@/layouts/DocsLayout";
 
 interface Project {
   id: string;
@@ -21,6 +22,7 @@ export function DashboardPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
   const navigate = useNavigate();
+  const { openCreateSite } = useOutletContext<DocsLayoutContext>();
 
   function sortByFavourite(list: Project[]) {
     return [...list].sort((a, b) => b.is_favourite - a.is_favourite);
@@ -64,16 +66,7 @@ export function DashboardPage() {
         </p>
       </div>
 
-      {projects.length === 0 && pendingCount === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-20 text-center">
-          <BookOpen className="mb-3 h-10 w-10 text-muted-foreground/40" />
-          <p className="text-sm font-medium">No sites yet</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Create a site from the sidebar to get started.
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {projects.map(project => (
             <Card
               key={project.id}
@@ -177,8 +170,21 @@ export function DashboardPage() {
               <CardFooter />
             </Card>
           )}
+          <Card
+            onClick={openCreateSite}
+            className="group flex cursor-pointer flex-col items-center justify-center border-dashed transition-colors hover:border-primary/40 hover:bg-accent/30"
+          >
+            <CardContent className="flex flex-col items-center gap-3 py-10">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-dashed border-muted-foreground/40 transition-colors group-hover:border-primary/60">
+                <Plus className="h-5 w-5 text-muted-foreground/60 transition-colors group-hover:text-primary" />
+              </div>
+              <div className="text-center">
+                <p className="text-sm font-medium">New site</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">Create a new documentation site</p>
+              </div>
+            </CardContent>
+          </Card>
         </div>
-      )}
     </div>
   );
 }

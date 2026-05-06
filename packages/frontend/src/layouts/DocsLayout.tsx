@@ -15,8 +15,6 @@ import { Badge } from "@/components/ui/badge";
 import { clearToken, getToken } from "@/lib/auth";
 import {
   BookOpen,
-  FolderOpen,
-  Plus,
   Settings,
   LogOut,
   ChevronLeft,
@@ -86,6 +84,7 @@ export interface DocsLayoutContext {
   folders: { id: string; name: string; parent_id: string | null }[];
   addDoc: (doc: { id: string; title: string; display_title?: string | null; folder_id?: string | null; tags?: string | null }) => void;
   setBreadcrumbs: Dispatch<SetStateAction<BreadcrumbItem[]>>;
+  openCreateSite: () => void;
 }
 
 const PAGE_SIZE = 10;
@@ -307,6 +306,7 @@ export function DocsLayout() {
         setCreating(false);
         setName("");
         setDescription("");
+        navigate(`/projects/${json.data.id}`);
       } else {
         setError("Failed to create site.");
       }
@@ -361,6 +361,7 @@ export function DocsLayout() {
     folders,
     addDoc,
     setBreadcrumbs,
+    openCreateSite: () => setCreating(true),
   };
 
   return (
@@ -465,78 +466,20 @@ export function DocsLayout() {
         ) : (
           /* ── Overview sidebar ── */
           <ScrollArea className="flex-1 px-2 py-3">
-            {projects.length === 0 && !creating ? (
-              <div className="flex flex-col items-center gap-3 px-2 py-6 text-center">
-                <FolderOpen className="h-8 w-8 text-muted-foreground/50" />
-                <p className="text-xs text-muted-foreground">No sites yet</p>
-                <Button size="sm" className="w-full gap-2" onClick={() => setCreating(true)}>
-                  <Plus className="h-4 w-4" />
-                  Create Site
-                </Button>
-              </div>
-            ) : (
-              <nav className="flex flex-col gap-1">
-                {projects.map(p => (
-                  <Button
-                    key={p.id}
-                    variant="ghost"
-                    size="sm"
-                    className="w-full justify-start gap-2"
-                    onClick={() => navigate(`/projects/${p.id}`)}
-                  >
-                    <BookOpen className="h-4 w-4 shrink-0" />
-                    {p.name}
-                  </Button>
-                ))}
+            <nav className="flex flex-col gap-1">
+              {projects.map(p => (
                 <Button
+                  key={p.id}
                   variant="ghost"
                   size="sm"
-                  className="mt-1 w-full justify-start gap-2 text-muted-foreground"
-                  onClick={() => setCreating(true)}
+                  className="w-full justify-start gap-2"
+                  onClick={() => navigate(`/projects/${p.id}`)}
                 >
-                  <Plus className="h-4 w-4" />
-                  Create Site
+                  <BookOpen className="h-4 w-4 shrink-0" />
+                  {p.name}
                 </Button>
-              </nav>
-            )}
-
-            <Dialog open={creating} onOpenChange={open => { if (!open) { setCreating(false); setError(null); setName(""); setDescription(""); } }}>
-              <DialogContent className="sm:max-w-md">
-                <DialogHeader className="pb-2">
-                  <DialogTitle>New site</DialogTitle>
-                </DialogHeader>
-                <form onSubmit={handleCreate} className="flex flex-col gap-5 py-2">
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="site-name">Name</Label>
-                    <Input
-                      id="site-name"
-                      placeholder="My Docs"
-                      value={name}
-                      onChange={e => setName(e.target.value)}
-                      required
-                      autoFocus
-                    />
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="site-description">Description <span className="text-muted-foreground font-normal">(optional)</span></Label>
-                    <Textarea
-                      id="site-description"
-                      placeholder="A short description of this site…"
-                      value={description}
-                      onChange={e => setDescription(e.target.value)}
-                      rows={3}
-                      className="resize-none"
-                    />
-                  </div>
-                  {error && <p className="text-sm text-destructive">{error}</p>}
-                  <DialogFooter className="pt-2">
-                    <Button type="submit" disabled={saving}>
-                      {saving ? "Creating…" : "Create site"}
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
+              ))}
+            </nav>
           </ScrollArea>
         )}
 
@@ -614,6 +557,43 @@ export function DocsLayout() {
           projectId={projectId}
         />
       )}
+      <Dialog open={creating} onOpenChange={open => { if (!open) { setCreating(false); setError(null); setName(""); setDescription(""); } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader className="pb-2">
+            <DialogTitle>New site</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleCreate} className="flex flex-col gap-5 py-2">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="site-name">Name</Label>
+              <Input
+                id="site-name"
+                placeholder="My Docs"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                required
+                autoFocus
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="site-description">Description <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Textarea
+                id="site-description"
+                placeholder="A short description of this site…"
+                value={description}
+                onChange={e => setDescription(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+            {error && <p className="text-sm text-destructive">{error}</p>}
+            <DialogFooter className="pt-2">
+              <Button type="submit" disabled={saving}>
+                {saving ? "Creating…" : "Create site"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
       <Toaster />
     </div>
   );

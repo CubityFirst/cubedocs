@@ -1,116 +1,136 @@
-# CubeDocs
+<img src="logo.png" alt="annex" width="260" />
 
-A documentation hosting and management platform. Create projects, write markdown docs, and share them with the world.
+# annex
 
-> **Work in progress.** This is a prototype. Expect rough edges, missing features, and breaking changes. Not production-ready.
-
----
-
-## What is this?
-
-CubeDocs is a lightweight platform for hosting and organizing markdown-based documentation. Think a simpler, self-hosted alternative to Notion or Confluence — focused on technical docs, clean URLs, and a no-fuss editing experience.
-
-Built as a monorepo with a React frontend and Cloudflare Workers backend, backed by Cloudflare D1 (SQLite) and R2 storage.
-
----
+A collaborative documentation platform built on Cloudflare's edge infrastructure. Real-time co-editing, rich markdown, full-text search, file attachments, revision history, and passkey/TOTP authentication — all running at the edge with zero servers to manage.
 
 ## Features
 
-### Auth & Security
-- Register and log in with email/password
-- Cloudflare Turnstile CAPTCHA on auth forms
-- JWT-based sessions
-- TOTP (authenticator app) support
-- WebAuthn / passkey / security key support
-- Password strength indicator (zxcvbn)
-- Change password from settings
+**Documents & Editing**
+- Markdown editor with live split-view preview
+- GitHub-Flavored Markdown — tables, task lists, strikethrough
+- Syntax highlighting via Shiki
+- Custom callout blocks (note, warning, tip, error, success)
+- Real-time collaborative editing (Yjs CRDT over WebSocket)
+- Full revision history with line-by-line blame
 
-### Projects
-- Create and manage documentation projects with slugs and descriptions
-- Role-based member access: Viewer, Editor, Admin, Owner
-- Invite and manage members per project
-- Publish projects publicly with a clean URL
-- Vanity slugs (custom URLs) for published projects
-- Changelog mode: off / on / enforced
+**Projects & Organisation**
+- Project-level publishing with clean vanity slugs
+- Folder-based document hierarchy
+- Role-based access: Viewer, Editor, Admin, Owner
+- Member invitations per project
+- Changelog / commit messages on save
 
-### Documents
-- Markdown editor with split-view live preview
-- GitHub-Flavored Markdown (tables, strikethrough, task lists)
-- Code blocks with syntax highlighting (Shiki)
-- Custom callout blocks (note, warning, tip, error, success, and more)
-- Folder-based organization
-- Document search
-- Toggle heading and last-updated visibility per document
-- Full revision history — view and restore previous versions
-- Line-by-line blame (who edited each line and when)
-- Changelog/commit messages on save
-- Publish individual documents publicly
+**Files**
+- File uploads up to 50 MB per project, organised into folders
+- Image preview, file-type icons, rename and move support
 
-### Files
-- Upload files up to 50MB per project
-- Organize files into folders
-- Rename and move files
-- Image preview support
-- File type icons (image, PDF, archive, code, etc.)
-
-### Folders
-- Hierarchical folders for documents
-- Create, rename, move, and delete folders
-- Recursive content counts (docs, subfolders)
-
-### Public Docs
-- Publish a project site with a clean public URL
-- Serve individual published documents publicly
-- Folder sidebar and breadcrumb navigation in public view
-- Table of contents with heading anchors
-- Syntax-highlighted code, callouts, images, tables
-
-### Settings
-- **User settings** — display name, password, TOTP, security keys
-- **Site settings** — name, description, publishing, changelog mode, vanity slug, member management, danger zone
-
----
+**Authentication**
+- Email + password with TOTP (authenticator app) and WebAuthn / passkeys
+- Cloudflare Turnstile CAPTCHA, JWT sessions, password strength indicator
 
 ## Stack
 
-| Layer | Tech |
+| Layer | Technology |
 |---|---|
 | Frontend | React 19, Vite, Tailwind CSS 4, shadcn/ui |
-| Backend | Cloudflare Workers, TypeScript |
-| Database | Cloudflare D1 (SQLite) |
-| Storage | Cloudflare R2 |
-| Monorepo | Turbo + pnpm |
-
----
-
-## Development
-
-```bash
-pnpm dev
-```
-
-Starts all packages concurrently (frontend, api, auth, admin).
-
----
+| API | Cloudflare Workers (Hono), D1, R2, Durable Objects |
+| Auth | Cloudflare Workers, D1 |
+| Realtime | Yjs CRDT · WebSocket · Durable Objects |
+| Monorepo | pnpm workspaces + Turborepo |
 
 ## Packages
 
 ```
 packages/
-  frontend/   # React app
-  api/        # Core API worker (projects, docs, files)
-  auth/       # Auth worker (register, login, JWT, 2FA)
-  shared/     # Shared types and utilities
+├── frontend/   React SPA
+├── api/        Core Worker — projects, docs, files, collab
+├── auth/       Auth Worker — login, register, TOTP, WebAuthn
+└── admin/      Admin dashboard
 ```
 
----
+## Prerequisites
 
-## Vibecoded with AI
+- **Node.js** 20 or later
+- **pnpm** 10 or later
 
-This project is entirely vibecoded. No careful upfront architecture, no design docs — just vibes and iteration. Built with the help of various AI models, primarily **Claude** (by Anthropic).
+```bash
+npm install -g pnpm
+```
 
----
+Wrangler (the Cloudflare CLI) is installed automatically as a dev dependency — no global install needed.
 
-## Disclaimer
+## Setup
 
-This is a prototype. It is not secure enough, not tested enough, and not complete enough for real use. Use it to learn, fork it, break it, whatever.
+**1. Clone and install dependencies**
+
+```bash
+git clone <repo-url>
+cd annex
+pnpm install
+```
+
+**2. Configure environment variables**
+
+Create local secrets files for each Worker:
+
+```bash
+cp packages/api/.dev.vars.example packages/api/.dev.vars
+cp packages/auth/.dev.vars.example packages/auth/.dev.vars
+```
+
+Both Workers need a shared `JWT_SECRET`:
+
+```ini
+# packages/api/.dev.vars
+JWT_SECRET=your-secret-here
+
+# packages/auth/.dev.vars
+JWT_SECRET=your-secret-here   # must match api
+```
+
+**3. Apply local database migrations**
+
+```bash
+pnpm migrations:local
+```
+
+This seeds the local Cloudflare D1 databases under `.wrangler/state/` at the monorepo root.
+
+## Running the Dev Server
+
+```bash
+pnpm dev
+```
+
+Starts all packages concurrently. Once running:
+
+| Service | URL |
+|---|---|
+| Frontend | http://localhost:5173 |
+| API Worker | http://localhost:8787 |
+| Auth Worker | http://localhost:8788 |
+
+The frontend dev server automatically proxies `/api` requests to the local Workers — no separate configuration needed.
+
+## Other Commands
+
+```bash
+pnpm build        # Production builds for all packages
+pnpm typecheck    # TypeScript type-check across all packages
+pnpm test         # Run all test suites
+pnpm deploy       # Deploy all packages to Cloudflare
+```
+
+## Deploying to Cloudflare
+
+```bash
+pnpm migrations:remote   # Apply pending migrations to production D1
+pnpm deploy              # Build and deploy all Workers + frontend
+```
+
+Requires a Cloudflare account with D1, R2, and Workers enabled, and `wrangler login` completed.
+
+## License
+
+Private — all rights reserved.

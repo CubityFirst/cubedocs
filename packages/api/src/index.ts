@@ -11,6 +11,7 @@ import { handleInviteLinks, handleInvitePublic } from "./routes/inviteLinks";
 import { handleDocShares } from "./routes/docShares";
 import { handlePendingInvites } from "./routes/pendingInvites";
 import { handleGraph, handlePublicGraph, handleGraphReindex } from "./routes/graph";
+import { handleProjectExport } from "./routes/export";
 import { handleSearch, handlePublicSearch } from "./routes/search";
 import { DocCollabRoom } from "./collab/DocCollabRoom";
 
@@ -253,6 +254,10 @@ export default {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
         response = await handleDocShares(request, env, session, url);
+      } else if (/^\/projects\/[^/]+\/export$/.test(url.pathname)) {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        response = await handleProjectExport(request, env, session, url);
       } else if (/^\/projects\/[^/]+\/graph\/reindex$/.test(url.pathname)) {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;

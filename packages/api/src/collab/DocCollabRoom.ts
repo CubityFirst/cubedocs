@@ -29,6 +29,7 @@ export class DocCollabRoom implements DurableObject {
 
   private ydoc: Y.Doc | null = null;
   private awareness: awarenessProtocol.Awareness | null = null;
+  private editors: Map<string, string> | null = null; // userId → userName
 
   constructor(ctx: DurableObjectState, env: Env) {
     this.ctx = ctx;
@@ -46,6 +47,14 @@ export class DocCollabRoom implements DurableObject {
     } catch (err) {
       console.error("[DocCollabRoom] failed to restore ydoc from storage:", err);
     }
+
+    this.editors = new Map();
+    try {
+      const stored = await this.ctx.storage.get<{ id: string; name: string }[]>("editors");
+      if (stored) {
+        for (const e of stored) this.editors.set(e.id, e.name);
+      }
+    } catch { /* */ }
 
     this.awareness = new awarenessProtocol.Awareness(this.ydoc);
 
@@ -76,6 +85,28 @@ export class DocCollabRoom implements DurableObject {
   }
 
   async fetch(request: Request): Promise<Response> {
+    // Internal — returns and clears the set of users who have contributed edits
+    if (request.method === "GET") {
+      const stored = await this.ctx.storage.get<{ id: string; name: string }[]>("editors") ?? [];
+      await this.ctx.storage.delete("editors");
+      if (this.editors) this.editors.clear();
+      return new Response(JSON.stringify({ editors: stored }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Internal cleanup — called when the document is deleted
+    if (request.method === "DELETE") {
+      for (const ws of this.ctx.getWebSockets()) {
+        try { ws.close(1001, "Document deleted"); } catch { /* */ }
+      }
+      try { await this.ctx.storage.deleteAll(); } catch { /* */ }
+      this.ydoc = null;
+      this.awareness = null;
+      return new Response(null, { status: 204 });
+    }
+
     if (request.headers.get("Upgrade") !== "websocket") {
       return new Response("Expected WebSocket upgrade", { status: 426 });
     }
@@ -149,6 +180,13 @@ export class DocCollabRoom implements DurableObject {
           }
           if (syncType === 2) {
             this.ctx.storage.setAlarm(Date.now() + 30_000).catch(() => { /* */ });
+            // Track this user as a contributor
+            const att = ws.deserializeAttachment() as WsAttachment | null;
+            if (att?.userId && this.editors && !this.editors.has(att.userId)) {
+              this.editors.set(att.userId, att.userName);
+              const list = Array.from(this.editors.entries()).map(([id, name]) => ({ id, name }));
+              this.ctx.storage.put("editors", list).catch(() => { /* */ });
+            }
           }
           break;
         }
@@ -193,6 +231,8 @@ export class DocCollabRoom implements DurableObject {
 
       if (this.ctx.getWebSockets().length === 0) {
         await this.persist();
+        // Schedule eviction 30 days from now; a reconnect will cancel this via the next edit alarm
+        this.ctx.storage.setAlarm(Date.now() + 7 * 24 * 60 * 60 * 1000).catch(() => { /* */ });
       }
     } catch (err) {
       console.error("[DocCollabRoom] webSocketClose error:", err);
@@ -206,9 +246,18 @@ export class DocCollabRoom implements DurableObject {
 
   async alarm(): Promise<void> {
     try {
-      await this.persist();
+      const lastActivity = await this.ctx.storage.get<number>("lastActivity") ?? 0;
+      const sevenDays = 7 * 24 * 60 * 60 * 1000;
+      if (Date.now() - lastActivity >= sevenDays) {
+        // No activity for 30 days — evict the room entirely
+        await this.ctx.storage.deleteAll();
+        this.ydoc = null;
+        this.awareness = null;
+      } else {
+        await this.persist();
+      }
     } catch (err) {
-      console.error("[DocCollabRoom] alarm/persist error:", err);
+      console.error("[DocCollabRoom] alarm error:", err);
     }
   }
 
@@ -217,6 +266,7 @@ export class DocCollabRoom implements DurableObject {
 
     const bytes = Y.encodeStateAsUpdate(this.ydoc);
     await this.ctx.storage.put("ydoc", bytes);
+    await this.ctx.storage.put("lastActivity", Date.now());
 
     const text = this.ydoc.getText("content").toString();
     const docKey = await this.ctx.storage.get<string>("docKey");

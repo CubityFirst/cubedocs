@@ -170,8 +170,8 @@ export async function handleDocs(
       if (!share) return errorResponse(Errors.FORBIDDEN);
     }
     const revision = await env.DB.prepare(
-      "SELECT id, editor_id, editor_name, created_at, changelog FROM asset_revisions WHERE id = ? AND asset_type = 'doc' AND asset_id = ?",
-    ).bind(subId, docId).first<{ id: string; editor_id: string; editor_name: string; created_at: string; changelog: string | null }>();
+      "SELECT id, editor_id, editor_name, created_at, changelog, contributors FROM asset_revisions WHERE id = ? AND asset_type = 'doc' AND asset_id = ?",
+    ).bind(subId, docId).first<{ id: string; editor_id: string; editor_name: string; created_at: string; changelog: string | null; contributors: string | null }>();
     if (!revision) return errorResponse(Errors.NOT_FOUND);
     const r2Object = await env.ASSETS.get(`${meta.project_id}/${docId}/v/${subId}`);
     const content = r2Object ? await r2Object.text() : "";
@@ -189,8 +189,8 @@ export async function handleDocs(
       if (!share) return errorResponse(Errors.FORBIDDEN);
     }
     const rows = await env.DB.prepare(
-      "SELECT id, editor_id, editor_name, created_at, changelog FROM asset_revisions WHERE asset_type = 'doc' AND asset_id = ? ORDER BY created_at DESC",
-    ).bind(docId).all<{ id: string; editor_id: string; editor_name: string; created_at: string; changelog: string | null }>();
+      "SELECT id, editor_id, editor_name, created_at, changelog, contributors FROM asset_revisions WHERE asset_type = 'doc' AND asset_id = ? ORDER BY created_at DESC",
+    ).bind(docId).all<{ id: string; editor_id: string; editor_name: string; created_at: string; changelog: string | null; contributors: string | null }>();
     return okResponse(rows.results);
   }
 
@@ -266,6 +266,26 @@ export async function handleDocs(
           oldBlame,
           { u: user.userId, n: caller.name, t: now, c: body.changelog ?? null },
         );
+
+        // Collect collab contributors (clears the DO's tracked set for the next session)
+        let contributorsJson: string | null = null;
+        if (env.DOC_COLLAB) {
+          try {
+            const roomId = env.DOC_COLLAB.idFromName(`${doc.project_id}:${docId}`);
+            const resp = await env.DOC_COLLAB.get(roomId).fetch(
+              new Request("https://internal/contributors"),
+            );
+            if (resp.ok) {
+              const { editors } = await resp.json<{ editors: { id: string; name: string }[] }>();
+              const all = [
+                { id: user.userId, name: caller.name },
+                ...editors.filter(e => e.id !== user.userId),
+              ];
+              if (all.length > 1) contributorsJson = JSON.stringify(all);
+            }
+          } catch { /* non-fatal */ }
+        }
+
         const revisionId = crypto.randomUUID();
         await Promise.all([
           env.ASSETS.put(`${doc.project_id}/${docId}`, body.content),
@@ -273,8 +293,8 @@ export async function handleDocs(
           env.ASSETS.put(`${doc.project_id}/${docId}/v/${revisionId}`, body.content),
         ]);
         await env.DB.prepare(
-          "INSERT INTO asset_revisions (id, asset_type, asset_id, project_id, editor_id, editor_name, created_at, data, changelog) VALUES (?, 'doc', ?, ?, ?, ?, ?, NULL, ?)",
-        ).bind(revisionId, docId, doc.project_id, user.userId, caller.name, now, body.changelog ?? null).run();
+          "INSERT INTO asset_revisions (id, asset_type, asset_id, project_id, editor_id, editor_name, created_at, data, changelog, contributors) VALUES (?, 'doc', ?, ?, ?, ?, ?, NULL, ?, ?)",
+        ).bind(revisionId, docId, doc.project_id, user.userId, caller.name, now, body.changelog ?? null, contributorsJson).run();
         await indexDocLinks(env, doc.project_id, docId, body.content);
       }
     }
@@ -349,6 +369,15 @@ export async function handleDocs(
     await deleteFtsRow(env.DB, docId);
     // doc_links rows for this doc cascade away, but the deleted title may have shadowed another doc's resolution, so reindex.
     await invalidateProjectGraphIndex(env, doc.project_id);
+
+    // Best-effort: clean up the collab DO room (closes active sockets + wipes stored state)
+    if (env.DOC_COLLAB) {
+      try {
+        const roomId = env.DOC_COLLAB.idFromName(`${doc.project_id}:${docId}`);
+        await env.DOC_COLLAB.get(roomId).fetch(new Request("https://internal/", { method: "DELETE" }));
+      } catch { /* non-fatal — room may never have been created */ }
+    }
+
     return okResponse({ deleted: true });
   }
 

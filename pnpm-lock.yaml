@@ -121,6 +121,9 @@ importers:
 
   packages/api:
     dependencies:
+      fflate:
+        specifier: ^0.8.2
+        version: 0.8.2
       lib0:
         specifier: ^0.2.0
         version: 0.2.117
