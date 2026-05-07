@@ -14,6 +14,7 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { getToken } from "@/lib/auth";
 import { CalendarDays, Building2, Clock } from "lucide-react";
 import { formatTimeInZone, getTimezoneGroup } from "@/lib/timezone";
+import { TimezoneMap } from "@/components/TimezoneMap";
 
 type Role = "limited" | "viewer" | "editor" | "admin" | "owner";
 
@@ -85,9 +86,22 @@ export function UserProfileCard({ userId, name, children }: UserProfileCardProps
         <DialogDescription className="sr-only">Profile information for {name}</DialogDescription>
 
         {/* Header */}
-        <div className="flex items-center gap-5 px-6 pt-6 pb-5">
-          <UserAvatar userId={userId} name={name} className="size-16 shrink-0 text-xl" />
-          <div className="min-w-0 flex-1">
+        <div className="relative overflow-hidden flex items-center gap-5 px-6 pt-6 pb-5">
+          {/* Map background — only when timezone is known */}
+          {profile?.timezone && (() => {
+            const g = getTimezoneGroup(profile.timezone);
+            if (!g) return null;
+            return (
+              <div className="absolute inset-0 pointer-events-none">
+                <TimezoneMap lon={g.coords[0]} lat={g.coords[1]} />
+                {/* Fade the map out on the left so the avatar area stays legible */}
+                <div className="absolute inset-0 bg-gradient-to-r from-background via-background/70 to-transparent" />
+              </div>
+            );
+          })()}
+
+          <UserAvatar userId={userId} name={name} className="relative z-10 size-16 shrink-0 text-xl" />
+          <div className="relative z-10 min-w-0 flex-1">
             <h2 className="truncate text-lg font-semibold">{name}</h2>
             {loading ? (
               <Skeleton className="mt-2 h-4 w-40" />
