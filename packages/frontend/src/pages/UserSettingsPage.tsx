@@ -48,10 +48,9 @@ export function UserSettingsPage() {
   const [saving, setSaving] = useState(false);
 
   const [timezone, setTimezone] = useState<string | null>(null);
-  const [currentTimezone, setCurrentTimezone] = useState<string | null>(null);
   const [timezonePrivate, setTimezonePrivate] = useState(false);
-  const [currentTimezonePrivate, setCurrentTimezonePrivate] = useState(false);
   const [timezoneSaving, setTimezoneSaving] = useState(false);
+  const [timezoneSaved, setTimezoneSaved] = useState(false);
 
   const [avatarKey, setAvatarKey] = useState(0);
   const [avatarUploading, setAvatarUploading] = useState(false);
@@ -115,9 +114,7 @@ export function UserSettingsPage() {
           setEmailVerified(json.data.emailVerified);
           setEmailVerificationEnabled(json.data.emailVerificationEnabled);
           setUserId(json.data.userId);
-          setCurrentTimezone(json.data.timezone);
           setTimezone(json.data.timezone);
-          setCurrentTimezonePrivate(json.data.timezone === null);
           setTimezonePrivate(json.data.timezone === null);
         }
       })
@@ -233,11 +230,9 @@ export function UserSettingsPage() {
     }
   }
 
-  async function handleSaveTimezone(e: React.FormEvent) {
-    e.preventDefault();
-    const newTimezone = timezonePrivate ? null : timezone;
-    if (newTimezone === currentTimezone && timezonePrivate === currentTimezonePrivate) return;
+  async function saveTimezone(newTimezone: string | null) {
     setTimezoneSaving(true);
+    setTimezoneSaved(false);
     try {
       const token = getToken();
       const res = await fetch("/api/me", {
@@ -245,13 +240,10 @@ export function UserSettingsPage() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ timezone: newTimezone }),
       });
-      const json = await res.json() as { ok: boolean; data?: { timezone: string | null } };
+      const json = await res.json() as { ok: boolean };
       if (json.ok) {
-        setCurrentTimezone(newTimezone);
-        setTimezone(newTimezone);
-        setCurrentTimezonePrivate(newTimezone === null);
-        setTimezonePrivate(newTimezone === null);
-        toast({ title: newTimezone === null ? "Timezone hidden" : "Timezone updated" });
+        setTimezoneSaved(true);
+        setTimeout(() => setTimezoneSaved(false), 2000);
       } else {
         toast({ title: "Failed to update timezone", variant: "destructive" });
       }
@@ -699,14 +691,23 @@ export function UserSettingsPage() {
               </div>
             </form>
 
-            <form onSubmit={handleSaveTimezone} className="mt-6 flex flex-col gap-4">
+            <div className="mt-6 flex flex-col gap-4">
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="timezone">Timezone</Label>
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="timezone">Timezone</Label>
+                  {timezoneSaving && <Loader2 className="size-3 animate-spin text-muted-foreground" />}
+                  {!timezoneSaving && timezoneSaved && <span className="text-xs text-green-600 dark:text-green-400">Saved</span>}
+                </div>
                 <div className="flex items-center gap-2 max-w-sm">
                   <Select
                     value={timezonePrivate ? "" : (timezone ?? "")}
-                    onValueChange={val => setTimezone(val || null)}
-                    disabled={timezonePrivate}
+                    onValueChange={async val => {
+                      const iana = val || null;
+                      setTimezone(iana);
+                      setTimezonePrivate(false);
+                      await saveTimezone(iana);
+                    }}
+                    disabled={timezonePrivate || timezoneSaving}
                   >
                     <SelectTrigger id="timezone" className="flex-1">
                       <SelectValue placeholder="Select timezone…">
@@ -727,10 +728,14 @@ export function UserSettingsPage() {
                     variant="outline"
                     size="sm"
                     className="shrink-0"
-                    disabled={timezonePrivate}
-                    onClick={() => {
+                    disabled={timezonePrivate || timezoneSaving}
+                    onClick={async () => {
                       const g = detectTimezoneGroup();
-                      if (g) setTimezone(g.iana);
+                      if (g) {
+                        setTimezone(g.iana);
+                        setTimezonePrivate(false);
+                        await saveTimezone(g.iana);
+                      }
                     }}
                   >
                     Auto-detect
@@ -746,33 +751,36 @@ export function UserSettingsPage() {
                 })()}
               </div>
 
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="tz-private"
-                  checked={timezonePrivate}
-                  onCheckedChange={checked => {
-                    setTimezonePrivate(!!checked);
-                    if (checked) setTimezone(null);
-                  }}
-                />
-                <Label htmlFor="tz-private" className="font-normal text-sm cursor-pointer">
-                  Do not share my timezone
-                </Label>
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="tz-private"
+                    checked={timezonePrivate}
+                    disabled={timezoneSaving}
+                    onCheckedChange={async checked => {
+                      if (checked) {
+                        setTimezonePrivate(true);
+                        setTimezone(null);
+                        await saveTimezone(null);
+                      } else {
+                        const g = detectTimezoneGroup();
+                        if (g) {
+                          setTimezone(g.iana);
+                          setTimezonePrivate(false);
+                          await saveTimezone(g.iana);
+                        } else {
+                          setTimezonePrivate(false);
+                        }
+                      }
+                    }}
+                  />
+                  <Label htmlFor="tz-private" className="font-normal text-sm cursor-pointer">
+                    Do not share my timezone
+                  </Label>
+                </div>
+                <p className="text-xs text-muted-foreground pl-6">When enabled, your timezone won't appear on your profile card.</p>
               </div>
-              <p className="text-xs text-muted-foreground -mt-2">When enabled, your timezone won't appear on your profile card.</p>
-
-              <div>
-                <Button
-                  type="submit"
-                  disabled={
-                    timezoneSaving ||
-                    ((timezonePrivate ? null : timezone) === currentTimezone && timezonePrivate === currentTimezonePrivate)
-                  }
-                >
-                  {timezoneSaving ? "Saving…" : "Save timezone"}
-                </Button>
-              </div>
-            </form>
+            </div>
           </section>
 
           <Separator className="my-6" />

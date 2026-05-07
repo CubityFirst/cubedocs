@@ -8,6 +8,7 @@ interface AuthFormProps {
   subtitle: string;
   submitLabel: string;
   loading?: boolean;
+  disabled?: boolean;
   error?: string | null;
   onSubmit: (e: React.FormEvent) => void;
   children: React.ReactNode;
@@ -21,6 +22,7 @@ export function AuthForm({
   subtitle,
   submitLabel,
   loading,
+  disabled,
   error,
   onSubmit,
   children,
@@ -51,7 +53,7 @@ export function AuthForm({
           <form onSubmit={onSubmit} className="space-y-4">
             {children}
             {!hideSubmit && (
-              <Button type="submit" className="w-full" disabled={loading}>
+              <Button type="submit" className="w-full" disabled={loading || disabled}>
                 {loading ? `${submitLabel}…` : submitLabel}
               </Button>
             )}

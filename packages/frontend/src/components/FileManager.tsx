@@ -532,8 +532,10 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
     Array.from(e.dataTransfer.files).forEach(uploadFileAndCreateDoc);
   }, [uploadFileAndCreateDoc]);
 
-  function onDragStart(type: "doc" | "folder" | "file", id: string) {
+  function onDragStart(e: React.DragEvent, type: "doc" | "folder" | "file", id: string) {
     draggedItem.current = { type, id };
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", id);
   }
 
   function onDragEnd() {
@@ -580,7 +582,7 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
               <ResizableTableRow
                 columns={FILE_COLUMNS}
                 draggable
-                  onDragStart={() => onDragStart("folder", folder.id)}
+                  onDragStart={e => onDragStart(e, "folder", folder.id)}
                   onDragEnd={onDragEnd}
                   onDragOver={e => {
                     if (draggedItem.current?.id === folder.id) return;
@@ -659,7 +661,7 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
               <ResizableTableRow
                 columns={FILE_COLUMNS}
                 draggable
-                  onDragStart={() => onDragStart("doc", doc.id)}
+                  onDragStart={e => onDragStart(e, "doc", doc.id)}
                   onDragEnd={onDragEnd}
                   checkboxCell={!canEdit ? undefined : isHome ? null : (
                     <Checkbox
@@ -785,7 +787,7 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
               <ResizableTableRow
                 columns={FILE_COLUMNS}
                 draggable
-                onDragStart={() => onDragStart("file", file.id)}
+                onDragStart={e => onDragStart(e, "file", file.id)}
                 onDragEnd={onDragEnd}
                 checkboxCell={canEdit ? (
                   <Checkbox

@@ -40,6 +40,11 @@ export const TIMEZONE_GROUPS: TimezoneGroup[] = [
 ];
 
 export function detectTimezoneGroup(): TimezoneGroup | undefined {
+  const detectedIana = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const exact = TIMEZONE_GROUPS.find(g => g.iana === detectedIana);
+  if (exact) return exact;
+  // Fall back to current UTC offset for zones not in our curated list.
+  // This has a DST blind spot (offset shifts by 1h in summer) but is best-effort.
   const offsetMinutes = -new Date().getTimezoneOffset();
   return TIMEZONE_GROUPS.reduce<TimezoneGroup | undefined>((best, g) => {
     if (!best) return g;

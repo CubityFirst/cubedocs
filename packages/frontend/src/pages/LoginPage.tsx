@@ -137,6 +137,13 @@ export function LoginPage() {
     }
   }, [adminReturnTo, from, logoutRequested, navigate, startAdminHandoff]);
 
+  // Each step that mounts a Turnstile widget needs a fresh token. The previous step's
+  // token (if any) was already consumed server-side, so clear it to force a re-solve
+  // and keep the submit button disabled until the new challenge completes.
+  useEffect(() => {
+    setTurnstileToken(null);
+  }, [step]);
+
   const runWebauthnFlow = useCallback(async function runWebauthnFlow(userId: string) {
     setLoading(true);
     setError(null);
@@ -418,6 +425,7 @@ export function LoginPage() {
         subtitle="Two-factor authentication"
         submitLabel="Verify"
         loading={loading}
+        disabled={!turnstileToken}
         error={error}
         onSubmit={handleSubmit}
         footer={
@@ -590,6 +598,7 @@ export function LoginPage() {
       subtitle={adminReturnTo ? "Sign in to continue to Annex Admin" : "Sign in to your account"}
       submitLabel="Sign in"
       loading={loading}
+      disabled={!turnstileToken}
       error={error}
       onSubmit={handleSubmit}
       footer={

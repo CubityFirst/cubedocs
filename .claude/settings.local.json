@@ -7,7 +7,12 @@
       "Bash(pnpm --filter @annex/api test)",
       "Bash(npx vitest *)",
       "Bash(npx playwright *)",
-      "Bash(pnpm test *)"
+      "Bash(pnpm test *)",
+      "Bash(rg *)",
+      "Bash(xargs *)",
+      "Bash(fd *)",
+      "Bash(fzf *)",
+      "Bash(ag *)"
     ]
   }
 }
