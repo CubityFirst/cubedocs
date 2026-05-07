@@ -103,10 +103,10 @@ export async function handlePublicGraph(
   const slug = match[1];
 
   const project = await env.DB.prepare(
-    "SELECT id, graph_enabled, graph_tag_colors FROM projects WHERE (id = ? OR vanity_slug = ?) AND published_at IS NOT NULL",
-  ).bind(slug, slug).first<{ id: string; graph_enabled: number; graph_tag_colors: string | null }>();
+    "SELECT id, published_graph_enabled, graph_tag_colors FROM projects WHERE (id = ? OR vanity_slug = ?) AND published_at IS NOT NULL",
+  ).bind(slug, slug).first<{ id: string; published_graph_enabled: number; graph_tag_colors: string | null }>();
   if (!project) return errorResponse(Errors.NOT_FOUND);
-  if (!project.graph_enabled) return errorResponse(Errors.FORBIDDEN);
+  if (!project.published_graph_enabled) return errorResponse(Errors.FORBIDDEN);
 
   const graph = await buildGraph(env, project.id, null);
   const tagColors: { tag: string; color: string }[] = project.graph_tag_colors

@@ -76,6 +76,7 @@ interface Project {
   ai_enabled: number;
   ai_summarization_type: string;
   graph_enabled: number;
+  published_graph_enabled: number;
   graph_tag_colors: string | null;
   graph_reindex_available_at: string | null;
   home_doc_id: string | null;
@@ -178,6 +179,7 @@ export function SiteSettingsPage() {
   const [togglingAiType, setTogglingAiType] = useState(false);
   const [togglingHomeDoc, setTogglingHomeDoc] = useState(false);
   const [togglingGraph, setTogglingGraph] = useState(false);
+  const [togglingPublishedGraph, setTogglingPublishedGraph] = useState(false);
 
   const [vanitySlug, setVanitySlug] = useState("");
   const [savingSlug, setSavingSlug] = useState(false);
@@ -527,6 +529,29 @@ export function SiteSettingsPage() {
       toast({ title: "Could not connect to the server.", variant: "destructive" });
     } finally {
       setTogglingGraph(false);
+    }
+  }
+
+  async function handleTogglePublishedGraph(enabled: boolean) {
+    if (!projectId || !project) return;
+    setTogglingPublishedGraph(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ publishedGraphEnabled: enabled }),
+      });
+      const json = await res.json() as { ok: boolean; data?: Project };
+      if (json.ok && json.data) {
+        setProject(json.data);
+        toast({ title: enabled ? "Graph visible on public site." : "Graph hidden from public site." });
+      } else {
+        toast({ title: "Failed to update setting.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Could not connect to the server.", variant: "destructive" });
+    } finally {
+      setTogglingPublishedGraph(false);
     }
   }
 
@@ -1053,6 +1078,19 @@ export function SiteSettingsPage() {
               </div>
               {project.graph_enabled === 1 && (
                 <>
+                  <div className="flex items-center justify-between border-t border-border px-4 py-3">
+                    <div className="flex flex-col gap-0.5">
+                      <p className="text-sm font-medium">Show on Published Site</p>
+                      <p className="text-xs text-muted-foreground">
+                        Make the graph view available to visitors of the public share page.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={project.published_graph_enabled === 1}
+                      onCheckedChange={handleTogglePublishedGraph}
+                      disabled={togglingPublishedGraph}
+                    />
+                  </div>
                   <div className="border-t border-border">
                     <button
                       type="button"

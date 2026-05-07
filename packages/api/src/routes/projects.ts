@@ -84,7 +84,7 @@ export async function handleProjects(
     if (role === null) return errorResponse(Errors.NOT_FOUND);
     if (ROLE_RANK[role] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
 
-    const body = await request.json<{ name?: string; description?: string | null; publishedAt?: string | null; changelogMode?: string; vanitySlug?: string | null; aiEnabled?: boolean; aiSummarizationType?: string; homeDocEnabled?: boolean; graphEnabled?: boolean; graphTagColors?: { tag: string; color: string }[] | null }>();
+    const body = await request.json<{ name?: string; description?: string | null; publishedAt?: string | null; changelogMode?: string; vanitySlug?: string | null; aiEnabled?: boolean; aiSummarizationType?: string; homeDocEnabled?: boolean; graphEnabled?: boolean; publishedGraphEnabled?: boolean; graphTagColors?: { tag: string; color: string }[] | null }>();
     if (body.name !== undefined && !body.name.trim()) return errorResponse(Errors.BAD_REQUEST);
     if (body.changelogMode !== undefined && !["off", "on", "enforced"].includes(body.changelogMode)) return errorResponse(Errors.BAD_REQUEST);
     if (body.aiSummarizationType !== undefined && !["automatic", "manual"].includes(body.aiSummarizationType)) return errorResponse(Errors.BAD_REQUEST);
@@ -108,6 +108,13 @@ export async function handleProjects(
     if (body.aiEnabled !== undefined) { fields.push("ai_enabled = ?"); values.push(body.aiEnabled ? 1 : 0); }
     if (body.aiSummarizationType !== undefined) { fields.push("ai_summarization_type = ?"); values.push(body.aiSummarizationType); }
     if (body.graphEnabled !== undefined) { fields.push("graph_enabled = ?"); values.push(body.graphEnabled ? 1 : 0); }
+    let publishedGraphValue: 0 | 1 | undefined = body.publishedGraphEnabled === undefined ? undefined : (body.publishedGraphEnabled ? 1 : 0);
+    if (body.graphEnabled === false) publishedGraphValue = 0;
+    if (publishedGraphValue === 1 && body.graphEnabled !== true) {
+      const proj = await env.DB.prepare("SELECT graph_enabled FROM projects WHERE id = ?").bind(projectId).first<{ graph_enabled: number }>();
+      if (!proj || !proj.graph_enabled) return errorResponse(Errors.BAD_REQUEST);
+    }
+    if (publishedGraphValue !== undefined) { fields.push("published_graph_enabled = ?"); values.push(publishedGraphValue); }
     if (body.graphTagColors !== undefined) { fields.push("graph_tag_colors = ?"); values.push(body.graphTagColors ? JSON.stringify(body.graphTagColors) : null); }
     if (body.homeDocEnabled === true) {
       const proj = await env.DB.prepare("SELECT home_doc_id FROM projects WHERE id = ?").bind(projectId).first<{ home_doc_id: string | null }>();

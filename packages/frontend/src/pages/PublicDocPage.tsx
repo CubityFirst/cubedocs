@@ -13,6 +13,8 @@ import { parseFrontmatter } from "@/lib/frontmatter";
 import { Callout, type CalloutType } from "@/components/Callout";
 import { MarkdownCode } from "@/components/CodeBlock";
 import { GraphView, type GraphData } from "@/components/GraphView";
+import { LinkedDocsPanel } from "@/components/LinkedDocsPanel";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
@@ -141,7 +143,7 @@ interface NavFile {
 interface PublicData {
   doc: { id: string; title: string; display_title: string | null; hide_title: boolean | null; content: string; showHeading: boolean; showLastUpdated: boolean; updatedAt: string };
   sitePublished: boolean;
-  project: { id: string; name: string; vanity_slug: string | null; home_doc_id: string | null; graph_enabled: number };
+  project: { id: string; name: string; vanity_slug: string | null; home_doc_id: string | null; graph_enabled: number; published_graph_enabled: number };
   docs: NavDoc[] | null;
   folders: NavFolder[] | null;
   files: NavFile[] | null;
@@ -408,6 +410,7 @@ export function PublicDocPage() {
   const [hasToken, setHasToken] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 768);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [graphExpanded, setGraphExpanded] = useState(false);
   const openSearch = useCallback(() => { if (data?.sitePublished && projectId) setSearchOpen(true); }, [data?.sitePublished, projectId]);
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -469,16 +472,20 @@ export function PublicDocPage() {
       setNotFound(false);
       setSelectedFile(null);
       Promise.all([
-        fetch(`/api/public/projects/${projectId}`).then(r => r.json() as Promise<{ ok: boolean; data?: { id: string; name: string; vanity_slug: string | null; home_doc_id: string | null; graph_enabled: number; docs: NavDoc[]; folders: NavFolder[]; files: NavFile[] } }>),
+        fetch(`/api/public/projects/${projectId}`).then(r => r.json() as Promise<{ ok: boolean; data?: { id: string; name: string; vanity_slug: string | null; home_doc_id: string | null; graph_enabled: number; published_graph_enabled: number; docs: NavDoc[]; folders: NavFolder[]; files: NavFile[] } }>),
         fetch(`/api/public/projects/${projectId}/graph`).then(r => r.json() as Promise<{ ok: boolean; data?: GraphData }>),
       ])
         .then(([projJson, graphJson]) => {
           if (projJson.ok && projJson.data) {
             const p = projJson.data;
+            if (p.published_graph_enabled !== 1) {
+              setNotFound(true);
+              return;
+            }
             setData({
               doc: { id: "", title: "", display_title: null, hide_title: null, content: "", showHeading: false, showLastUpdated: false, updatedAt: "" },
               sitePublished: true,
-              project: { id: p.id, name: p.name, vanity_slug: p.vanity_slug, home_doc_id: p.home_doc_id, graph_enabled: p.graph_enabled },
+              project: { id: p.id, name: p.name, vanity_slug: p.vanity_slug, home_doc_id: p.home_doc_id, graph_enabled: p.graph_enabled, published_graph_enabled: p.published_graph_enabled },
               docs: p.docs ?? [],
               folders: p.folders ?? [],
               files: p.files ?? [],
@@ -517,6 +524,18 @@ export function PublicDocPage() {
       navigate(`/s/${slug}/${docId}`, { replace: true });
     }
   }, [data, projectId, docId, navigate]);
+
+  // Fetch graph once when viewing a doc on a project with the published graph enabled
+  useEffect(() => {
+    if (isGraph) return;
+    if (!projectId) return;
+    if (!data || data.project.published_graph_enabled !== 1) return;
+    if (graphData) return;
+    fetch(`/api/public/projects/${projectId}/graph`)
+      .then(r => r.json() as Promise<{ ok: boolean; data?: GraphData }>)
+      .then(json => { if (json.ok && json.data) setGraphData(json.data); })
+      .catch(() => { /* non-fatal */ });
+  }, [isGraph, projectId, data, graphData]);
 
   if (loading) {
     return (
@@ -590,7 +609,7 @@ export function PublicDocPage() {
                 </button>
               )}
             </div>
-            {data.project.graph_enabled === 1 && (
+            {data.project.published_graph_enabled === 1 && (
               <NavLink
                 to={`/s/${data.project.vanity_slug ?? data.project.id}/graph`}
                 title="Graph"
@@ -772,30 +791,47 @@ export function PublicDocPage() {
                 </div>
               </div>
 
-              {/* Outline */}
-              {headings.length > 0 && (
-                <aside className="hidden xl:block w-56 shrink-0 py-10 pr-6">
-                  <div className="sticky top-6">
-                    <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      Outline
-                    </p>
-                    <ScrollArea className="max-h-[calc(100vh-8rem)]">
-                      <nav className="flex flex-col gap-0.5">
-                        {headings.map((h, i) => (
-                          <button
-                            key={i}
-                            onClick={() => document.getElementById(h.id)?.scrollIntoView({ behavior: "smooth" })}
-                            style={{ paddingLeft: `${(h.level - 1) * 0.75}rem` }}
-                            className="truncate rounded px-2 py-1 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                          >
-                            {h.text}
-                          </button>
-                        ))}
-                      </nav>
-                    </ScrollArea>
-                  </div>
-                </aside>
-              )}
+              {/* Right rail: linked-docs preview + outline */}
+              {(() => {
+                const showLinkedDocs = data.project.published_graph_enabled === 1 && !!docId && !!graphData;
+                if (!showLinkedDocs && headings.length === 0) return null;
+                const slug = data.project.vanity_slug ?? data.project.id;
+                return (
+                  <aside className="hidden xl:block w-56 shrink-0 py-10 pr-6">
+                    <div className="sticky top-6">
+                      {showLinkedDocs && docId && graphData && (
+                        <LinkedDocsPanel
+                          data={graphData}
+                          currentDocId={docId}
+                          onExpand={() => setGraphExpanded(true)}
+                          onNodeClick={id => navigate(`/s/${slug}/${id}`)}
+                        />
+                      )}
+                      {headings.length > 0 && (
+                        <>
+                          <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                            Outline
+                          </p>
+                          <ScrollArea className="max-h-[calc(100vh-8rem)]">
+                            <nav className="flex flex-col gap-0.5">
+                              {headings.map((h, i) => (
+                                <button
+                                  key={i}
+                                  onClick={() => document.getElementById(h.id)?.scrollIntoView({ behavior: "smooth" })}
+                                  style={{ paddingLeft: `${(h.level - 1) * 0.75}rem` }}
+                                  className="truncate rounded px-2 py-1 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                                >
+                                  {h.text}
+                                </button>
+                              ))}
+                            </nav>
+                          </ScrollArea>
+                        </>
+                      )}
+                    </div>
+                  </aside>
+                );
+              })()}
             </div>
           )}
         </ScrollArea>
@@ -809,6 +845,22 @@ export function PublicDocPage() {
           isPublic
         />
       )}
+      <Dialog open={graphExpanded} onOpenChange={setGraphExpanded}>
+        <DialogContent className="max-w-[90vw] w-[90vw] h-[85vh] p-0 overflow-hidden">
+          <div className="h-full w-full">
+            {graphData && data && graphData.nodes.length > 0 && (
+              <GraphView
+                data={graphData}
+                onNodeClick={id => {
+                  setGraphExpanded(false);
+                  const slug = data.project.vanity_slug ?? data.project.id;
+                  navigate(`/s/${slug}/${id}`);
+                }}
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

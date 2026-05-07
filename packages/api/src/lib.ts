@@ -41,6 +41,7 @@ export interface Project {
   features: number;
   ai_enabled: number;
   graph_enabled: number;
+  published_graph_enabled: number;
   graph_tag_colors: string | null;
   graph_reindex_available_at: string | null;
   home_doc_id: string | null;
