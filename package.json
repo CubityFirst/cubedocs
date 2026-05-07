@@ -10,7 +10,7 @@
 "migrate": "pnpm --filter api migrate && pnpm --filter auth migrate",
     "migrations:local": "node scripts/migrate.mjs local",
     "migrations:remote": "node scripts/migrate.mjs remote",
-    "test": "concurrently \"pnpm --filter api test\" \"pnpm --filter auth test\" \"pnpm --filter frontend test\"",
+    "test": "concurrently \"pnpm --filter api test\" \"pnpm --filter auth test\" \"pnpm --filter frontend test\" && pnpm test:e2e",
     "test:e2e": "pnpm --filter cubedocs-e2e test",
     "test:e2e:ui": "pnpm --filter cubedocs-e2e test:ui"
   },

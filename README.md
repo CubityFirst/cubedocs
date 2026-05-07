@@ -110,6 +110,7 @@ Starts all packages concurrently. Once running:
 | Frontend | http://localhost:5173 |
 | API Worker | http://localhost:8787 |
 | Auth Worker | http://localhost:8788 |
+| Admin Dashboard | http://localhost:5174 |
 
 The frontend dev server automatically proxies `/api` requests to the local Workers — no separate configuration needed.
 
@@ -133,4 +134,4 @@ Requires a Cloudflare account with D1, R2, and Workers enabled, and `wrangler lo
 
 ## License
 
-Private — all rights reserved.
+Copyright (c) 2026 Michael Burr. Free for non-commercial use; commercial use requires prior written permission. See [LICENSE](LICENSE) for full terms.
