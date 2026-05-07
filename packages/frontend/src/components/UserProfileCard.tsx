@@ -81,7 +81,7 @@ export function UserProfileCard({ userId, name, children }: UserProfileCardProps
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent className="max-w-lg p-0 overflow-hidden">
+      <DialogContent className="max-w-lg p-0 overflow-hidden" onContextMenu={e => e.stopPropagation()}>
         <DialogTitle className="sr-only">{name}'s profile</DialogTitle>
         <DialogDescription className="sr-only">Profile information for {name}</DialogDescription>
 
