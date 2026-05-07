@@ -1,5 +1,6 @@
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { UserAvatar } from "@/components/UserAvatar";
+import { UserProfileCard } from "@/components/UserProfileCard";
 
 interface Editor {
   userId: string;
@@ -13,7 +14,7 @@ interface Props {
 
 function PresenceAvatar({ editor }: { editor: Editor }) {
   return (
-    <div className="group relative flex items-center" title={editor.name}>
+    <div className="group relative flex items-center">
       <div
         className="relative rounded-full shrink-0"
         style={{ boxShadow: `0 0 0 2px ${editor.color}` }}
@@ -40,7 +41,11 @@ export function EditorPresence({ editors }: Props) {
   return (
     <div className="flex items-center gap-1">
       {visible.map((editor) => (
-        <PresenceAvatar key={editor.userId} editor={editor} />
+        <UserProfileCard key={editor.userId} userId={editor.userId} name={editor.name}>
+          <button className="cursor-pointer">
+            <PresenceAvatar editor={editor} />
+          </button>
+        </UserProfileCard>
       ))}
 
       {overflow.length > 0 && (
@@ -56,15 +61,17 @@ export function EditorPresence({ editors }: Props) {
             </p>
             <div className="flex flex-col gap-2">
               {overflow.map((editor) => (
-                <div key={editor.userId} className="flex items-center gap-2">
-                  <div
-                    className="rounded-full shrink-0"
-                    style={{ boxShadow: `0 0 0 2px ${editor.color}` }}
-                  >
-                    <UserAvatar userId={editor.userId} name={editor.name} className="h-6 w-6 text-[10px]" />
-                  </div>
-                  <span className="truncate text-sm">{editor.name}</span>
-                </div>
+                <UserProfileCard key={editor.userId} userId={editor.userId} name={editor.name}>
+                  <button className="flex w-full cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-left hover:bg-accent">
+                    <div
+                      className="rounded-full shrink-0"
+                      style={{ boxShadow: `0 0 0 2px ${editor.color}` }}
+                    >
+                      <UserAvatar userId={editor.userId} name={editor.name} className="h-6 w-6 text-[10px]" />
+                    </div>
+                    <span className="truncate text-sm">{editor.name}</span>
+                  </button>
+                </UserProfileCard>
               ))}
             </div>
           </PopoverContent>

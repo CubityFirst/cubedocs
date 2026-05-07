@@ -12,7 +12,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { UserAvatar } from "@/components/UserAvatar";
 import { getToken } from "@/lib/auth";
-import { CalendarDays, Building2 } from "lucide-react";
+import { CalendarDays, Building2, Clock } from "lucide-react";
+import { formatTimeInZone, getTimezoneGroup } from "@/lib/timezone";
 
 type Role = "limited" | "viewer" | "editor" | "admin" | "owner";
 
@@ -42,6 +43,7 @@ interface ProfileData {
   userId: string;
   name: string;
   createdAt: string;
+  timezone?: string;
   sharedProjects: SharedProject[];
 }
 
@@ -90,10 +92,21 @@ export function UserProfileCard({ userId, name, children }: UserProfileCardProps
             {loading ? (
               <Skeleton className="mt-2 h-4 w-40" />
             ) : profile ? (
-              <div className="mt-1.5 flex items-center gap-2 text-sm text-muted-foreground">
-                <CalendarDays className="size-4 shrink-0" />
-                <span>Member since {formatDate(profile.createdAt)}</span>
-              </div>
+              <>
+                <div className="mt-1.5 flex items-center gap-2 text-sm text-muted-foreground">
+                  <CalendarDays className="size-4 shrink-0" />
+                  <span>Member since {formatDate(profile.createdAt)}</span>
+                </div>
+                {profile.timezone && (() => {
+                  const g = getTimezoneGroup(profile.timezone);
+                  return (
+                    <div className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
+                      <Clock className="size-4 shrink-0" />
+                      <span>{g?.offset ?? profile.timezone} · {formatTimeInZone(profile.timezone)}</span>
+                    </div>
+                  );
+                })()}
+              </>
             ) : null}
           </div>
         </div>

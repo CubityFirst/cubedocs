@@ -26,6 +26,9 @@ import { getToken, clearToken } from "@/lib/auth";
 import { UserAvatar } from "@/components/UserAvatar";
 import { AvatarCropDialog } from "@/components/AvatarCropDialog";
 import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertCircle, Camera } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { TIMEZONE_GROUPS, detectTimezoneGroup, getTimezoneGroup, formatTimezoneLabel, formatTimeInZone } from "@/lib/timezone";
 
 interface WebAuthnCredential {
   id: string;
@@ -43,6 +46,12 @@ export function UserSettingsPage() {
   const [emailVerificationEnabled, setEmailVerificationEnabled] = useState(false);
   const [resendingVerification, setResendingVerification] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  const [timezone, setTimezone] = useState<string | null>(null);
+  const [currentTimezone, setCurrentTimezone] = useState<string | null>(null);
+  const [timezonePrivate, setTimezonePrivate] = useState(false);
+  const [currentTimezonePrivate, setCurrentTimezonePrivate] = useState(false);
+  const [timezoneSaving, setTimezoneSaving] = useState(false);
 
   const [avatarKey, setAvatarKey] = useState(0);
   const [avatarUploading, setAvatarUploading] = useState(false);
@@ -97,7 +106,7 @@ export function UserSettingsPage() {
     const token = getToken();
     if (!token) return;
     fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json() as Promise<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean; userId: string } }>)
+      .then(r => r.json() as Promise<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean; userId: string; timezone: string | null } }>)
       .then(json => {
         if (json.ok && json.data) {
           setCurrentName(json.data.name);
@@ -106,6 +115,10 @@ export function UserSettingsPage() {
           setEmailVerified(json.data.emailVerified);
           setEmailVerificationEnabled(json.data.emailVerificationEnabled);
           setUserId(json.data.userId);
+          setCurrentTimezone(json.data.timezone);
+          setTimezone(json.data.timezone);
+          setCurrentTimezonePrivate(json.data.timezone === null);
+          setTimezonePrivate(json.data.timezone === null);
         }
       })
       .catch(() => {});
@@ -217,6 +230,35 @@ export function UserSettingsPage() {
       toast({ title: "Could not connect to the server", variant: "destructive" });
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleSaveTimezone(e: React.FormEvent) {
+    e.preventDefault();
+    const newTimezone = timezonePrivate ? null : timezone;
+    if (newTimezone === currentTimezone && timezonePrivate === currentTimezonePrivate) return;
+    setTimezoneSaving(true);
+    try {
+      const token = getToken();
+      const res = await fetch("/api/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ timezone: newTimezone }),
+      });
+      const json = await res.json() as { ok: boolean; data?: { timezone: string | null } };
+      if (json.ok) {
+        setCurrentTimezone(newTimezone);
+        setTimezone(newTimezone);
+        setCurrentTimezonePrivate(newTimezone === null);
+        setTimezonePrivate(newTimezone === null);
+        toast({ title: newTimezone === null ? "Timezone hidden" : "Timezone updated" });
+      } else {
+        toast({ title: "Failed to update timezone", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Could not connect to the server", variant: "destructive" });
+    } finally {
+      setTimezoneSaving(false);
     }
   }
 
@@ -653,6 +695,81 @@ export function UserSettingsPage() {
                   disabled={saving || !name.trim() || name.trim() === currentName}
                 >
                   {saving ? "Saving…" : "Save changes"}
+                </Button>
+              </div>
+            </form>
+
+            <form onSubmit={handleSaveTimezone} className="mt-6 flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="timezone">Timezone</Label>
+                <div className="flex items-center gap-2 max-w-sm">
+                  <Select
+                    value={timezonePrivate ? "" : (timezone ?? "")}
+                    onValueChange={val => setTimezone(val || null)}
+                    disabled={timezonePrivate}
+                  >
+                    <SelectTrigger id="timezone" className="flex-1">
+                      <SelectValue placeholder="Select timezone…">
+                        {!timezonePrivate && timezone && (() => {
+                          const g = getTimezoneGroup(timezone);
+                          return g ? formatTimezoneLabel(g) : timezone;
+                        })()}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent className="max-h-72">
+                      {TIMEZONE_GROUPS.map(g => (
+                        <SelectItem key={g.iana} value={g.iana}>{formatTimezoneLabel(g)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    disabled={timezonePrivate}
+                    onClick={() => {
+                      const g = detectTimezoneGroup();
+                      if (g) setTimezone(g.iana);
+                    }}
+                  >
+                    Auto-detect
+                  </Button>
+                </div>
+                {!timezonePrivate && timezone && (() => {
+                  const g = getTimezoneGroup(timezone);
+                  return (
+                    <p className="text-xs text-muted-foreground">
+                      Currently {formatTimeInZone(timezone)} — {g?.offset ?? timezone}
+                    </p>
+                  );
+                })()}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="tz-private"
+                  checked={timezonePrivate}
+                  onCheckedChange={checked => {
+                    setTimezonePrivate(!!checked);
+                    if (checked) setTimezone(null);
+                  }}
+                />
+                <Label htmlFor="tz-private" className="font-normal text-sm cursor-pointer">
+                  Do not share my timezone
+                </Label>
+              </div>
+              <p className="text-xs text-muted-foreground -mt-2">When enabled, your timezone won't appear on your profile card.</p>
+
+              <div>
+                <Button
+                  type="submit"
+                  disabled={
+                    timezoneSaving ||
+                    ((timezonePrivate ? null : timezone) === currentTimezone && timezonePrivate === currentTimezonePrivate)
+                  }
+                >
+                  {timezoneSaving ? "Saving…" : "Save timezone"}
                 </Button>
               </div>
             </form>

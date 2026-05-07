@@ -254,7 +254,8 @@ test("TOTP — login no longer requires a code after disabling", async () => {
 // WebAuthn (Playwright virtual authenticator)
 // ════════════════════════════════════════════════════════════════════════════
 
-test("WebAuthn — registers a virtual passkey", async () => {
+test("WebAuthn — registers a virtual passkey", async ({ browserName }) => {
+  test.skip(browserName !== "chromium", "CDP (WebAuthn virtual authenticator) is only available in Chromium");
   // Chrome DevTools Protocol is the current way to add a virtual authenticator
   // (Playwright's high-level addVirtualAuthenticator wrapper is not available in
   // this version).  The RP ID and origin must match packages/auth/.dev.vars:
@@ -284,7 +285,8 @@ test("WebAuthn — registers a virtual passkey", async () => {
   await expect(page.getByText("Playwright Virtual Key")).toBeVisible({ timeout: 10000 });
 });
 
-test("WebAuthn — login triggers the passkey ceremony", async () => {
+test("WebAuthn — login triggers the passkey ceremony", async ({ browserName }) => {
+  test.skip(browserName !== "chromium", "CDP (WebAuthn virtual authenticator) is only available in Chromium");
   await logout(page);
   await loginWithPassword(page);
 
@@ -294,7 +296,8 @@ test("WebAuthn — login triggers the passkey ceremony", async () => {
   await expect(page).not.toHaveURL(/\/login/, { timeout: 15000 });
 });
 
-test("WebAuthn — removes the passkey (requires WebAuthn confirmation)", async () => {
+test("WebAuthn — removes the passkey (requires WebAuthn confirmation)", async ({ browserName }) => {
+  test.skip(browserName !== "chromium", "CDP (WebAuthn virtual authenticator) is only available in Chromium");
   await page.goto("/settings");
 
   const keyRow = page.locator("li", { hasText: "Playwright Virtual Key" });
@@ -308,7 +311,8 @@ test("WebAuthn — removes the passkey (requires WebAuthn confirmation)", async 
   await expect(page.getByText("Playwright Virtual Key")).not.toBeVisible({ timeout: 10000 });
 });
 
-test("WebAuthn — login no longer requires a key after removal", async () => {
+test("WebAuthn — login no longer requires a key after removal", async ({ browserName }) => {
+  test.skip(browserName !== "chromium", "CDP (WebAuthn virtual authenticator) is only available in Chromium");
   await logout(page);
   await loginWithPassword(page);
   await expect(page).not.toHaveURL(/\/login/, { timeout: 10000 });

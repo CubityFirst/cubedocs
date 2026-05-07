@@ -118,29 +118,45 @@ export default {
           body: JSON.stringify({ userId: session.userId }),
         });
         if (!lookupRes.ok) return addCorsHeaders(errorResponse(Errors.INTERNAL));
-        const data = await lookupRes.json<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean } }>();
+        const data = await lookupRes.json<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean; timezone: string | null } }>();
         if (!data.ok || !data.data) return addCorsHeaders(errorResponse(Errors.INTERNAL));
-        return addCorsHeaders(Response.json({ ok: true, data: { name: data.data.name, email: data.data.email, emailVerified: data.data.emailVerified, emailVerificationEnabled: data.data.emailVerificationEnabled, userId: session.userId } }));
+        return addCorsHeaders(Response.json({ ok: true, data: { name: data.data.name, email: data.data.email, emailVerified: data.data.emailVerified, emailVerificationEnabled: data.data.emailVerificationEnabled, userId: session.userId, timezone: data.data.timezone } }));
       }
 
-      // PATCH /me — update authenticated user's name
+      // PATCH /me — update authenticated user's name and/or timezone
       if (url.pathname === "/me" && request.method === "PATCH") {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
-        const body = await request.json<{ name?: string }>();
-        if (!body.name?.trim()) return addCorsHeaders(errorResponse(Errors.BAD_REQUEST));
+        const body = await request.json<{ name?: string; timezone?: string | null }>();
         const authHeader = request.headers.get("Authorization");
-        const updateRes = await env.AUTH.fetch("https://auth/update-name", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
-          body: JSON.stringify({ name: body.name.trim() }),
-        });
-        if (!updateRes.ok) return addCorsHeaders(errorResponse(Errors.INTERNAL));
-        const trimmedName = body.name.trim();
-        // Keep project_members names in sync
-        await env.DB.prepare("UPDATE project_members SET name = ? WHERE user_id = ?")
-          .bind(trimmedName, session.userId).run();
-        return addCorsHeaders(Response.json({ ok: true, data: { name: trimmedName } }));
+        const responseData: { name?: string; timezone?: string | null } = {};
+
+        if (body.name !== undefined) {
+          if (!body.name?.trim()) return addCorsHeaders(errorResponse(Errors.BAD_REQUEST));
+          const updateRes = await env.AUTH.fetch("https://auth/update-name", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
+            body: JSON.stringify({ name: body.name.trim() }),
+          });
+          if (!updateRes.ok) return addCorsHeaders(errorResponse(Errors.INTERNAL));
+          const trimmedName = body.name.trim();
+          await env.DB.prepare("UPDATE project_members SET name = ? WHERE user_id = ?")
+            .bind(trimmedName, session.userId).run();
+          responseData.name = trimmedName;
+        }
+
+        if ("timezone" in body) {
+          const updateRes = await env.AUTH.fetch("https://auth/update-timezone", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
+            body: JSON.stringify({ timezone: body.timezone ?? null }),
+          });
+          if (!updateRes.ok) return addCorsHeaders(updateRes.status === 400 ? errorResponse(Errors.BAD_REQUEST) : errorResponse(Errors.INTERNAL));
+          responseData.timezone = body.timezone ?? null;
+        }
+
+        if (!responseData.name && !("timezone" in body)) return addCorsHeaders(errorResponse(Errors.BAD_REQUEST));
+        return addCorsHeaders(Response.json({ ok: true, data: responseData }));
       }
 
       // GET /avatar/:userId — public, serve avatar from R2
@@ -244,7 +260,7 @@ export default {
         if (!lookupRes.ok) {
           return addCorsHeaders(lookupRes.status === 404 ? errorResponse(Errors.NOT_FOUND) : errorResponse(Errors.INTERNAL));
         }
-        const lookupData = await lookupRes.json<{ ok: boolean; data?: { userId: string; name: string; email: string; createdAt: string } }>();
+        const lookupData = await lookupRes.json<{ ok: boolean; data?: { userId: string; name: string; email: string; createdAt: string; timezone: string | null } }>();
         if (!lookupData.ok || !lookupData.data) return addCorsHeaders(errorResponse(Errors.NOT_FOUND));
 
         const sharedRows = await env.DB.prepare(
@@ -255,15 +271,15 @@ export default {
            ORDER BY p.name ASC`,
         ).bind(session.userId, targetUserId).all<{ id: string; name: string; their_role: string }>();
 
-        return addCorsHeaders(Response.json({
-          ok: true,
-          data: {
-            userId: lookupData.data.userId,
-            name: lookupData.data.name,
-            createdAt: lookupData.data.createdAt,
-            sharedProjects: sharedRows.results.map(r => ({ id: r.id, name: r.name, theirRole: r.their_role })),
-          },
-        }));
+        const profileData: Record<string, unknown> = {
+          userId: lookupData.data.userId,
+          name: lookupData.data.name,
+          createdAt: lookupData.data.createdAt,
+          sharedProjects: sharedRows.results.map(r => ({ id: r.id, name: r.name, theirRole: r.their_role })),
+        };
+        if (lookupData.data.timezone) profileData.timezone = lookupData.data.timezone;
+
+        return addCorsHeaders(Response.json({ ok: true, data: profileData }));
       }
 
       // Pending invites
