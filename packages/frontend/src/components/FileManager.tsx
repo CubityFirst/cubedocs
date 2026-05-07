@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { useToast } from "@/hooks/use-toast";
 import { getToken } from "@/lib/auth";
+import { UserProfileCard } from "@/components/UserProfileCard";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -31,6 +32,7 @@ interface DocItem {
   title: string;
   folder_id: string | null;
   updated_at: string;
+  author_id?: string;
   author_name?: string;
   author_role?: Role | null;
   is_home?: number;
@@ -716,13 +718,19 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
                       onClick: navToDoc,
                     },
                     {
-                      content: (
+                      content: doc.author_id && doc.author_name ? (
+                        <UserProfileCard userId={doc.author_id} name={doc.author_name}>
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground truncate cursor-pointer hover:text-foreground transition-colors">
+                            {doc.author_name}
+                            {doc.author_role && <RoleBadge role={doc.author_role} />}
+                          </div>
+                        </UserProfileCard>
+                      ) : (
                         <div className="flex items-center gap-2 text-sm text-muted-foreground truncate">
                           {doc.author_name ?? ""}
                           {doc.author_role && <RoleBadge role={doc.author_role} />}
                         </div>
                       ),
-                      onClick: navToDoc,
                     },
                     { content: null },
                     {
@@ -838,7 +846,14 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
                     onClick: () => openFile(file),
                   },
                   {
-                    content: (
+                    content: file.uploaded_by && file.uploader_name ? (
+                      <UserProfileCard userId={file.uploaded_by} name={file.uploader_name}>
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground truncate cursor-pointer hover:text-foreground transition-colors">
+                          {file.uploader_name}
+                          {file.uploader_role && <RoleBadge role={file.uploader_role} />}
+                        </div>
+                      </UserProfileCard>
+                    ) : (
                       <div className="flex items-center gap-2 text-sm text-muted-foreground truncate">
                         {file.uploader_name ?? ""}
                         {file.uploader_role && <RoleBadge role={file.uploader_role} />}
