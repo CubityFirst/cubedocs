@@ -182,9 +182,10 @@ function TermLine({ t }: { t: TermResult }) {
 }
 
 function GroupBreakdown({ group }: { group: GroupResult }) {
-  const { keep, keepMode, members, keptValues, total, successThreshold, successCount, failureThreshold, failureCount } = group;
+  const { keep, drop, keepMode, members, keptValues, total, successThreshold, successCount, failureThreshold, failureCount } = group;
   const stLabel = successThreshold ? `${opSymbol(successThreshold.op)} ${successThreshold.value}` : undefined;
   const ftLabel = failureThreshold ? `${opSymbol(failureThreshold.op)} ${failureThreshold.value}` : undefined;
+  const modLabel = drop ? `drop ${drop.mode}${drop.count}` : keep ? `keep ${keep.mode}${keep.count}` : undefined;
 
   if (keepMode === "individual") {
     const terms = resolveLabels(members[0].terms);
@@ -223,9 +224,9 @@ function GroupBreakdown({ group }: { group: GroupResult }) {
     return (
       <div className="border-l-2 border-zinc-600 pl-2 my-0.5 space-y-0.5">
         {terms.map((t, i) => <TermLine key={i} t={t} />)}
-        {keep && (
+        {modLabel && (
           <div>
-            <span className="text-zinc-500">keep {keep.mode}{keep.count}: </span>
+            <span className="text-zinc-500">{modLabel}: </span>
             <span className="text-zinc-300">[{keptValues!.join(", ")}]</span>
             <span className="text-zinc-300"> = {total}</span>
           </div>
@@ -269,8 +270,8 @@ function GroupBreakdown({ group }: { group: GroupResult }) {
           ? failureThreshold && failureCount !== undefined
             ? <><span className="text-zinc-500">successes ({stLabel}) = </span><span className="text-zinc-300">{successCount} − {failureCount} <span className="text-zinc-500">fail ({ftLabel})</span> = {total}</span></>
             : <><span className="text-zinc-500">successes ({stLabel}) = </span><span className="text-zinc-300">{successCount}</span></>
-          : keep
-            ? <><span className="text-zinc-500">keep {keep.mode}{keep.count} = </span><span className="text-zinc-300">{total}</span></>
+          : modLabel
+            ? <><span className="text-zinc-500">{modLabel} = </span><span className="text-zinc-300">{total}</span></>
             : null
         }
       </div>

@@ -487,7 +487,10 @@ export function LoginPage() {
         >
           {usingBackupCode ? "Use authenticator app instead" : "Use a backup code instead"}
         </button>
-        <Turnstile onVerify={handleTurnstileVerify} onExpire={handleTurnstileExpire} />
+        {/* key forces a fresh widget when the user transitions credentials → totp,
+            since AuthForm's last child is also a <Turnstile> on the credentials step
+            and React would otherwise reuse the same instance and skip its mount effect. */}
+        <Turnstile key="totp" onVerify={handleTurnstileVerify} onExpire={handleTurnstileExpire} />
       </AuthForm>
     );
   }
@@ -633,7 +636,7 @@ export function LoginPage() {
           required
         />
       </div>
-      <Turnstile onVerify={handleTurnstileVerify} onExpire={handleTurnstileExpire} />
+      <Turnstile key="credentials" onVerify={handleTurnstileVerify} onExpire={handleTurnstileExpire} />
     </AuthForm>
   );
 }

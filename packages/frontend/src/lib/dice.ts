@@ -18,7 +18,7 @@ export type DiceNode =
   | { type: "binary"; op: Operator; left: DiceNode; right: DiceNode }
   | { type: "fn"; fn: MathFn; arg: DiceNode }
   | { type: "negate"; arg: DiceNode }
-  | { type: "group"; members: DiceNode[]; keep?: { mode: "h" | "l"; count: number }; successThreshold?: { op: "<" | ">" | "<=" | ">="; value: number }; failureThreshold?: { op: CompOp; value: number } };
+  | { type: "group"; members: DiceNode[]; keep?: { mode: "h" | "l"; count: number }; drop?: { mode: "h" | "l"; count: number }; successThreshold?: { op: "<" | ">" | "<=" | ">="; value: number }; failureThreshold?: { op: CompOp; value: number } };
 
 export interface DiceExpression {
   root: DiceNode;
@@ -79,6 +79,7 @@ export interface GroupResult {
    */
   keepMode: "individual" | "sum";
   keep?: { mode: "h" | "l"; count: number };
+  drop?: { mode: "h" | "l"; count: number };
   /** When set, total is the count of dice/members meeting this threshold rather than a sum. */
   successThreshold?: { op: "<" | ">" | "<=" | ">="; value: number };
   successCount?: number;
@@ -348,6 +349,7 @@ function parseDiceTerm(s: string): DiceTerm {
 
 const MATH_FN_NAMES: readonly string[] = ["floor", "round", "ceil", "abs"];
 const KEEP_RE = /^k([hl])(\d+)$/i;
+const DROP_RE = /^d([hl]?)(\d+)$/i;
 
 class DiceParser {
   private pos = 0;
@@ -440,8 +442,9 @@ class DiceParser {
       }
       this.expectRbrace();
 
-      // Optional keep or success-threshold modifier immediately after }
+      // Optional keep / drop / success-threshold modifier immediately after }
       let keep: { mode: "h" | "l"; count: number } | undefined;
+      let drop: { mode: "h" | "l"; count: number } | undefined;
       let successThreshold: { op: "<" | ">" | "<=" | ">="; value: number } | undefined;
       let groupFailureThreshold: { op: CompOp; value: number } | undefined;
       const next = this.peek();
@@ -450,6 +453,14 @@ class DiceParser {
         if (km) {
           this.advance();
           keep = { mode: km[1].toLowerCase() as "h" | "l", count: parseInt(km[2], 10) };
+        } else {
+          const dm = DROP_RE.exec(next.value);
+          if (dm) {
+            this.advance();
+            // dl/d → drop lowest; dh → drop highest
+            const dropDir = (dm[1] || "l").toLowerCase() as "h" | "l";
+            drop = { mode: dropDir, count: parseInt(dm[2], 10) };
+          }
         }
       } else if (next?.kind === "cmp") {
         // e.g. {5d6!!}>8 or {3d20+5}>21f<10
@@ -492,6 +503,7 @@ class DiceParser {
         type: "group",
         members,
         keep,
+        ...(drop ? { drop } : {}),
         ...(successThreshold ? { successThreshold } : {}),
         ...(groupFailureThreshold ? { failureThreshold: groupFailureThreshold } : {}),
       };
@@ -803,7 +815,21 @@ function evalNode(node: DiceNode): EvalResult {
     case "group": {
       const memberResults = node.members.map((m) => evalNode(m));
 
-      if (!node.keep && !node.successThreshold) {
+      // Resolve drop modifier into an equivalent keep based on member/dice count.
+      // - Single member (individual mode): drop applies across all dice.
+      // - Multi-member (sum mode):         drop applies across member sums.
+      let effectiveKeep = node.keep;
+      if (node.drop && !effectiveKeep) {
+        const totalCount = node.members.length === 1
+          ? memberResults[0].terms.flatMap((t) =>
+              t.kept.filter((v): v is number => typeof v === "number"),
+            ).length
+          : node.members.length;
+        const keepMode = node.drop.mode === "l" ? "h" : "l";
+        effectiveKeep = { mode: keepMode, count: Math.max(0, totalCount - node.drop.count) };
+      }
+
+      if (!effectiveKeep && !node.successThreshold) {
         return {
           total: memberResults.reduce((s, r) => s + r.total, 0),
           terms: memberResults.flatMap((r) => r.terms),
@@ -862,7 +888,7 @@ function evalNode(node: DiceNode): EvalResult {
         };
       }
 
-      const { mode, count } = node.keep!;
+      const { mode, count } = effectiveKeep!;
 
       if (node.members.length === 1) {
         // Individual dice mode: collect all kept dice values, then keep top/bottom N
@@ -876,7 +902,8 @@ function evalNode(node: DiceNode): EvalResult {
 
         const groupResult: GroupResult = {
           keepMode: "individual",
-          keep: node.keep,
+          ...(node.keep ? { keep: node.keep } : {}),
+          ...(node.drop ? { drop: node.drop } : {}),
           members: [{ terms: allTerms, total: memberResults[0].total, kept: true }],
           keptValues,
           total,
@@ -906,7 +933,8 @@ function evalNode(node: DiceNode): EvalResult {
 
       const groupResult: GroupResult = {
         keepMode: "sum",
-        keep: node.keep,
+        ...(node.keep ? { keep: node.keep } : {}),
+        ...(node.drop ? { drop: node.drop } : {}),
         members,
         total,
       };
@@ -969,7 +997,7 @@ function maxNode(node: DiceNode): number | null {
       }
     }
     case "group": {
-      if (node.keep || node.successThreshold) return null;
+      if (node.keep || node.drop || node.successThreshold) return null;
       const maxes = node.members.map((m) => maxNode(m));
       if (maxes.some((m) => m === null)) return null;
       return maxes.reduce((s, m) => s! + m!, 0);
@@ -1006,7 +1034,7 @@ function minNode(node: DiceNode): number | null {
       }
     }
     case "group": {
-      if (node.keep || node.successThreshold) return null;
+      if (node.keep || node.drop || node.successThreshold) return null;
       const mins = node.members.map((m) => minNode(m));
       if (mins.some((m) => m === null)) return null;
       return mins.reduce((s, m) => s! + m!, 0);

@@ -824,6 +824,109 @@ describe("roll — group rolls", () => {
   });
 });
 
+describe("roll — group drop", () => {
+  it("parses {...}d1 as drop-lowest", () => {
+    const expr = parseDice("{4d6,2d8,3d20}d1");
+    expect(expr.root.type).toBe("group");
+    if (expr.root.type !== "group") return;
+    expect(expr.root.drop).toEqual({ mode: "l", count: 1 });
+    expect(expr.root.keep).toBeUndefined();
+  });
+
+  it("parses {...}dl1 the same as {...}d1", () => {
+    const expr = parseDice("{4d6,2d8,3d20}dl1");
+    expect(expr.root.type).toBe("group");
+    if (expr.root.type !== "group") return;
+    expect(expr.root.drop).toEqual({ mode: "l", count: 1 });
+  });
+
+  it("parses {...}dh1 as drop-highest", () => {
+    const expr = parseDice("{4d6,2d8,3d20}dh1");
+    expect(expr.root.type).toBe("group");
+    if (expr.root.type !== "group") return;
+    expect(expr.root.drop).toEqual({ mode: "h", count: 1 });
+  });
+
+  it("{4d6+2d8, 3d20+3, 5d10+1}d1: drops sub-roll with lowest total", () => {
+    vi.spyOn(Math, "random")
+      // 4d6 → 1,1,1,1 = 4
+      .mockReturnValueOnce(d(6, 1))
+      .mockReturnValueOnce(d(6, 1))
+      .mockReturnValueOnce(d(6, 1))
+      .mockReturnValueOnce(d(6, 1))
+      // 2d8 → 1,1 = 2; member1 total = 4+2 = 6
+      .mockReturnValueOnce(d(8, 1))
+      .mockReturnValueOnce(d(8, 1))
+      // 3d20 → 10,10,10 = 30; +3 = 33
+      .mockReturnValueOnce(d(20, 10))
+      .mockReturnValueOnce(d(20, 10))
+      .mockReturnValueOnce(d(20, 10))
+      // 5d10 → 5,5,5,5,5 = 25; +1 = 26
+      .mockReturnValueOnce(d(10, 5))
+      .mockReturnValueOnce(d(10, 5))
+      .mockReturnValueOnce(d(10, 5))
+      .mockReturnValueOnce(d(10, 5))
+      .mockReturnValueOnce(d(10, 5));
+    const r = roll("{4d6+2d8, 3d20+3, 5d10+1}d1");
+    // Member totals: 6, 33, 26 → drop the 6 → 33 + 26 = 59
+    expect(r.total).toBe(59);
+    expect(r.groups?.[0].keepMode).toBe("sum");
+    expect(r.groups?.[0].drop).toEqual({ mode: "l", count: 1 });
+    expect(r.groups?.[0].members.map((m) => m.kept)).toEqual([false, true, true]);
+  });
+
+  it("{4d6,2d8,3d20}dh1: drops sub-roll with highest total", () => {
+    vi.spyOn(Math, "random")
+      // 4d6 → 1,1,1,1 = 4
+      .mockReturnValueOnce(d(6, 1))
+      .mockReturnValueOnce(d(6, 1))
+      .mockReturnValueOnce(d(6, 1))
+      .mockReturnValueOnce(d(6, 1))
+      // 2d8 → 5,5 = 10
+      .mockReturnValueOnce(d(8, 5))
+      .mockReturnValueOnce(d(8, 5))
+      // 3d20 → 20,20,20 = 60
+      .mockReturnValueOnce(d(20, 20))
+      .mockReturnValueOnce(d(20, 20))
+      .mockReturnValueOnce(d(20, 20));
+    const r = roll("{4d6,2d8,3d20}dh1");
+    // Drop the 60 → 4 + 10 = 14
+    expect(r.total).toBe(14);
+    expect(r.groups?.[0].members.map((m) => m.kept)).toEqual([true, true, false]);
+  });
+
+  it("{4d6+3d8}d2: drops 2 lowest dice across the single sub-roll", () => {
+    vi.spyOn(Math, "random")
+      // 4d6 → 1, 6, 2, 5
+      .mockReturnValueOnce(d(6, 1))
+      .mockReturnValueOnce(d(6, 6))
+      .mockReturnValueOnce(d(6, 2))
+      .mockReturnValueOnce(d(6, 5))
+      // 3d8 → 8, 3, 7
+      .mockReturnValueOnce(d(8, 8))
+      .mockReturnValueOnce(d(8, 3))
+      .mockReturnValueOnce(d(8, 7));
+    const r = roll("{4d6+3d8}d2");
+    // 7 dice: [1,6,2,5,8,3,7] → sorted [1,2,3,5,6,7,8] → drop lowest 2 (1,2) → [3,5,6,7,8] = 29
+    expect(r.total).toBe(29);
+    expect(r.groups?.[0].keepMode).toBe("individual");
+    expect(r.groups?.[0].drop).toEqual({ mode: "l", count: 2 });
+    expect(r.groups?.[0].keptValues).toEqual([3, 5, 6, 7, 8]);
+  });
+
+  it("{4d6}d1 equals {4d6}kh3 in expected total", () => {
+    vi.spyOn(Math, "random")
+      .mockReturnValueOnce(d(6, 2))
+      .mockReturnValueOnce(d(6, 5))
+      .mockReturnValueOnce(d(6, 3))
+      .mockReturnValueOnce(d(6, 4));
+    const r = roll("{4d6}d1");
+    // dice [2,5,3,4] → drop lowest 1 (2) → keep [3,4,5] = 12
+    expect(r.total).toBe(12);
+    expect(r.groups?.[0].keptValues?.sort()).toEqual([3, 4, 5]);
+  });
+});
+
 // ── Invariant tests (no mocking — properties that always hold) ────────────
 describe("roll — invariants", () => {
   const REPS = 30;

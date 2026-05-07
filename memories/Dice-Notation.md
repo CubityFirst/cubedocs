@@ -30,6 +30,9 @@
 | `1d20cs>18cf<3` | Combined cs and cf conditions on one die |
 | `{4d6+3d8}kh1` | Group roll — keep highest single die across all dice in the group |
 | `{4d6,3d8}kh1` | Group roll (comma) — sum each sub-expression, keep highest group total |
+| `{4d6+3d8}d2` | Group drop — drop the 2 lowest dice across the sub-expression |
+| `{4d6,2d8,3d20}d1` | Group drop (comma) — drop sub-expression with lowest total, sum the rest |
+| `{4d6,2d8,3d20}dh1` | Group drop highest — drop sub-expression with highest total |
 | `3d6!` | Exploding dice — reroll and add on max face; chain continues while max is rolled |
 | `3d6!>4` | Exploding on any result > 4 |
 | `3d6!3` | Exploding only on exactly 3 |

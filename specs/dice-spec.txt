@@ -46,7 +46,7 @@
 |---|---|---|
 | Group keep (individual dice) | `{4d6+3d8}kh1` | done |
 | Group keep (sum per member) | `{4d6,3d8}kh1` | done |
-| Group drop | `{4d6,2d8,3d20}d1` | no |
+| Group drop | `{4d6,2d8,3d20}d1` | done |
 | Group success | `{3d20+5}>21` | done |
 | Group failure (subtracts) | `{3d20+5}>21f<10` | done |
 
