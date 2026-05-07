@@ -1,6 +1,7 @@
 packages:
   - "packages/*"
   - "packages/admin/frontend"
+  - "e2e"
 allowBuilds:
   esbuild: true
   sharp: true

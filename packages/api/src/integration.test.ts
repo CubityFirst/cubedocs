@@ -1,0 +1,219 @@
+/**
+ * Integration tests that run against the local dev servers.
+ *
+ * Prerequisites:
+ *   1. Start both workers from the repo root:  pnpm dev
+ *   2. Set TURNSTILE_SECRET=1x0000000000000000000000000000000AA in
+ *      packages/auth/.dev.vars (Cloudflare's always-pass test secret).
+ *
+ * Tests are skipped automatically when the servers are not reachable.
+ */
+
+import { describe, it, expect, beforeAll } from "vitest";
+
+const AUTH_URL = "http://localhost:8788";
+const API_URL  = "http://localhost:8787";
+
+// Any token is accepted by Cloudflare's always-pass test secret.
+const TURNSTILE_TOKEN = "test-bypass-token";
+
+// Unique per-run values to avoid conflicts and rate-limit collisions between runs.
+const RUN_ID = Date.now();
+const EMAIL    = `integration-test-${RUN_ID}@example.com`;
+const PASSWORD = "Integration-Test-P@ssw0rd!";
+const NAME     = "Integration Test User";
+
+// Pass a unique IP per run so each run gets its own rate-limit bucket.
+// In local wrangler dev, CF-Connecting-IP is read as a plain header.
+const FAKE_IP = `10.${Math.floor(RUN_ID / 1e10) % 256}.${Math.floor(RUN_ID / 1e7) % 256}.${RUN_ID % 256}`;
+
+function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  return { "Content-Type": "application/json", "CF-Connecting-IP": FAKE_IP, ...extra };
+}
+
+let authServerUp = false;
+let apiServerUp  = false;
+
+try {
+  const res = await fetch(`${AUTH_URL}/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+    signal: AbortSignal.timeout(1500),
+  });
+  authServerUp = res.status < 500;
+} catch { /* not running */ }
+
+try {
+  const res = await fetch(`${API_URL}/projects`, {
+    signal: AbortSignal.timeout(1500),
+  });
+  apiServerUp = res.status < 500;
+} catch { /* not running */ }
+
+const serversUp = authServerUp && apiServerUp;
+
+// ── Auth worker ──────────────────────────────────────────────────────────────
+
+describe.skipIf(!authServerUp)("auth worker — /register and /login", () => {
+  it("rejects register with missing fields", async () => {
+    const res = await fetch(`${AUTH_URL}/register`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ email: EMAIL }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("registers a new user successfully", async () => {
+    const res = await fetch(`${AUTH_URL}/register`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ email: EMAIL, password: PASSWORD, name: NAME, turnstileToken: TURNSTILE_TOKEN }),
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json<{ ok: boolean }>();
+    expect(body.ok).toBe(true);
+  });
+
+  it("rejects a duplicate registration", async () => {
+    const res = await fetch(`${AUTH_URL}/register`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ email: EMAIL, password: PASSWORD, name: NAME, turnstileToken: TURNSTILE_TOKEN }),
+    });
+    expect(res.status).toBe(409);
+  });
+
+  it("rejects login with wrong password", async () => {
+    const res = await fetch(`${AUTH_URL}/login`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ email: EMAIL, password: "wrong-password", turnstileToken: TURNSTILE_TOKEN }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("logs in successfully and returns a JWT", async () => {
+    const res = await fetch(`${AUTH_URL}/login`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ email: EMAIL, password: PASSWORD, turnstileToken: TURNSTILE_TOKEN }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json<{ ok: boolean; data: { token: string } }>();
+    expect(body.ok).toBe(true);
+    expect(typeof body.data.token).toBe("string");
+    expect(body.data.token.split(".")).toHaveLength(3);
+  });
+});
+
+// ── Full API flow ────────────────────────────────────────────────────────────
+
+describe.skipIf(!serversUp)("API — authenticated project + doc flow", () => {
+  let token = "";
+  let projectId = "";
+  let docId = "";
+
+  beforeAll(async () => {
+    // Register + login to get a token.  Re-register in case the auth-only suite
+    // above was skipped (servers both up but auth wasn't probed separately).
+    const flowEmail = `api-flow-${RUN_ID}@example.com`;
+    await fetch(`${API_URL}/register`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ email: flowEmail, password: PASSWORD, name: NAME, turnstileToken: TURNSTILE_TOKEN }),
+    });
+    const loginRes = await fetch(`${API_URL}/login`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ email: flowEmail, password: PASSWORD, turnstileToken: TURNSTILE_TOKEN }),
+    });
+    const loginBody = await loginRes.json<{ ok: boolean; data: { token: string } }>();
+    token = loginBody.data?.token ?? "";
+  });
+
+  it("returns 401 for unauthenticated requests to /projects", async () => {
+    const res = await fetch(`${API_URL}/projects`);
+    expect(res.status).toBe(401);
+  });
+
+  it("GET /projects returns an empty list for a new user", async () => {
+    const res = await fetch(`${API_URL}/projects`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json<{ ok: boolean; data: unknown[] }>();
+    expect(body.ok).toBe(true);
+    expect(Array.isArray(body.data)).toBe(true);
+  });
+
+  it("POST /projects creates a project", async () => {
+    const res = await fetch(`${API_URL}/projects`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ name: "Integration Test Project" }),
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json<{ ok: boolean; data: { id: string; name: string } }>();
+    expect(body.ok).toBe(true);
+    expect(body.data.name).toBe("Integration Test Project");
+    projectId = body.data.id;
+  });
+
+  it("POST /docs creates a doc inside the project", async () => {
+    const res = await fetch(`${API_URL}/docs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ title: "Hello World", content: "# Hello World\n\nTest content.", projectId }),
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json<{ ok: boolean; data: { id: string; title: string } }>();
+    expect(body.ok).toBe(true);
+    expect(body.data.title).toBe("Hello World");
+    docId = body.data.id;
+  });
+
+  it("GET /docs/:id returns the doc", async () => {
+    const res = await fetch(`${API_URL}/docs/${docId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json<{ ok: boolean; data: { title: string } }>();
+    expect(body.data.title).toBe("Hello World");
+  });
+
+  it("PUT /docs/:id updates the doc title", async () => {
+    const res = await fetch(`${API_URL}/docs/${docId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ title: "Updated Title", content: "# Updated" }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json<{ ok: boolean; data: { title: string } }>();
+    expect(body.data.title).toBe("Updated Title");
+  });
+
+  it("DELETE /docs/:id removes the doc", async () => {
+    const res = await fetch(`${API_URL}/docs/${docId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("GET /docs/:id returns 404 after deletion", async () => {
+    const res = await fetch(`${API_URL}/docs/${docId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("DELETE /projects/:id removes the project", async () => {
+    const res = await fetch(`${API_URL}/projects/${projectId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+  });
+});

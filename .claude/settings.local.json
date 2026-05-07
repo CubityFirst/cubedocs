@@ -4,7 +4,10 @@
       "Bash(pnpm typecheck:*)",
       "Bash(npx tsc *)",
       "WebFetch(domain:api.anthropic.com)",
-      "Bash(pnpm --filter @annex/api test)"
+      "Bash(pnpm --filter @annex/api test)",
+      "Bash(npx vitest *)",
+      "Bash(npx playwright *)",
+      "Bash(pnpm test *)"
     ]
   }
 }

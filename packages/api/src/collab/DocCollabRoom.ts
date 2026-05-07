@@ -39,11 +39,12 @@ export class DocCollabRoom implements DurableObject {
   private async ensureLoaded(): Promise<void> {
     if (this.ydoc) return;
 
-    this.ydoc = new Y.Doc();
+    const ydoc = new Y.Doc();
+    this.ydoc = ydoc;
     try {
       const raw = await this.ctx.storage.get<unknown>("ydoc");
       const stored = toUint8Array(raw);
-      if (stored) Y.applyUpdate(this.ydoc, stored);
+      if (stored) Y.applyUpdate(ydoc, stored);
     } catch (err) {
       console.error("[DocCollabRoom] failed to restore ydoc from storage:", err);
     }
@@ -56,9 +57,10 @@ export class DocCollabRoom implements DurableObject {
       }
     } catch { /* */ }
 
-    this.awareness = new awarenessProtocol.Awareness(this.ydoc);
+    const awareness = new awarenessProtocol.Awareness(ydoc);
+    this.awareness = awareness;
 
-    this.ydoc.on("update", (update: Uint8Array, origin: unknown) => {
+    ydoc.on("update", (update: Uint8Array, origin: unknown) => {
       const encoder = encoding.createEncoder();
       encoding.writeVarUint(encoder, MSG_SYNC);
       syncProtocol.writeUpdate(encoder, update);
@@ -70,11 +72,14 @@ export class DocCollabRoom implements DurableObject {
       }
     });
 
-    this.awareness.on("update", ({ added, updated, removed }: { added: number[]; updated: number[]; removed: number[] }, origin: unknown) => {
+    // Use the captured `awareness` reference — not `this.awareness` — so that if the room is
+    // torn down and re-initialised, the old interval callbacks still reference the correct
+    // (now-destroyed) instance and don't accidentally encode clients against a fresh meta map.
+    awareness.on("update", ({ added, updated, removed }: { added: number[]; updated: number[]; removed: number[] }, origin: unknown) => {
       const changedClients = [...added, ...updated, ...removed];
       const encoder = encoding.createEncoder();
       encoding.writeVarUint(encoder, MSG_AWARENESS);
-      encoding.writeVarUint8Array(encoder, awarenessProtocol.encodeAwarenessUpdate(this.awareness!, changedClients));
+      encoding.writeVarUint8Array(encoder, awarenessProtocol.encodeAwarenessUpdate(awareness, changedClients));
       const msg = encoding.toUint8Array(encoder);
       for (const ws of this.ctx.getWebSockets()) {
         if (ws !== origin) {
@@ -82,6 +87,20 @@ export class DocCollabRoom implements DurableObject {
         }
       }
     });
+  }
+
+  private teardown(): void {
+    // Destroy awareness first so its setInterval is cleared and no stale update events fire
+    // after this room is re-initialised with a new Y.Doc / Awareness pair.
+    if (this.awareness) {
+      try { this.awareness.destroy(); } catch { /* */ }
+      this.awareness = null;
+    }
+    if (this.ydoc) {
+      try { this.ydoc.destroy(); } catch { /* */ }
+      this.ydoc = null;
+    }
+    this.editors = null;
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -108,8 +127,7 @@ export class DocCollabRoom implements DurableObject {
         try { ws.close(1001, "Document deleted"); } catch { /* */ }
       }
       try { await this.ctx.storage.deleteAll(); } catch { /* */ }
-      this.ydoc = null;
-      this.awareness = null;
+      this.teardown();
       return new Response(null, { status: 204 });
     }
 
@@ -257,8 +275,7 @@ export class DocCollabRoom implements DurableObject {
       if (Date.now() - lastActivity >= sevenDays) {
         // No activity for 30 days — evict the room entirely
         await this.ctx.storage.deleteAll();
-        this.ydoc = null;
-        this.awareness = null;
+        this.teardown();
       } else {
         await this.persist();
       }

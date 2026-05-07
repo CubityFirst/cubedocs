@@ -4,3 +4,6 @@ dist/
 .turbo/
 .dev.vars
 *.local
+test-results/
+playwright-report/
+coverage/
