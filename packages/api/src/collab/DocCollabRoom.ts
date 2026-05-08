@@ -30,6 +30,7 @@ export class DocCollabRoom implements DurableObject {
   private ydoc: Y.Doc | null = null;
   private awareness: awarenessProtocol.Awareness | null = null;
   private editors: Map<string, string> | null = null; // userId → userName
+  private lastAlarmSetAt = 0;
 
   constructor(ctx: DurableObjectState, env: Env) {
     this.ctx = ctx;
@@ -207,7 +208,15 @@ export class DocCollabRoom implements DurableObject {
             try { ws.send(encoding.toUint8Array(replyEncoder)); } catch { /* */ }
           }
           if (syncType === 2) {
-            this.ctx.storage.setAlarm(Date.now() + 30_000).catch(() => { /* */ });
+            // Throttle alarm rewrites to once every 5s. Each setAlarm is a storage write,
+            // and the previous code rewrote the alarm on every keystroke. The alarm still
+            // fires ~30s after the last edit (between 30s and 35s, depending on which
+            // 5s bucket the last edit landed in), so persistence behavior is unchanged.
+            const now = Date.now();
+            if (now - this.lastAlarmSetAt > 5000) {
+              this.lastAlarmSetAt = now;
+              this.ctx.storage.setAlarm(now + 30_000).catch(() => { /* */ });
+            }
             // Track this user as a contributor
             const att = ws.deserializeAttachment() as WsAttachment | null;
             if (att?.userId && this.editors && !this.editors.has(att.userId)) {
