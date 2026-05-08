@@ -128,7 +128,7 @@ export function UserProfileCard({ userId, name, children }: UserProfileCardProps
             );
           })()}
 
-          <UserAvatar userId={userId} name={name} className="relative z-10 size-16 shrink-0 text-xl" />
+          <UserAvatar userId={userId} name={name} className="relative z-10 size-20 shrink-0 text-2xl" />
           <div className="relative z-10 min-w-0 flex-1">
             <h2 className="truncate text-lg font-semibold">{name}</h2>
             {loading ? (

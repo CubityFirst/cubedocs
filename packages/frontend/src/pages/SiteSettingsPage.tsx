@@ -1134,6 +1134,21 @@ export function SiteSettingsPage() {
                           className="flex-1 pr-9"
                         />
                       </InlineSaveControls>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0"
+                        aria-label="Copy custom link"
+                        onClick={() => {
+                          const slug = project.vanity_slug ?? projectId;
+                          const url = `${window.location.origin}/s/${slug}`;
+                          navigator.clipboard.writeText(url);
+                          toast({ title: "Custom link copied to clipboard." });
+                        }}
+                      >
+                        <Link className="h-4 w-4" />
+                      </Button>
                     </div>
                     <p className="text-xs text-muted-foreground">
                       Lowercase letters, numbers, and hyphens only. 3–50 characters. The original project link will continue to work.
@@ -1143,22 +1158,6 @@ export function SiteSettingsPage() {
                     <Alert variant="destructive">
                       <AlertDescription>{slugError}</AlertDescription>
                     </Alert>
-                  )}
-                  {project.vanity_slug && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="self-start text-muted-foreground"
-                      onClick={() => {
-                        const url = `${window.location.origin}/s/${project.vanity_slug}`;
-                        navigator.clipboard.writeText(url);
-                        toast({ title: "Custom link copied to clipboard." });
-                      }}
-                    >
-                      <Link className="h-3.5 w-3.5 mr-1.5" />
-                      Copy link
-                    </Button>
                   )}
                 </form>
               </div>
