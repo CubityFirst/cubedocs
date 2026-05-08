@@ -5,6 +5,7 @@ import { defaultKeymap, historyKeymap, history, indentWithTab } from "@codemirro
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { Wikilink } from "./lezer/wikilinkExtension";
 import { calloutContinueOnEnter, calloutBreakOnShiftEnter } from "./commands/calloutEnter";
+import { tableContinueOnEnter } from "./commands/tableEnter";
 import * as Y from "yjs";
 import { yCollab } from "y-codemirror.next";
 import { Awareness } from "y-protocols/awareness";
@@ -248,8 +249,9 @@ export function WysiwygEditor({
           run: (view) => { applyMarkerCm(view, "__"); return true; },
           preventDefault: true,
         },
-        // Callout-aware Enter handling. Returns false when not in a callout
-        // so the default Enter (insertNewlineAndIndent / etc.) takes over.
+        // Context-aware Enter handling. Each command returns false when not
+        // applicable so the next handler (or the default) gets a turn.
+        { key: "Enter", run: tableContinueOnEnter },
         { key: "Enter", run: calloutContinueOnEnter },
         { key: "Shift-Enter", run: calloutBreakOnShiftEnter },
         indentWithTab,

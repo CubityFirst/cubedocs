@@ -58,6 +58,10 @@ export class DocCollabRoom implements DurableObject {
     } catch { /* */ }
 
     const awareness = new awarenessProtocol.Awareness(ydoc);
+    // The Awareness constructor starts a 3s setInterval to expire stale clients. That timer
+    // prevents WebSocket hibernation, so the DO accrues memory × wall-time billing the entire
+    // session. Kill it — webSocketClose already removes awareness state on disconnect.
+    clearInterval((awareness as unknown as { _checkInterval: ReturnType<typeof setInterval> })._checkInterval);
     this.awareness = awareness;
 
     ydoc.on("update", (update: Uint8Array, origin: unknown) => {
@@ -255,8 +259,10 @@ export class DocCollabRoom implements DurableObject {
 
       if (this.ctx.getWebSockets().length === 0) {
         await this.persist();
-        // Schedule eviction 30 days from now; a reconnect will cancel this via the next edit alarm
+        // Schedule eviction 7 days from now; a reconnect will cancel this via the next edit alarm
         this.ctx.storage.setAlarm(Date.now() + 7 * 24 * 60 * 60 * 1000).catch(() => { /* */ });
+        // Drop in-memory ydoc/awareness so the DO can be evicted instead of sitting idle
+        this.teardown();
       }
     } catch (err) {
       console.error("[DocCollabRoom] webSocketClose error:", err);
@@ -273,7 +279,7 @@ export class DocCollabRoom implements DurableObject {
       const lastActivity = await this.ctx.storage.get<number>("lastActivity") ?? 0;
       const sevenDays = 7 * 24 * 60 * 60 * 1000;
       if (Date.now() - lastActivity >= sevenDays) {
-        // No activity for 30 days — evict the room entirely
+        // No activity for 7 days — evict the room entirely
         await this.ctx.storage.deleteAll();
         this.teardown();
       } else {
