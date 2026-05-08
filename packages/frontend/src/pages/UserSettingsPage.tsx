@@ -1121,7 +1121,9 @@ export function UserSettingsPage() {
             </p>
 
             {sessionsLoading ? (
-              <p className="mt-4 text-sm text-muted-foreground">Loading…</p>
+              <div className="mt-4 flex justify-center py-6">
+                <Loader2 className="size-5 animate-spin text-muted-foreground" />
+              </div>
             ) : sessions.length === 0 ? (
               <p className="mt-4 text-sm text-muted-foreground">No active sessions.</p>
             ) : (
