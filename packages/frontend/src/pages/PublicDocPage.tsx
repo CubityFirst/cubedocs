@@ -143,7 +143,7 @@ interface NavFile {
 interface PublicData {
   doc: { id: string; title: string; display_title: string | null; hide_title: boolean | null; content: string; showHeading: boolean; showLastUpdated: boolean; updatedAt: string };
   sitePublished: boolean;
-  project: { id: string; name: string; vanity_slug: string | null; home_doc_id: string | null; graph_enabled: number; published_graph_enabled: number };
+  project: { id: string; name: string; vanity_slug: string | null; home_doc_id: string | null; graph_enabled: number; published_graph_enabled: number; logo_updated_at: string | null };
   docs: NavDoc[] | null;
   folders: NavFolder[] | null;
   files: NavFile[] | null;
@@ -472,7 +472,7 @@ export function PublicDocPage() {
       setNotFound(false);
       setSelectedFile(null);
       Promise.all([
-        fetch(`/api/public/projects/${projectId}`).then(r => r.json() as Promise<{ ok: boolean; data?: { id: string; name: string; vanity_slug: string | null; home_doc_id: string | null; graph_enabled: number; published_graph_enabled: number; docs: NavDoc[]; folders: NavFolder[]; files: NavFile[] } }>),
+        fetch(`/api/public/projects/${projectId}`).then(r => r.json() as Promise<{ ok: boolean; data?: { id: string; name: string; vanity_slug: string | null; home_doc_id: string | null; graph_enabled: number; published_graph_enabled: number; logo_updated_at: string | null; docs: NavDoc[]; folders: NavFolder[]; files: NavFile[] } }>),
         fetch(`/api/public/projects/${projectId}/graph`).then(r => r.json() as Promise<{ ok: boolean; data?: GraphData }>),
       ])
         .then(([projJson, graphJson]) => {
@@ -485,7 +485,7 @@ export function PublicDocPage() {
             setData({
               doc: { id: "", title: "", display_title: null, hide_title: null, content: "", showHeading: false, showLastUpdated: false, updatedAt: "" },
               sitePublished: true,
-              project: { id: p.id, name: p.name, vanity_slug: p.vanity_slug, home_doc_id: p.home_doc_id, graph_enabled: p.graph_enabled, published_graph_enabled: p.published_graph_enabled },
+              project: { id: p.id, name: p.name, vanity_slug: p.vanity_slug, home_doc_id: p.home_doc_id, graph_enabled: p.graph_enabled, published_graph_enabled: p.published_graph_enabled, logo_updated_at: p.logo_updated_at },
               docs: p.docs ?? [],
               folders: p.folders ?? [],
               files: p.files ?? [],
@@ -587,8 +587,19 @@ export function PublicDocPage() {
                 <ChevronLeft className="h-4 w-4" />
               </button>
             )}
-            <BookOpen className="h-5 w-5 text-primary" />
-            <span className="font-semibold tracking-tight">{data.project.name}</span>
+            {data.project.logo_updated_at ? (
+              <img
+                src={`/api/public/projects/${data.project.vanity_slug ?? data.project.id}/logo?v=${encodeURIComponent(data.project.logo_updated_at)}`}
+                alt={data.project.name}
+                title={data.project.name}
+                className="h-8 w-auto max-w-[10rem] object-contain"
+              />
+            ) : (
+              <>
+                <BookOpen className="h-5 w-5 text-primary" />
+                <span className="font-semibold tracking-tight">{data.project.name}</span>
+              </>
+            )}
           </div>
           <Separator />
           <div className="px-3 py-2 flex items-center gap-2">
@@ -697,8 +708,19 @@ export function PublicDocPage() {
       <div className={cn("flex flex-1 flex-col overflow-hidden transition-transform duration-200", showNav && sidebarOpen && "translate-x-64 md:translate-x-0")}>
         {!showNav && (
           <header className="flex h-14 items-center border-b border-border px-6 gap-2">
-            <BookOpen className="h-4 w-4 text-primary shrink-0" />
-            <h1 className="text-sm font-medium text-muted-foreground truncate">{data.project.name}</h1>
+            {data.project.logo_updated_at ? (
+              <img
+                src={`/api/public/projects/${data.project.vanity_slug ?? data.project.id}/logo?v=${encodeURIComponent(data.project.logo_updated_at)}`}
+                alt={data.project.name}
+                title={data.project.name}
+                className="h-8 w-auto max-w-[12rem] object-contain"
+              />
+            ) : (
+              <>
+                <BookOpen className="h-4 w-4 text-primary shrink-0" />
+                <h1 className="text-sm font-medium text-muted-foreground truncate">{data.project.name}</h1>
+              </>
+            )}
           </header>
         )}
         {isGraph ? (

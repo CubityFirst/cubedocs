@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { UserAvatar } from "@/components/UserAvatar";
 import { Button } from "@/components/ui/button";
@@ -40,7 +40,7 @@ import { Switch } from "@/components/ui/switch";
 import { useOutletContext } from "react-router-dom";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
 import { UserProfileCard } from "@/components/UserProfileCard";
-import { Globe, House, Link, Lock, Copy, Check, X, Network, Plus, ChevronDown, RefreshCw } from "lucide-react";
+import { Globe, House, Link, Lock, Copy, Check, X, Network, Plus, ChevronDown, RefreshCw, Upload, ImageIcon } from "lucide-react";
 
 type Role = "limited" | "viewer" | "editor" | "admin" | "owner";
 
@@ -80,6 +80,7 @@ interface Project {
   graph_tag_colors: string | null;
   graph_reindex_available_at: string | null;
   home_doc_id: string | null;
+  logo_updated_at: string | null;
   role: Role;
 }
 
@@ -185,6 +186,12 @@ export function SiteSettingsPage() {
   const [savingSlug, setSavingSlug] = useState(false);
   const [slugError, setSlugError] = useState<string | null>(null);
 
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [removingLogo, setRemovingLogo] = useState(false);
+  const [logoError, setLogoError] = useState<string | null>(null);
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+
   interface TagColorRule { id: number; tag: string; color: string }
   const [tagColorRules, setTagColorRules] = useState<TagColorRule[]>([{ id: 0, tag: "", color: "#6366f1" }]);
   const [nextRuleId, setNextRuleId] = useState(1);
@@ -245,6 +252,40 @@ export function SiteSettingsPage() {
       .catch(() => {})
       .finally(() => setLoadingMembers(false));
   }, [projectId]);
+
+  useEffect(() => {
+    return () => {
+      setLogoPreviewUrl(prev => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!token || !projectId || !project?.logo_updated_at) {
+      setLogoPreviewUrl(prev => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/projects/${projectId}/logo?v=${encodeURIComponent(project.logo_updated_at)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => r.ok ? r.blob() : null)
+      .then(blob => {
+        if (cancelled || !blob) return;
+        const newUrl = URL.createObjectURL(blob);
+        setLogoPreviewUrl(prev => {
+          if (prev) URL.revokeObjectURL(prev);
+          return newUrl;
+        });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [projectId, token, project?.logo_updated_at]);
 
   useEffect(() => {
     if (!token || !projectId || !myRole) return;
@@ -643,6 +684,70 @@ export function SiteSettingsPage() {
     }
   }
 
+  async function handleLogoUpload(file: File) {
+    if (!projectId) return;
+    setLogoError(null);
+    const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+    if (!allowed.includes(file.type)) {
+      setLogoError("Invalid file type. Allowed: JPEG, PNG, WebP, GIF.");
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setLogoError("File too large. Maximum size is 2MB.");
+      return;
+    }
+    const optimisticUrl = URL.createObjectURL(file);
+    setLogoPreviewUrl(prev => {
+      if (prev) URL.revokeObjectURL(prev);
+      return optimisticUrl;
+    });
+    setUploadingLogo(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(`/api/projects/${projectId}/logo`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+      const json = await res.json() as { ok: boolean; data?: Project; error?: string };
+      if (json.ok && json.data) {
+        setProject(json.data);
+        toast({ title: "Logo uploaded." });
+      } else {
+        setLogoError(json.error ?? "Failed to upload logo.");
+      }
+    } catch {
+      setLogoError("Could not connect to the server.");
+    } finally {
+      setUploadingLogo(false);
+      if (logoInputRef.current) logoInputRef.current.value = "";
+    }
+  }
+
+  async function handleLogoRemove() {
+    if (!projectId) return;
+    setRemovingLogo(true);
+    setLogoError(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/logo`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json() as { ok: boolean; data?: Project };
+      if (json.ok && json.data) {
+        setProject(json.data);
+        toast({ title: "Logo removed." });
+      } else {
+        setLogoError("Failed to remove logo.");
+      }
+    } catch {
+      setLogoError("Could not connect to the server.");
+    } finally {
+      setRemovingLogo(false);
+    }
+  }
+
   async function handleSaveSlug(e: React.FormEvent) {
     e.preventDefault();
     if (!projectId) return;
@@ -779,6 +884,7 @@ export function SiteSettingsPage() {
             <button onClick={() => scrollToSection("general")} className="py-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground">General</button>
             {isAdminOrOwner && <button onClick={() => scrollToSection("publishing")} className="py-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground">Publishing</button>}
             {isAdminOrOwner && !!(project.features & 1) && <button onClick={() => scrollToSection("custom-link")} className="py-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground flex items-center gap-1.5">Custom Link <PremiumBadge /></button>}
+            {isAdminOrOwner && <button onClick={() => scrollToSection("branding")} className="py-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground">Branding</button>}
             {isAdminOrOwner && <button onClick={() => scrollToSection("features")} className="py-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground">Features</button>}
             {isAdminOrOwner && <button onClick={() => scrollToSection("members")} className="py-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground">Members</button>}
             {myRole !== null && <button onClick={() => scrollToSection("danger")} className="py-1 text-left text-sm text-destructive/70 transition-colors hover:text-destructive">Danger Zone</button>}
@@ -946,6 +1052,75 @@ export function SiteSettingsPage() {
                 )}
               </div>
             </form>
+          </div>
+        </>
+      )}
+
+      {/* Branding section — admins and owners only */}
+      {isAdminOrOwner && (
+        <>
+          <Separator className="my-10" />
+          <div className="flex flex-col gap-4">
+            <div id="branding">
+              <h3 className="text-base font-semibold">Branding</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Upload a logo to display in the top-left of your published site instead of the site name.
+              </p>
+            </div>
+            <div className="flex items-center gap-4 rounded-md border border-border px-4 py-3">
+              <div className="flex h-16 w-32 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
+                {project.logo_updated_at && logoPreviewUrl ? (
+                  <img src={logoPreviewUrl} alt={project.name} className="max-h-full max-w-full object-contain" />
+                ) : (
+                  <ImageIcon className="h-6 w-6 text-muted-foreground" />
+                )}
+              </div>
+              <div className="flex min-w-0 flex-1 flex-col gap-2">
+                <p className="text-xs text-muted-foreground">
+                  PNG, JPG, WebP, or GIF. Up to 2 MB. Wide/horizontal images work best.
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    ref={logoInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif"
+                    className="hidden"
+                    onChange={e => {
+                      const file = e.target.files?.[0];
+                      if (file) handleLogoUpload(file);
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    disabled={uploadingLogo || removingLogo}
+                    onClick={() => logoInputRef.current?.click()}
+                  >
+                    <Upload className="h-3.5 w-3.5" />
+                    {uploadingLogo ? "Uploading…" : project.logo_updated_at ? "Change" : "Upload logo"}
+                  </Button>
+                  {project.logo_updated_at && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-muted-foreground hover:text-destructive"
+                      disabled={uploadingLogo || removingLogo}
+                      onClick={handleLogoRemove}
+                    >
+                      {removingLogo ? "Removing…" : "Remove"}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+            {logoError && (
+              <Alert variant="destructive">
+                <AlertDescription>{logoError}</AlertDescription>
+              </Alert>
+            )}
           </div>
         </>
       )}
