@@ -12,7 +12,10 @@
       "Bash(xargs *)",
       "Bash(fd *)",
       "Bash(fzf *)",
-      "Bash(ag *)"
+      "Bash(ag *)",
+      "Bash(pnpm -C packages/frontend typecheck)",
+      "Bash(pnpm -C packages/frontend test)",
+      "Bash(pnpm -C packages/frontend build)"
     ]
   }
 }

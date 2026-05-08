@@ -1,17 +1,9 @@
-import { useState, useEffect, useCallback, useMemo, isValidElement } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSwipeGesture } from "@/hooks/useSwipeGesture";
 import { SearchPalette } from "@/components/SearchPalette";
 import { useParams, useNavigate, NavLink } from "react-router-dom";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import remarkFrontmatter from "remark-frontmatter";
-import { remarkCallouts } from "@/lib/remark-callouts";
-import { remarkImageAttrs } from "@/lib/remark-image-attrs";
-import { remarkWikilinks, wikilinkUrlTransform } from "@/lib/remark-wikilinks";
-import { makeDocLink } from "@/components/DocLink";
 import { parseFrontmatter } from "@/lib/frontmatter";
-import { Callout, type CalloutType } from "@/components/Callout";
-import { MarkdownCode } from "@/components/CodeBlock";
+import { WysiwygEditor } from "@/components/wysiwyg/WysiwygEditor";
 import { GraphView, type GraphData } from "@/components/GraphView";
 import { LinkedDocsPanel } from "@/components/LinkedDocsPanel";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -21,26 +13,10 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { getToken } from "@/lib/auth";
 import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
-import { BookOpen, FileText, Folder, House, ChevronLeft, ChevronRight, Search, X, Image, FileCode, FileArchive, File, Music, Download, ImageOff, Network } from "lucide-react";
+import { BookOpen, FileText, Folder, House, ChevronLeft, ChevronRight, Search, X, Image, FileCode, FileArchive, File, Music, Download, Network } from "lucide-react";
 
 function toId(text: string): string {
   return text.toLowerCase().replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-");
-}
-
-function childrenToText(children: React.ReactNode): string {
-  if (typeof children === "string") return children;
-  if (typeof children === "number") return String(children);
-  if (Array.isArray(children)) return children.map(childrenToText).join("");
-  if (isValidElement(children)) return childrenToText((children.props as { children?: React.ReactNode }).children);
-  return "";
-}
-
-function makeHeading(Tag: "h1" | "h2" | "h3" | "h4" | "h5" | "h6") {
-  return function HeadingWithId({ children, node: _node, ...props }: React.ComponentPropsWithoutRef<"h1"> & { node?: unknown }) {
-    const id = toId(childrenToText(children));
-    return <Tag id={id} {...props}>{children}</Tag>;
-  };
 }
 
 interface Heading { level: number; text: string; id: string }
@@ -65,57 +41,6 @@ function extractHeadings(content: string): Heading[] {
   }
   return headings;
 }
-
-const remarkPlugins = [remarkFrontmatter, remarkWikilinks, remarkGfm, remarkCallouts, remarkImageAttrs];
-
-function makePublicImage(projectId: string) {
-  return function PublicImage({ src, alt, ...props }: React.ComponentPropsWithoutRef<"img">) {
-    const [failed, setFailed] = useState(false);
-    let publicSrc = src;
-    if (src?.startsWith("/api/files/")) {
-      publicSrc = src.replace("/api/files/", "/api/public/files/") + `?projectId=${projectId}`;
-    } else if (src?.startsWith("/api/public/files/") && !src.includes("projectId=")) {
-      publicSrc = src + `?projectId=${projectId}`;
-    }
-    if (failed) {
-      return (
-        <a href="https://docs.cubityfir.st/s/e6d11927-cc6b-48d1-8577-af8b08019d61/258a2eb4-edac-4c86-91aa-afdc46c29c00" target="_blank" rel="noopener noreferrer" aria-label="Image unavailable - learn more">
-          <Badge variant="destructive" className="inline-flex items-center gap-1.5 font-normal cursor-pointer" title={alt}>
-            <ImageOff className="h-3.5 w-3.5 shrink-0" />
-            Image unavailable: Learn more about missing images and permissions.
-          </Badge>
-        </a>
-      );
-    }
-    return <img src={publicSrc} alt={alt} onError={() => setFailed(true)} {...props} />;
-  };
-}
-
-const baseMarkdownComponents = {
-  blockquote({ children, node, ...props }: React.ComponentPropsWithoutRef<"blockquote"> & { node?: { properties?: Record<string, unknown> } }) {
-    const p = node?.properties;
-    const calloutType = p?.["data-callout"] as CalloutType | undefined;
-    if (calloutType) {
-      return (
-        <Callout
-          type={calloutType}
-          title={p?.["data-callout-title"] as string | undefined}
-          fold={p?.["data-callout-fold"] as string | undefined}
-        >
-          {children}
-        </Callout>
-      );
-    }
-    return <blockquote {...props}>{children}</blockquote>;
-  },
-  h1: makeHeading("h1"),
-  h2: makeHeading("h2"),
-  h3: makeHeading("h3"),
-  h4: makeHeading("h4"),
-  h5: makeHeading("h5"),
-  h6: makeHeading("h6"),
-  code: MarkdownCode,
-};
 
 interface NavDoc {
   id: string;
@@ -428,18 +353,19 @@ export function PublicDocPage() {
     onSwipeRight: () => setSidebarOpen(true),
   });
 
-  const markdownComponents = useMemo(() => ({
-    ...baseMarkdownComponents,
-    img: makePublicImage(projectId ?? ""),
-    a: makeDocLink({
-      docs: data?.docs ?? [],
-      folders: data?.folders ?? [],
-      buildUrl: (docId, anchor) => {
-        const slug = data?.project.vanity_slug ?? projectId ?? "";
-        return `/s/${slug}/${docId}${anchor ? "#" + anchor : ""}`;
-      },
-    }),
-  }), [projectId, data]);
+  const wysiwygCtx = useMemo(() => ({
+    projectId: data?.project.id,
+    isPublic: true,
+    currentDocId: docId,
+    revealOnCursor: false,
+    hideFrontmatter: true,
+    docs: data?.docs ?? [],
+    folders: data?.folders ?? [],
+    buildUrl: (id: string, anchor?: string) => {
+      const slug = data?.project.vanity_slug ?? data?.project.id ?? projectId ?? "";
+      return `/s/${slug}/${id}${anchor ? "#" + anchor : ""}`;
+    },
+  }), [projectId, docId, data]);
 
   useEffect(() => {
     setHasToken(!!getToken());
@@ -760,9 +686,13 @@ export function PublicDocPage() {
                       </p>
                     )}
                     {data.doc.content.trim() ? (
-                      <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents} urlTransform={wikilinkUrlTransform}>
-                        {data.doc.content}
-                      </ReactMarkdown>
+                      <div className="not-prose">
+                        <WysiwygEditor
+                          mode="reading"
+                          value={data.doc.content}
+                          rendererCtx={wysiwygCtx}
+                        />
+                      </div>
                     ) : (
                       <p className="not-prose text-sm italic text-muted-foreground/60">
                         This page has no content yet.

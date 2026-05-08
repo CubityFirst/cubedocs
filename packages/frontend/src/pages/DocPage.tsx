@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { MarkdownEditor } from "@/components/MarkdownEditor";
+import { WysiwygEditor } from "@/components/wysiwyg/WysiwygEditor";
 import { EditorPresence } from "@/components/EditorPresence";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
@@ -26,7 +26,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { HistorySheet, type RevisionMeta } from "@/components/HistorySheet";
 import { HistoryBanner } from "@/components/HistoryBanner";
-import { Pencil, X, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight, Sparkles, Users, UserPlus, Trash2 } from "lucide-react";
+import { Pencil, X, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight, Sparkles, Users, UserPlus, Trash2, HelpCircle } from "lucide-react";
 import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
 import { getToken } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
@@ -212,6 +212,17 @@ export function DocPage() {
         `/projects/${projectId}/docs/${docId}${anchor ? "#" + anchor : ""}`,
     }),
   }), [projectId, allDocs, allFolders]);
+
+  const wysiwygCtx = useMemo(() => ({
+    projectId,
+    isPublic: false,
+    currentDocId: docId,
+    revealOnCursor: true,
+    docs: allDocs,
+    folders: allFolders,
+    buildUrl: (id: string, anchor?: string) =>
+      `/projects/${projectId}/docs/${id}${anchor ? "#" + anchor : ""}`,
+  }), [projectId, docId, allDocs, allFolders]);
 
   const [doc, setDoc] = useState<Doc | null>(null);
   const [myRole, setMyRole] = useState<string | null>(null);
@@ -607,6 +618,15 @@ export function DocPage() {
           <div className="ml-auto flex items-center gap-2">
             {realtimeEnabled && <EditorPresence editors={remoteEditors} />}
             {saveError && <p className="text-xs text-destructive">{saveError}</p>}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setMarkdownHelpOpen(true)}
+              title="Markdown reference"
+              className="h-8 w-8"
+            >
+              <HelpCircle className="h-4 w-4" />
+            </Button>
             <Button variant="ghost" size="sm" onClick={cancelEditing} className="gap-1.5">
               <X className="h-3.5 w-3.5" />
               Cancel
@@ -618,70 +638,24 @@ export function DocPage() {
           </div>
         </div>
 
-        {/* Split editor / preview */}
         <div className="flex flex-1 overflow-hidden">
-          <div className="flex w-1/2 flex-col border-r border-border">
-            <div className="border-b border-border px-4 py-1.5 flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">Markdown</span>
-              <button
-                onClick={() => setMarkdownHelpOpen(true)}
-                title="Markdown help"
-                className="flex h-4 w-4 items-center justify-center rounded-full border border-muted-foreground/30 text-[10px] font-medium text-muted-foreground/40 transition-colors hover:border-muted-foreground hover:text-muted-foreground"
-              >
-                ?
-              </button>
-            </div>
-            <div className="relative flex-1 overflow-hidden">
-              <MarkdownEditor
-                value={draft}
-                onChange={setDraft}
-                onCursorLine={setActiveLine}
-                onScrollTop={setEditorScrollTop}
-                onSave={handleSaveClick}
-                autoFocus={!location.state?.isNew}
-                collab={realtimeEnabled && currentUser ? { docId: doc.id, user: currentUser } : undefined}
-                onAwarenessChange={realtimeEnabled ? setRemoteEditors : undefined}
-              />
-              {(() => {
-                const entry = doc.blame?.[activeLine] ?? null;
-                if (!entry) return null;
-                const lineHeight = 22.75; // text-sm (14px) × leading-relaxed (1.625)
-                const paddingTop = 16; // p-4
-                const top = paddingTop + activeLine * lineHeight - editorScrollTop;
-                const parts: string[] = [];
-                if (entry.c) parts.push(`"${truncate(entry.c, 32)}"`);
-                parts.push(entry.n);
-                parts.push(timeAgo(entry.t));
-                return (
-                  <div
-                    className="pointer-events-none absolute right-4 font-mono text-xs text-muted-foreground/35 select-none whitespace-nowrap"
-                    style={{ top: `${top}px`, lineHeight: `${lineHeight}px` }}
-                  >
-                    {parts.join(" · ")}
-                  </div>
-                );
-              })()}
-            </div>
-          </div>
-
-          <div className="flex w-1/2 flex-col overflow-auto">
-            <div className="border-b border-border px-4 py-1.5 flex items-center">
-              <span className="text-xs font-medium text-muted-foreground">Preview</span>
-            </div>
-            <div className="flex-1 overflow-auto px-8 py-6">
-              {titleDraft && <h1 className="mb-4 text-2xl font-bold">{titleDraft}</h1>}
-              {draft.trim() ? (
-                <article className="prose prose-neutral dark:prose-invert max-w-none">
-                  <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents} urlTransform={wikilinkUrlTransform}>{draft}</ReactMarkdown>
-                </article>
-              ) : (
-                <p className="text-sm text-muted-foreground/50">Nothing to preview yet.</p>
-              )}
-            </div>
+          <div className="relative flex-1 overflow-hidden">
+            <WysiwygEditor
+              mode="editing"
+              value={draft}
+              onChange={setDraft}
+              onCursorLine={setActiveLine}
+              onScrollTop={setEditorScrollTop}
+              onSave={handleSaveClick}
+              autoFocus={!location.state?.isNew}
+              collab={realtimeEnabled && currentUser ? { docId: doc.id, user: currentUser } : undefined}
+              onAwarenessChange={realtimeEnabled ? setRemoteEditors : undefined}
+              rendererCtx={wysiwygCtx}
+            />
           </div>
         </div>
 
-        {/* Markdown reference dialog / Markdown Hintsheet */}
+        {/* Markdown reference dialog */}
         <Dialog open={markdownHelpOpen} onOpenChange={setMarkdownHelpOpen}>
           <DialogContent className="sm:max-w-lg">
             <DialogHeader>
@@ -1083,9 +1057,13 @@ export function DocPage() {
               </div>
             )}
             {(viewingRevision ? viewingRevision.content : doc.content).trim() ? (
-              <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents} urlTransform={wikilinkUrlTransform}>
-                {viewingRevision ? viewingRevision.content : doc.content}
-              </ReactMarkdown>
+              <div className="not-prose">
+                <WysiwygEditor
+                  mode="reading"
+                  value={viewingRevision ? viewingRevision.content : doc.content}
+                  rendererCtx={wysiwygCtx}
+                />
+              </div>
             ) : (
               <p className="not-prose text-sm italic text-muted-foreground/60">
                 This page has no content yet.

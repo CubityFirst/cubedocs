@@ -34,7 +34,7 @@ function buildFolderPaths(folders: FolderInfo[]): Map<string, string> {
   return cache;
 }
 
-function resolveDoc(
+export function resolveDoc(
   rawTitle: string,
   docs: DocInfo[],
   folders: FolderInfo[],

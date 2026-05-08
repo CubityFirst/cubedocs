@@ -3,16 +3,36 @@ import { getToken } from "@/lib/auth";
 import { Badge } from "@/components/ui/badge";
 import { ImageOff } from "lucide-react";
 
-export function AuthenticatedImage({ src, alt, projectId, ...props }: React.ComponentPropsWithoutRef<"img"> & { projectId?: string }) {
+interface Props extends React.ComponentPropsWithoutRef<"img"> {
+  projectId?: string;
+  /** Public mode: rewrites /api/files/ to /api/public/files/?projectId= and skips auth. */
+  isPublic?: boolean;
+}
+
+export function AuthenticatedImage({ src, alt, projectId, isPublic, ...props }: Props) {
   const [resolvedSrc, setResolvedSrc] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     setFailed(false);
-    if (!src?.startsWith("/api/files/")) {
+
+    if (!src?.startsWith("/api/files/") && !src?.startsWith("/api/public/files/")) {
       setResolvedSrc(src ?? null);
       return;
     }
+
+    if (isPublic) {
+      let publicSrc = src;
+      if (src.startsWith("/api/files/")) {
+        publicSrc = src.replace("/api/files/", "/api/public/files/");
+      }
+      if (projectId && !publicSrc.includes("projectId=")) {
+        publicSrc += (publicSrc.includes("?") ? "&" : "?") + `projectId=${projectId}`;
+      }
+      setResolvedSrc(publicSrc);
+      return;
+    }
+
     let blobUrl: string | null = null;
     let cancelled = false;
     const fetchSrc = projectId ? `${src}?projectId=${projectId}` : src;
@@ -32,7 +52,7 @@ export function AuthenticatedImage({ src, alt, projectId, ...props }: React.Comp
       cancelled = true;
       if (blobUrl) URL.revokeObjectURL(blobUrl);
     };
-  }, [src, projectId]);
+  }, [src, projectId, isPublic]);
 
   if (failed) {
     return (

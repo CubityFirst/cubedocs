@@ -1,11 +1,7 @@
 // Remark plugin adding support for Pandoc-style image attribute syntax:
 //   ![alt](url){width=50% height=200px}
-//
-// Supported attributes: width, height (quoted or unquoted values)
-// Unsupported / silently ignored: .class, #id, other key=value pairs
-//
-// After remark parses ![alt](url), the {…} becomes a text node immediately
-// following the image in the same paragraph — this plugin stitches them together.
+
+import { ATTR_BLOCK_RE, parseImageAttrs, styleFromAttrs } from "./imageAttrs";
 
 type MdastNode = {
   type: string;
@@ -14,23 +10,6 @@ type MdastNode = {
   children?: MdastNode[];
   data?: { hProperties?: Record<string, string> };
 };
-
-// Matches a Pandoc attribute block at the start of a string: {key=val …}
-const ATTR_BLOCK_RE = /^\{([^}]*)\}/;
-
-// Matches a single key="value" or key=value pair
-const KV_RE = /(\w+)=(?:"([^"]*)"|'([^']*)'|(\S+))/g;
-
-function parseAttrs(block: string): Record<string, string> {
-  const attrs: Record<string, string> = {};
-  let m: RegExpExecArray | null;
-  while ((m = KV_RE.exec(block)) !== null) {
-    const key = m[1];
-    const val = m[2] ?? m[3] ?? m[4];
-    attrs[key] = val;
-  }
-  return attrs;
-}
 
 function processParagraph(node: MdastNode) {
   const children = node.children;
@@ -46,19 +25,14 @@ function processParagraph(node: MdastNode) {
     const match = next.value.match(ATTR_BLOCK_RE);
     if (!match) continue;
 
-    const attrs = parseAttrs(match[1]);
-    const { width, height } = attrs;
-    if (!width && !height) continue;
+    const attrs = parseImageAttrs(match[1]);
+    const style = styleFromAttrs(attrs);
+    if (!style) continue;
 
-    // Apply as inline styles so they override prose's `height: auto` rule
     child.data = child.data ?? {};
     child.data.hProperties = child.data.hProperties ?? {};
-    const styleParts: string[] = [];
-    if (width) styleParts.push(`width: ${width}`);
-    if (height) styleParts.push(`height: ${height}`);
-    child.data.hProperties["style"] = styleParts.join("; ");
+    child.data.hProperties["style"] = style;
 
-    // Strip the {…} from the following text node
     const remainder = next.value.slice(match[0].length);
     if (remainder) {
       next.value = remainder;
