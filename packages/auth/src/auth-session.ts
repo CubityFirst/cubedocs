@@ -9,5 +9,5 @@ export async function requireAuthenticatedSession(
   const authHeader = request.headers.get("Authorization");
   if (!authHeader?.startsWith("Bearer ")) return errorResponse(Errors.UNAUTHORIZED);
 
-  return requireCurrentSessionToken(authHeader.slice(7), env);
+  return requireCurrentSessionToken(authHeader.slice(7), env.DB, env.JWT_SECRET);
 }

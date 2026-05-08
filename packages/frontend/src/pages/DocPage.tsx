@@ -234,7 +234,6 @@ export function DocPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [togglingPublish, setTogglingPublish] = useState(false);
-  const [activeLine, setActiveLine] = useState<number>(0);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [revisions, setRevisions] = useState<RevisionMeta[] | null>(null);
   const [viewingRevision, setViewingRevision] = useState<RevisionDetail | null>(null);
@@ -242,7 +241,6 @@ export function DocPage() {
   const [reverting, setReverting] = useState(false);
   const [changelogDialogOpen, setChangelogDialogOpen] = useState(false);
   const [changelogText, setChangelogText] = useState("");
-  const [editorScrollTop, setEditorScrollTop] = useState(0);
   const [aiSummaryLoading, setAiSummaryLoading] = useState(false);
   const [markdownHelpOpen, setMarkdownHelpOpen] = useState(false);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
@@ -353,7 +351,6 @@ export function DocPage() {
     setTitleDraft(doc.title);
     setDraft(doc.content);
     setSaveError(null);
-    setActiveLine(0);
     setEditing(true);
   }
 
@@ -644,8 +641,6 @@ export function DocPage() {
               mode="editing"
               value={draft}
               onChange={setDraft}
-              onCursorLine={setActiveLine}
-              onScrollTop={setEditorScrollTop}
               onSave={handleSaveClick}
               autoFocus={!location.state?.isNew}
               collab={realtimeEnabled && currentUser ? { docId: doc.id, user: currentUser } : undefined}

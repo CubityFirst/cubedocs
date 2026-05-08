@@ -10,6 +10,10 @@ database_name = "cubedocs-auth"
 database_id = "db327d85-b8c2-4fed-adaa-25e748778c86"
 migrations_dir = "migrations"
 
+[triggers]
+# Weekly sweep of long-dead session rows (see scheduled handler).
+crons = ["0 3 * * 0"]
+
 [vars]
 JWT_ISSUER = "https://auth.cubedocs.com"
 ADMIN_APP_ORIGIN = "https://admin.cubityfir.st"

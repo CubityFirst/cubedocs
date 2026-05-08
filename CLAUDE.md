@@ -6,23 +6,27 @@ pnpm + Turbo monorepo
 - `packages/api` — Core Cloudflare Worker (projects, docs, files)
 - `packages/auth` — Auth Cloudflare Worker (login, register, TOTP, WebAuthn)
 
-### API Response Shape
+### Auth
 
-Authentication uses `Authorization: Bearer <JWT>` headers. JWTs are issued by the Auth Worker and verified by the API Worker via a shared `JWT_SECRET`.
+Authentication uses `Authorization: Bearer <JWT>` headers. JWTs are issued by the Auth Worker and verified by the API Worker via a shared `JWT_SECRET`. The Auth Worker handles all identity concerns (register, login, TOTP, WebAuthn).
 
-### Auth Flow
+**Verification boundary — read this before touching auth flow:**
 
-The Auth Worker handles all identity concerns (register, login, TOTP, WebAuthn). The API Worker verifies JWTs for protected routes and proxies auth-related endpoints to the Auth Worker via a service binding.
+- **API Worker verifies sessions inline.** It binds the auth D1 as `AUTH_DB` (read-only by convention — no migrations) and calls `loadCurrentSession` from `packages/auth/src/session.ts` directly. One D1 batch read of `users` + `sessions`, no service-binding hop. This is what every authenticated API request goes through (`packages/api/src/auth.ts`).
+- **Auth Worker still owns writes.** Login, register, change-password, session revoke, TOTP/WebAuthn enroll, lookup, etc. are still proxied through the `AUTH` service binding from the API worker. Anything that mutates the auth DB or needs rate limiting / email sending stays in the auth worker.
+- **Cross-package import.** API worker imports `loadCurrentSession`, `sessionResultToResponse`, and `verifyJwt` directly from `packages/auth/src/`. The API tsconfig lists those files in `include`. **A schema change to `users` or `sessions` columns referenced in `loadCurrentSession` requires redeploying both workers**, because the API worker now reads those tables directly. Migrations themselves still only live in `packages/auth/migrations/`.
+- The auth worker's `/verify` endpoint still exists but the API worker no longer calls it — leave it in place for now in case external tooling depends on it.
 
 ### Database Schemas
 
-- **API DB** (`cubedocs-main`): projects, docs, doc_revisions, folders, files, members — see `packages/api/migrations/`
-- **Auth DB** (`cubedocs-auth`): users, sessions, totp, webauthn_credentials — see `packages/auth/migrations/`
+- **API DB** (`cubedocs-main`): projects, docs, doc_revisions, folders, files, members — see `packages/api/migrations/`. Bound as `DB` on the API worker.
+- **Auth DB** (`cubedocs-auth`): users, sessions, totp, webauthn_credentials — see `packages/auth/migrations/`. Bound as `DB` on the auth worker (read+write) and as `AUTH_DB` on the API worker (read-only by convention; only `users` and `sessions` are read).
 
 ## Frontend Notes
 
 - UI components from shadcn/ui — always use these instead of raw HTML elements
-- Markdown rendered via `react-markdown` + remark-gfm + Shiki for syntax highlighting
+- Document rendering and editing both go through `packages/frontend/src/components/wysiwyg/WysiwygEditor.tsx` (CodeMirror 6, Lezer markdown grammar, decoration-based inline-rendered widgets). The `mode` prop selects `"reading"` | `"editing"` | `"raw"`.
+- `react-markdown` + remark plugins is still used for the AI-summary block in `DocPage.tsx` and the file-summary block in `FileManager.tsx`, but not for the main document body.
 - Authenticated images use the `AuthenticatedImage` component (fetches with auth header)
 - PWA service worker in `dev-dist/sw.js` (auto-generated — do not edit manually)
 
@@ -35,10 +39,6 @@ The Auth Worker handles all identity concerns (register, login, TOTP, WebAuthn).
 
 **Supported notation:** see `memories/Dice-Notation.md` — read that file when you need details on dice notation syntax (table of examples, reroll/keep/explode/success-count behavior, operator precedence).
 
-`packages/frontend/vite.config.ts` Vite + dev proxy to API
-`packages/api/wrangler.toml` API Worker bindings (D1, R2, service bindings)
-`packages/auth/wrangler.toml` Auth Worker bindings (D1)
-
 ## Realtime Collaboration
 
 Enabled per-project via `projects.features & 4` (`ProjectFeatures.REALTIME`). Toggle in the admin panel.
@@ -46,12 +46,12 @@ Enabled per-project via `projects.features & 4` (`ProjectFeatures.REALTIME`). To
 **Architecture:** Browser ↔ WebSocket `/api/docs/:id/collab?token=<jwt>` ↔ API Worker (auth + flag check) ↔ `DocCollabRoom` Durable Object (Yjs CRDT server, WebSocket hibernation).
 
 **Key files:**
-- `packages/api/src/collab/DocCollabRoom.ts` — Durable Object; holds `Y.Doc` in memory, persists snapshot to R2 via 10s alarm after edits and on last-client-close
-- `packages/frontend/src/components/MarkdownEditor.tsx` — CodeMirror 6 editor used universally (flag-on and flag-off); Yjs/WebSocket extensions only wired when `collab` prop is set
+- `packages/api/src/collab/DocCollabRoom.ts` — Durable Object; holds `Y.Doc` in memory, persists snapshot to R2 via a debounced alarm after edits and on last-client-close. The Awareness `_checkInterval` is cleared at construction to allow WebSocket hibernation, and `teardown()` is called when the last client disconnects so the DO can be evicted.
+- `packages/frontend/src/components/wysiwyg/WysiwygEditor.tsx` — CodeMirror 6 editor used universally (flag-on and flag-off); Yjs/WebSocket extensions only wired when the `collab` prop is set
 - `packages/frontend/src/components/EditorPresence.tsx` — title-bar avatars (first 3 + "+N" overflow popover) fed from Yjs awareness state
 - `packages/frontend/src/lib/userColor.ts` — deterministic HSL color from user UUID
 
-**WebSocket auth:** Token passed as `?token=` (browsers can't set headers on WS); API worker re-wraps it as `Authorization: Bearer` and calls `authenticate()` via the AUTH service binding — no `JWT_SECRET` needed locally.
+**WebSocket auth:** Token passed as `?token=` (browsers can't set headers on WS); API worker re-wraps it as `Authorization: Bearer` and calls `authenticate()`, which now verifies inline against `AUTH_DB` (see "Verification boundary" above).
 
 **DO room key:** `${projectId}:${docId}` — one room per document.
 

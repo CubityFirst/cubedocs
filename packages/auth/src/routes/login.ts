@@ -1,9 +1,10 @@
 import { okResponse, errorResponse, Errors } from "../lib";
-import { verifyPassword } from "../password";
+import { verifyPassword, hashPassword, needsRehash } from "../password";
 import { signJwt } from "../jwt";
 import { verifyTurnstile } from "../turnstile";
 import { verifyTOTP } from "../totp";
 import { validateAndConsumeBackupCode } from "../mfa";
+import { createSession, SESSION_TTL_MS } from "../sessions";
 import type { Env } from "../index";
 
 export async function handleLogin(request: Request, env: Env): Promise<Response> {
@@ -64,16 +65,34 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
     if (totpError) return totpError;
   }
 
+  // Authentication succeeded — opportunistically migrate hashes that were
+  // written with an older iteration count.
+  if (needsRehash(row.password_hash)) {
+    const newHash = await hashPassword(body.password);
+    await env.DB.prepare("UPDATE users SET password_hash = ? WHERE id = ?")
+      .bind(newHash, row.id).run();
+  }
+
   if (row.force_password_change) {
+    // Pre-session token: short-lived, no `sid`. Only valid against
+    // /force-change-password, which checks `forcePasswordChange` explicitly.
+    // The `cti` nonce is mirrored on the user row; re-issuing it here
+    // overwrites any prior unused token, killing it before its 15-min
+    // expiry kicks in.
+    const cti = crypto.randomUUID();
+    await env.DB.prepare("UPDATE users SET change_token_id = ? WHERE id = ?")
+      .bind(cti, row.id).run();
     const changeToken = await signJwt(
-      { userId: row.id, email: row.email, expiresAt: Date.now() + 15 * 60 * 1000, isAdmin: Boolean(row.is_admin), forcePasswordChange: true },
+      { userId: row.id, email: row.email, expiresAt: Date.now() + 15 * 60 * 1000, isAdmin: Boolean(row.is_admin), forcePasswordChange: true, cti },
       env.JWT_SECRET,
     );
     return Response.json({ ok: false, error: "password_change_required", changeToken }, { status: 200 });
   }
 
+  const expiresAt = Date.now() + SESSION_TTL_MS;
+  const sid = await createSession(env, row.id, request, expiresAt);
   const token = await signJwt(
-    { userId: row.id, email: row.email, expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000, isAdmin: Boolean(row.is_admin) },
+    { userId: row.id, email: row.email, expiresAt, isAdmin: Boolean(row.is_admin), sid },
     env.JWT_SECRET,
   );
 

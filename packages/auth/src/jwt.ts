@@ -13,6 +13,10 @@ function b64url(buf: ArrayBuffer): string {
     .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
 }
 
+function b64urlDecode(str: string): string {
+  return atob(str.replace(/-/g, "+").replace(/_/g, "/"));
+}
+
 function encodeJSON(obj: unknown): string {
   return b64url(toArrayBuffer(new TextEncoder().encode(JSON.stringify(obj))));
 }
@@ -29,16 +33,31 @@ export async function verifyJwt(token: string, secret: string): Promise<Session 
   const parts = token.split(".");
   if (parts.length !== 3) return null;
 
+  // Pin the algorithm explicitly. Without this, a future verifier that
+  // accepts multiple algs is one bug away from `alg: none` / RS→HS confusion.
+  let header: { alg?: unknown; typ?: unknown };
+  try {
+    header = JSON.parse(b64urlDecode(parts[0]));
+  } catch {
+    return null;
+  }
+  if (header.alg !== "HS256" || header.typ !== "JWT") return null;
+
   const key = await importKey(secret);
   const valid = await crypto.subtle.verify(
     ALG,
     key,
-    toArrayBuffer(Uint8Array.from(atob(parts[2].replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0))),
+    toArrayBuffer(Uint8Array.from(b64urlDecode(parts[2]), c => c.charCodeAt(0))),
     toArrayBuffer(new TextEncoder().encode(`${parts[0]}.${parts[1]}`)),
   );
   if (!valid) return null;
 
-  const payload: Session = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+  let payload: Session;
+  try {
+    payload = JSON.parse(b64urlDecode(parts[1]));
+  } catch {
+    return null;
+  }
   if (payload.expiresAt < Date.now()) return null;
 
   return payload;

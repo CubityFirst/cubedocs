@@ -2,6 +2,7 @@ import { okResponse, errorResponse, Errors } from "../lib";
 import { verifyWebauthnAssertion } from "../webauthn";
 import { signJwt } from "../jwt";
 import { checkModeration } from "./login";
+import { createSession, SESSION_TTL_MS } from "../sessions";
 import type { Env } from "../index";
 
 export async function handleWebauthnAuthFinish(request: Request, env: Env): Promise<Response> {
@@ -30,15 +31,21 @@ export async function handleWebauthnAuthFinish(request: Request, env: Env): Prom
   if (assertionError) return assertionError;
 
   if (user.force_password_change) {
+    // Same single-use nonce flow as /login — see that handler for context.
+    const cti = crypto.randomUUID();
+    await env.DB.prepare("UPDATE users SET change_token_id = ? WHERE id = ?")
+      .bind(cti, user.id).run();
     const changeToken = await signJwt(
-      { userId: user.id, email: user.email, expiresAt: Date.now() + 15 * 60 * 1000, isAdmin: Boolean(user.is_admin), forcePasswordChange: true },
+      { userId: user.id, email: user.email, expiresAt: Date.now() + 15 * 60 * 1000, isAdmin: Boolean(user.is_admin), forcePasswordChange: true, cti },
       env.JWT_SECRET,
     );
     return Response.json({ ok: false, error: "password_change_required", changeToken }, { status: 200 });
   }
 
+  const expiresAt = Date.now() + SESSION_TTL_MS;
+  const sid = await createSession(env, user.id, request, expiresAt);
   const token = await signJwt(
-    { userId: user.id, email: user.email, expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000, isAdmin: Boolean(user.is_admin) },
+    { userId: user.id, email: user.email, expiresAt, isAdmin: Boolean(user.is_admin), sid },
     env.JWT_SECRET,
   );
 

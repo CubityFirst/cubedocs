@@ -174,17 +174,18 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
     if (folders.length === 0) { setFolderCounts(new Map()); return; }
     const token = getToken();
     if (!token) return;
-    Promise.all(
-      folders.map(async folder => {
-        const [fRes, dRes] = await Promise.all([
-          fetch(`/api/folders?projectId=${projectId}&type=docs&parentId=${folder.id}`, { headers: { Authorization: `Bearer ${token}` } }),
-          fetch(`/api/docs?projectId=${projectId}&folderId=${folder.id}`, { headers: { Authorization: `Bearer ${token}` } }),
-        ]);
-        const fJson = await fRes.json() as { ok: boolean; data?: FolderItem[] };
-        const dJson = await dRes.json() as { ok: boolean; data?: DocItem[] };
-        return { id: folder.id, files: dJson.data?.length ?? 0, folders: fJson.data?.length ?? 0 };
+    fetch(`/api/folders/counts?projectId=${projectId}&type=docs`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json() as Promise<{ ok: boolean; data?: Record<string, { docs: number; folders: number }> }>)
+      .then(json => {
+        if (!json.ok || !json.data) return;
+        const next = new Map<string, { files: number; folders: number }>();
+        for (const folder of folders) {
+          const c = json.data[folder.id];
+          if (c) next.set(folder.id, { files: c.docs, folders: c.folders });
+        }
+        setFolderCounts(next);
       })
-    ).then(results => setFolderCounts(new Map(results.map(r => [r.id, { files: r.files, folders: r.folders }]))));
+      .catch(() => {});
   }, [folders]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {

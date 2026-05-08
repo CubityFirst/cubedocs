@@ -66,12 +66,12 @@ export function DashboardPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid auto-rows-fr grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {projects.map(project => (
             <Card
               key={project.id}
               onClick={() => navigate(`/projects/${project.id}`)}
-              className="group flex cursor-pointer flex-col transition-colors hover:border-primary/40 hover:bg-card/80"
+              className="group flex cursor-pointer flex-col transition-colors hover:border-primary/40 hover:bg-accent/30"
             >
               <CardHeader className="flex-row items-start justify-between gap-3 pb-0">
                 <div className="flex items-center gap-2.5">
@@ -147,7 +147,7 @@ export function DashboardPage() {
           {pendingCount > 0 && (
             <Card
               onClick={() => navigate("/invites/pending")}
-              className="group flex cursor-pointer flex-col transition-colors hover:border-primary/40 hover:bg-card/80"
+              className="group flex cursor-pointer flex-col transition-colors hover:border-primary/40 hover:bg-accent/30"
             >
               <CardHeader className="flex-row items-start justify-between gap-3 pb-0">
                 <div className="flex items-center gap-2.5">
@@ -174,7 +174,7 @@ export function DashboardPage() {
             onClick={openCreateSite}
             className="group flex cursor-pointer flex-col items-center justify-center border-dashed transition-colors hover:border-primary/40 hover:bg-accent/30"
           >
-            <CardContent className="flex flex-col items-center gap-3 py-10">
+            <CardContent className="flex flex-col items-center gap-3 py-6">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-dashed border-muted-foreground/40 transition-colors group-hover:border-primary/60">
                 <Plus className="h-5 w-5 text-muted-foreground/60 transition-colors group-hover:text-primary" />
               </div>

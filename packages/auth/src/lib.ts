@@ -4,6 +4,13 @@ export interface Session {
   expiresAt: number;
   isAdmin?: boolean;
   forcePasswordChange?: true;
+  // Server-side session row id. Required for normal sessions; absent on
+  // the short-lived "force password change" token.
+  sid?: string;
+  // Force-change-token nonce. Set only on `forcePasswordChange: true`
+  // tokens; mirrored on `users.change_token_id`. Re-issuing the token
+  // overwrites the row, invalidating any prior unused token.
+  cti?: string;
 }
 
 export const Errors = {

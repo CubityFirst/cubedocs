@@ -32,6 +32,15 @@ function normalizeAdminReturnTo(returnTo: string | null): string | null {
   }
 }
 
+// Maps the `reason` query param set by apiFetch when it forces a sign-out
+// to a human-readable message rendered above the credential form.
+function reasonNoticeFor(reason: string | null): string | null {
+  if (reason === "disabled") return "Your account has been disabled. Please email docs@cubityfir.st for further details.";
+  if (reason === "suspended") return "Your account is currently suspended. Please email docs@cubityfir.st for further details.";
+  if (reason === "expired") return "Your session has ended. Please sign in again.";
+  return null;
+}
+
 function adminHandoffErrorMessage(error?: string): string {
   if (error === "not_admin") {
     return "This Annex account is signed in, but it does not have admin access.";
@@ -49,6 +58,8 @@ export function LoginPage() {
   const searchParams = new URLSearchParams(location.search);
   const adminReturnTo = normalizeAdminReturnTo(searchParams.get("returnTo"));
   const logoutRequested = searchParams.get("logout") === "1";
+  const reasonParam = searchParams.get("reason");
+  const reasonNotice = reasonNoticeFor(reasonParam);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
@@ -604,6 +615,11 @@ export function LoginPage() {
       disabled={!turnstileToken}
       error={error}
       onSubmit={handleSubmit}
+      header={reasonNotice ? (
+        <Alert>
+          <AlertDescription>{reasonNotice}</AlertDescription>
+        </Alert>
+      ) : null}
       footer={
         adminReturnTo ? "Your admin session will continue after sign-in." : (
           <>

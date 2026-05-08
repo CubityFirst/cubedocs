@@ -15,6 +15,10 @@ interface AuthFormProps {
   footer: React.ReactNode;
   hideSubmit?: boolean;
   wordmark?: React.ReactNode;
+  // Optional informational banner rendered above the form, e.g. "you've been
+  // signed out because your account was disabled." Distinct from `error`,
+  // which uses destructive styling for action failures.
+  header?: React.ReactNode;
 }
 
 export function AuthForm({
@@ -29,6 +33,7 @@ export function AuthForm({
   footer,
   hideSubmit,
   wordmark,
+  header,
 }: AuthFormProps) {
   return (
     <div className="flex min-h-screen bg-background text-foreground">
@@ -43,6 +48,8 @@ export function AuthForm({
             )}
             <p className="text-sm text-muted-foreground mt-2">{subtitle}</p>
           </div>
+
+          {header}
 
           {error && (
             <Alert variant="destructive">

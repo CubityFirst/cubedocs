@@ -18,6 +18,15 @@ database_name = "cubedocs-main"
 database_id = "267490be-7141-4d00-ab23-152742f2f6ef"
 migrations_dir = "migrations"
 
+# Read-only access to the auth DB so this worker can verify sessions inline
+# (one D1 batch read of users + sessions) instead of round-tripping through
+# the auth worker's /verify route on every request. Migrations live with the
+# auth worker — DO NOT add migrations_dir here.
+[[d1_databases]]
+binding = "AUTH_DB"
+database_name = "cubedocs-auth"
+database_id = "db327d85-b8c2-4fed-adaa-25e748778c86"
+
 [[r2_buckets]]
 binding = "ASSETS"
 bucket_name = "cubedocs-assets"

@@ -48,7 +48,10 @@ export async function createRegistrationOptions(
     })),
     authenticatorSelection: {
       residentKey: "preferred",
-      userVerification: "preferred",
+      // "required" means the authenticator must verify the user (PIN /
+      // biometric) — important because we treat WebAuthn as passwordless,
+      // so the key alone authenticates without a second factor.
+      userVerification: "required",
     },
   });
 
@@ -71,7 +74,7 @@ export async function createAuthenticationOptions(env: Env, userId: string) {
       id: base64urlToUint8Array(c.id),
       type: "public-key" as const,
     })),
-    userVerification: "preferred",
+    userVerification: "required",
   });
 
   const challengeId = crypto.randomUUID();

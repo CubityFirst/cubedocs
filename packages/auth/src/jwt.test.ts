@@ -70,4 +70,36 @@ describe("signJwt / verifyJwt", () => {
     const t2 = await signJwt(PAYLOAD, "secret-b");
     expect(t1).not.toBe(t2);
   });
+
+  it("preserves optional sid field", async () => {
+    const withSid: Session = { ...PAYLOAD, sid: "session-uuid" };
+    const token = await signJwt(withSid, SECRET);
+    const session = await verifyJwt(token, SECRET);
+    expect(session!.sid).toBe("session-uuid");
+  });
+
+  it("rejects a token whose header alg is not HS256", async () => {
+    const token = await signJwt(PAYLOAD, SECRET);
+    const [, body, sig] = token.split(".");
+    // Replace the header with one that claims `alg: none` while keeping the
+    // body and (now-invalid) signature — the alg check must reject before
+    // the signature is consulted.
+    const noneHeader = btoa(JSON.stringify({ alg: "none", typ: "JWT" }))
+      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+    expect(await verifyJwt(`${noneHeader}.${body}.${sig}`, SECRET)).toBeNull();
+  });
+
+  it("rejects a token whose header typ is not JWT", async () => {
+    const token = await signJwt(PAYLOAD, SECRET);
+    const [, body, sig] = token.split(".");
+    const wrongTyp = btoa(JSON.stringify({ alg: "HS256", typ: "JWE" }))
+      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+    expect(await verifyJwt(`${wrongTyp}.${body}.${sig}`, SECRET)).toBeNull();
+  });
+
+  it("rejects a token with an unparseable header", async () => {
+    const token = await signJwt(PAYLOAD, SECRET);
+    const [, body, sig] = token.split(".");
+    expect(await verifyJwt(`!!!.${body}.${sig}`, SECRET)).toBeNull();
+  });
 });

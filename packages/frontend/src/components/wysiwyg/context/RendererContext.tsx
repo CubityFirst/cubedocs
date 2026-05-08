@@ -1,4 +1,4 @@
-import { createContext, useContext, type ReactNode } from "react";
+import { createContext, useContext } from "react";
 import { Facet } from "@codemirror/state";
 
 export interface DocInfo {
@@ -26,21 +26,17 @@ export interface RendererCtx {
   buildUrl?: (docId: string, anchor?: string) => string;
 }
 
-const defaultCtx: RendererCtx = {
+export const defaultRendererCtx: RendererCtx = {
   isPublic: false,
   revealOnCursor: true,
 };
 
-export const RendererReactContext = createContext<RendererCtx>(defaultCtx);
+export const RendererReactContext = createContext<RendererCtx>(defaultRendererCtx);
 
 export function useRendererCtx(): RendererCtx {
   return useContext(RendererReactContext);
 }
 
-export function RendererProvider({ value, children }: { value: RendererCtx; children: ReactNode }) {
-  return <RendererReactContext.Provider value={value}>{children}</RendererReactContext.Provider>;
-}
-
 export const rendererCtxFacet = Facet.define<RendererCtx, RendererCtx>({
-  combine: values => values[0] ?? defaultCtx,
+  combine: values => values[0] ?? defaultRendererCtx,
 });

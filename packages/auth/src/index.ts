@@ -24,6 +24,10 @@ import { handleAdminHandoffExchange } from "./routes/admin-handoff-exchange";
 import { handleVerifyEmail } from "./routes/verify-email";
 import { handleVerifyEmailResend } from "./routes/verify-email-resend";
 import { handleDeleteAccount } from "./routes/delete-account";
+import { handleSessionsList } from "./routes/sessions-list";
+import { handleSessionsRevoke } from "./routes/sessions-revoke";
+import { handleSessionsRevokeOthers } from "./routes/sessions-revoke-others";
+import { handleSessionsLogout } from "./routes/sessions-logout";
 
 export interface Env {
   DB: D1Database;
@@ -51,7 +55,7 @@ export interface Env {
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
     // CORS preflight
@@ -72,7 +76,7 @@ export default {
         if (!success) return addCorsHeaders(errorResponse(Errors.RATE_LIMITED));
         response = await handleLogin(request, env);
       } else if (url.pathname === "/verify" && request.method === "GET") {
-        response = await handleVerify(request, env);
+        response = await handleVerify(request, env, ctx);
       } else if (url.pathname === "/lookup" && request.method === "POST") {
         const { success } = await env.RATE_LIMITER_LOOKUP.limit({ key: ip });
         if (!success) return addCorsHeaders(errorResponse(Errors.RATE_LIMITED));
@@ -125,6 +129,14 @@ export default {
         response = await handleTotpBackupCodesGenerate(request, env);
       } else if (url.pathname === "/delete-account" && request.method === "POST") {
         response = await handleDeleteAccount(request, env);
+      } else if (url.pathname === "/sessions/list" && request.method === "POST") {
+        response = await handleSessionsList(request, env);
+      } else if (url.pathname === "/sessions/revoke" && request.method === "POST") {
+        response = await handleSessionsRevoke(request, env);
+      } else if (url.pathname === "/sessions/revoke-others" && request.method === "POST") {
+        response = await handleSessionsRevokeOthers(request, env);
+      } else if (url.pathname === "/sessions/logout" && request.method === "POST") {
+        response = await handleSessionsLogout(request, env);
       } else {
         response = errorResponse(Errors.NOT_FOUND);
       }
@@ -134,6 +146,17 @@ export default {
     }
 
     return addCorsHeaders(response);
+  },
+
+  // Weekly sweep of long-dead session rows. Login does opportunistic GC for
+  // the logging-in user, but inactive accounts never get cleaned up that
+  // way. We keep recently-expired and recently-revoked rows for ~30 days
+  // as an audit cushion before removing them.
+  async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    await env.DB.prepare(
+      "DELETE FROM sessions WHERE expires_at <= ? OR (revoked_at IS NOT NULL AND revoked_at < ?)",
+    ).bind(cutoff, cutoff).run();
   },
 };
 

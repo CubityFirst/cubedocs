@@ -1,36 +1,68 @@
 import { toArrayBuffer } from "./crypto";
 
-// Uses PBKDF2 via WebCrypto - available in all Workers runtimes.
-
-const ITERATIONS = 100_000;
+// PBKDF2-HMAC-SHA256 via WebCrypto. OWASP 2023+ minimum is 600k iterations.
+// Stored format is versioned so we can raise the cost ceiling later without
+// invalidating existing hashes:
+//   pbkdf2-1$<iter>$<saltHex>$<hashHex>
+// Hashes written before this format ("<saltHex>:<hashHex>") are still
+// verifiable at the legacy iteration count and rewritten on next login.
+const ITERATIONS = 600_000;
+const LEGACY_ITERATIONS = 100_000;
 const HASH = "SHA-256";
+const FORMAT_PREFIX = "pbkdf2-1$";
 
 export async function hashPassword(password: string): Promise<string> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const key = await deriveKey(password, salt);
-  const hash = await crypto.subtle.exportKey("raw", key);
-  return `${buf2hex(salt)}:${buf2hex(hash)}`;
+  const hash = await derive(password, salt, ITERATIONS);
+  return `${FORMAT_PREFIX}${ITERATIONS}$${buf2hex(salt)}$${buf2hex(hash)}`;
 }
 
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
+  if (stored.startsWith(FORMAT_PREFIX)) {
+    const parts = stored.split("$");
+    if (parts.length !== 4) return false;
+    const iter = Number.parseInt(parts[1], 10);
+    if (!Number.isFinite(iter) || iter < 1) return false;
+    const salt = hex2buf(parts[2]);
+    const hash = await derive(password, salt, iter);
+    return constantTimeEqualHex(buf2hex(hash), parts[3]);
+  }
   const [saltHex, hashHex] = stored.split(":");
+  if (!saltHex || !hashHex) return false;
   const salt = hex2buf(saltHex);
-  const key = await deriveKey(password, salt);
-  const hash = await crypto.subtle.exportKey("raw", key);
-  return buf2hex(hash) === hashHex;
+  const hash = await derive(password, salt, LEGACY_ITERATIONS);
+  return constantTimeEqualHex(buf2hex(hash), hashHex);
 }
 
-async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
+// True if the stored hash should be re-derived at the current iteration cost.
+// Call after a successful verifyPassword to opportunistically migrate users.
+export function needsRehash(stored: string): boolean {
+  if (!stored.startsWith(FORMAT_PREFIX)) return true;
+  const parts = stored.split("$");
+  if (parts.length !== 4) return true;
+  const iter = Number.parseInt(parts[1], 10);
+  return !Number.isFinite(iter) || iter < ITERATIONS;
+}
+
+async function derive(password: string, salt: Uint8Array, iterations: number): Promise<ArrayBuffer> {
   const base = await crypto.subtle.importKey(
     "raw", toArrayBuffer(new TextEncoder().encode(password)), "PBKDF2", false, ["deriveBits", "deriveKey"],
   );
-  return crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt: toArrayBuffer(salt), iterations: ITERATIONS, hash: HASH },
+  const key = await crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt: toArrayBuffer(salt), iterations, hash: HASH },
     base,
     { name: "HMAC", hash: HASH, length: 256 },
     true,
     ["sign"],
   );
+  return crypto.subtle.exportKey("raw", key);
+}
+
+function constantTimeEqualHex(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
 }
 
 function buf2hex(buf: ArrayBuffer | Uint8Array): string {

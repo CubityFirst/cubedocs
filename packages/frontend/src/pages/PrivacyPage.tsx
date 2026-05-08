@@ -25,7 +25,7 @@ export function PrivacyPage() {
           <div className="l-legal-inner">
             <div className="l-legal-label">Legal</div>
             <h1 className="l-legal-title">Privacy Policy</h1>
-            <p className="l-legal-meta">Effective date: May 6, 2025</p>
+            <p className="l-legal-meta">Effective date: May 8, 2026</p>
 
             <div className="l-legal-body">
               <h2>1. What We Collect</h2>
@@ -37,6 +37,15 @@ export function PrivacyPage() {
               <p>
                 We log standard server-side request data (IP address, user-agent, timestamps) for
                 security monitoring and abuse prevention. These logs are retained for up to 90 days.
+              </p>
+              <p>
+                When you sign in, we also create a persistent session record so you can review and
+                revoke active sign-ins from your account settings. Each record stores the IP address
+                you signed in from, a coarse device type (phone, tablet, laptop, or desktop), a
+                short client label derived from your browser's user-agent (for example, “Chrome on
+                macOS”), and sign-in / last-used timestamps. We do not retain the full user-agent
+                string. Session records are deleted when you sign out, when you revoke the session,
+                or when the session expires (currently 7 days after last use).
               </p>
 
               <h2>2. Content You Create</h2>

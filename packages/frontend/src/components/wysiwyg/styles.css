@@ -391,7 +391,7 @@
   color: inherit;
 }
 
-/* Remote cursor labels (matches MarkdownEditor.tsx) */
+/* Remote cursor labels */
 .cm-wysiwyg .cm-ySelectionInfo {
   font-size: 11px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;

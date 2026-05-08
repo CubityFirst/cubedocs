@@ -2,6 +2,7 @@ import { normalizeAdminCallbackUrl } from "../admin-handoff";
 import { signJwt } from "../jwt";
 import { errorResponse, Errors, okResponse } from "../lib";
 import { checkModeration } from "./login";
+import { createSession, SESSION_TTL_MS } from "../sessions";
 import type { Env } from "../index";
 
 export async function handleAdminHandoffExchange(request: Request, env: Env): Promise<Response> {
@@ -49,12 +50,15 @@ export async function handleAdminHandoffExchange(request: Request, env: Env): Pr
     return errorResponse(Errors.UNAUTHORIZED);
   }
 
+  const expiresAt = Date.now() + SESSION_TTL_MS;
+  const sid = await createSession(env, user.id, request, expiresAt);
   const token = await signJwt(
     {
       userId: user.id,
       email: user.email,
-      expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
+      expiresAt,
       isAdmin: true,
+      sid,
     },
     env.JWT_SECRET,
   );

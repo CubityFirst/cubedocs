@@ -3,6 +3,7 @@ import { requireAuthenticatedSession } from "../auth-session";
 import { okResponse, errorResponse, Errors } from "../lib";
 import { verifyPassword, hashPassword } from "../password";
 import { requireMFA } from "../mfa";
+import { revokeAllSessions } from "../sessions";
 import type { Env } from "../index";
 
 export async function handleChangePassword(request: Request, env: Env): Promise<Response> {
@@ -44,6 +45,11 @@ export async function handleChangePassword(request: Request, env: Env): Promise<
   await env.DB.prepare("UPDATE users SET password_hash = ? WHERE id = ?")
     .bind(newHash, session.userId)
     .run();
+
+  // Kill every other device's session — anyone with a stolen JWT loses
+  // access on their next request. Current session stays alive so the user
+  // doesn't get bounced out of the page they just changed the password on.
+  await revokeAllSessions(env, session.userId, session.sid);
 
   return okResponse({});
 }

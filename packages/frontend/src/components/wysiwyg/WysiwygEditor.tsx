@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { EditorView, keymap, ViewPlugin, type ViewUpdate } from "@codemirror/view";
+import { EditorView, keymap } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
 import { defaultKeymap, historyKeymap, history, indentWithTab } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
@@ -9,11 +9,10 @@ import { tableContinueOnEnter } from "./commands/tableEnter";
 import * as Y from "yjs";
 import { yCollab } from "y-codemirror.next";
 import { Awareness } from "y-protocols/awareness";
-import { getToken } from "@/lib/auth";
 import { userColor, userColorLight } from "@/lib/userColor";
 import { CollabProvider } from "@/lib/collabProvider";
 import { ctxCompartment, modeCompartment, modeExtension, ctxExtension, buildCtxForMode, type WysiwygMode } from "./modes";
-import type { RendererCtx } from "./context/RendererContext";
+import { defaultRendererCtx, type RendererCtx } from "./context/RendererContext";
 import "./styles.css";
 
 const editorTheme = EditorView.theme({
@@ -35,7 +34,7 @@ const editorTheme = EditorView.theme({
   ".cm-editor": { height: "100%" },
 });
 
-export interface CollabUser {
+interface CollabUser {
   id: string;
   name: string;
 }
@@ -44,8 +43,6 @@ interface Props {
   mode: WysiwygMode;
   value: string;
   onChange?: (next: string) => void;
-  onCursorLine?: (line: number) => void;
-  onScrollTop?: (px: number) => void;
   onSave?: () => void;
   autoFocus?: boolean;
   collab?: { docId: string; user: CollabUser };
@@ -101,30 +98,10 @@ function applyMarkerCm(view: EditorView, marker: string) {
   });
 }
 
-function makeTrackerPlugin(
-  onCursorLine: (line: number) => void,
-) {
-  return ViewPlugin.fromClass(
-    class {
-      update(update: ViewUpdate) {
-        if (update.selectionSet || update.docChanged) {
-          const pos = update.state.selection.main.head;
-          const line = update.state.doc.lineAt(pos).number - 1;
-          onCursorLine(line);
-        }
-      }
-    },
-  );
-}
-
-const defaultCtx: RendererCtx = { isPublic: false, revealOnCursor: true };
-
 export function WysiwygEditor({
   mode,
   value,
   onChange,
-  onCursorLine,
-  onScrollTop,
   onSave,
   autoFocus = false,
   collab,
@@ -133,32 +110,24 @@ export function WysiwygEditor({
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
-  const providerRef = useRef<CollabProvider | null>(null);
-  const ydocRef = useRef<Y.Doc | null>(null);
-  const awarenessRef = useRef<Awareness | null>(null);
   const lastExternalValue = useRef(value);
 
   const onSaveRef = useRef(onSave);
   onSaveRef.current = onSave;
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
-  const onCursorLineRef = useRef(onCursorLine);
-  onCursorLineRef.current = onCursorLine;
-  const onScrollTopRef = useRef(onScrollTop);
-  onScrollTopRef.current = onScrollTop;
   const onAwarenessChangeRef = useRef(onAwarenessChange);
   onAwarenessChangeRef.current = onAwarenessChange;
 
   const initialValueRef = useRef(value);
   const collabRef = useRef(collab);
   const initialModeRef = useRef(mode);
-  const initialCtxRef = useRef(rendererCtx ?? defaultCtx);
+  const initialCtxRef = useRef(rendererCtx ?? defaultRendererCtx);
 
   // Mount once
   useEffect(() => {
     if (!containerRef.current) return;
 
-    const token = getToken() ?? "";
     let ydoc: Y.Doc | null = null;
     let awareness: Awareness | null = null;
     let provider: CollabProvider | null = null;
@@ -215,11 +184,7 @@ export function WysiwygEditor({
 
       yjsExtensions.push(yCollab(yText, awareness));
 
-      ydocRef.current = ydoc;
-      awarenessRef.current = awareness;
-
-      provider = new CollabProvider(ydoc, awareness, collabOpts.docId, token);
-      providerRef.current = provider;
+      provider = new CollabProvider(ydoc, awareness, collabOpts.docId);
     }
 
     const extensions = [
@@ -227,7 +192,6 @@ export function WysiwygEditor({
       markdown({ base: markdownLanguage, extensions: [Wikilink] }),
       editorTheme,
       EditorView.lineWrapping,
-      makeTrackerPlugin((line) => onCursorLineRef.current?.(line)),
       keymap.of([
         {
           key: "Mod-s",
@@ -283,18 +247,10 @@ export function WysiwygEditor({
     viewRef.current = view;
     lastExternalValue.current = value;
 
-    const scroller = view.scrollDOM;
-    const handleScroll = () => onScrollTopRef.current?.(scroller.scrollTop);
-    scroller.addEventListener("scroll", handleScroll, { passive: true });
-
     if (autoFocus) view.focus();
 
     return () => {
-      scroller.removeEventListener("scroll", handleScroll);
       provider?.destroy();
-      providerRef.current = null;
-      ydocRef.current = null;
-      awarenessRef.current = null;
       view.destroy();
       viewRef.current = null;
     };
@@ -305,7 +261,7 @@ export function WysiwygEditor({
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
-    const ctx = buildCtxForMode(rendererCtx ?? defaultCtx, mode);
+    const ctx = buildCtxForMode(rendererCtx ?? defaultRendererCtx, mode);
     view.dispatch({
       effects: [
         modeCompartment.reconfigure(modeExtension(mode)),

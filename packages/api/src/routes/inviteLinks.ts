@@ -139,8 +139,10 @@ export async function handleInvitePublic(
 
   // POST /invites/:token/accept — requires auth
   if (isAccept && request.method === "POST") {
-    const session = await authenticate(request, env);
-    if (!session) return errorResponse(Errors.UNAUTHORIZED);
+    const result = await authenticate(request, env);
+    if (result === null) return errorResponse(Errors.UNAUTHORIZED);
+    if (result instanceof Response) return result;
+    const session = result;
 
     const link = await env.DB.prepare(
       "SELECT * FROM project_invite_links WHERE id = ?",

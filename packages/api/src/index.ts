@@ -19,8 +19,9 @@ export { DocCollabRoom };
 
 export interface Env {
   DB: D1Database;
+  AUTH_DB: D1Database; // Read-only: users + sessions, used for inline JWT verify
   ASSETS: R2Bucket;
-  AUTH: Fetcher; // Service binding to cubedocs-auth
+  AUTH: Fetcher; // Service binding to cubedocs-auth (mutating routes only)
   DOC_COLLAB?: DurableObjectNamespace;
   JWT_SECRET: string;
   OPENAI_API_KEY?: string;
@@ -91,6 +92,57 @@ export default {
         return addCorsHeaders(
           await env.AUTH.fetch(new Request(`https://auth${url.pathname}`, request)),
         );
+      }
+
+      // /me/sessions/* — authenticated, proxied to auth worker.
+      // GET   /me/sessions          → list user's active sessions
+      // POST  /me/sessions/revoke   → revoke a specific session by id
+      // POST  /me/sessions/revoke-others → revoke all but the current
+      // POST  /me/sessions/logout   → revoke the current session (proper logout)
+      if (url.pathname === "/me/sessions" && request.method === "GET") {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        const authHeader = request.headers.get("Authorization");
+        const authRes = await env.AUTH.fetch("https://auth/sessions/list", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
+          body: "{}",
+        });
+        return addCorsHeaders(authRes);
+      }
+      if (url.pathname === "/me/sessions/revoke" && request.method === "POST") {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        const body = await request.json<Record<string, unknown>>();
+        const authHeader = request.headers.get("Authorization");
+        const authRes = await env.AUTH.fetch("https://auth/sessions/revoke", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
+          body: JSON.stringify(body),
+        });
+        return addCorsHeaders(authRes);
+      }
+      if (url.pathname === "/me/sessions/revoke-others" && request.method === "POST") {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        const authHeader = request.headers.get("Authorization");
+        const authRes = await env.AUTH.fetch("https://auth/sessions/revoke-others", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
+          body: "{}",
+        });
+        return addCorsHeaders(authRes);
+      }
+      if (url.pathname === "/me/sessions/logout" && request.method === "POST") {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        const authHeader = request.headers.get("Authorization");
+        const authRes = await env.AUTH.fetch("https://auth/sessions/logout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
+          body: "{}",
+        });
+        return addCorsHeaders(authRes);
       }
 
       // PATCH /me/password — change password
@@ -336,8 +388,15 @@ export default {
         if (session instanceof Response) return session;
         response = await handleFolders(request, env, session, url);
       } else if (url.pathname.startsWith("/files")) {
-        const session = await authenticate(request, env);
-        response = await handleFiles(request, env, session, url);
+        const result = await authenticate(request, env);
+        // /files allows anonymous access for public files (`result === null`).
+        // A 403 from the auth worker (disabled/suspended account) must still
+        // propagate so the client gets the real reason instead of public access.
+        if (result instanceof Response) {
+          response = result;
+        } else {
+          response = await handleFiles(request, env, result, url);
+        }
       } else if (url.pathname === "/search") {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
@@ -370,7 +429,8 @@ async function handleCollabUpgrade(request: Request, url: URL, env: Env, docId: 
     headers: { Authorization: `Bearer ${token}` },
   });
   const session = await authenticate(authReq, env);
-  if (!session) return new Response("Unauthorized", { status: 401 });
+  if (session === null) return new Response("Unauthorized", { status: 401 });
+  if (session instanceof Response) return new Response("Forbidden", { status: 403 });
 
   const docRow = await env.DB.prepare("SELECT project_id FROM docs WHERE id = ?")
     .bind(docId).first<{ project_id: string }>();
@@ -405,9 +465,10 @@ async function handleCollabUpgrade(request: Request, url: URL, env: Env, docId: 
 }
 
 async function getSession(request: Request, env: Env): Promise<Session | Response> {
-  const user = await authenticate(request, env);
-  if (!user) return addCorsHeaders(errorResponse(Errors.UNAUTHORIZED));
-  return user;
+  const result = await authenticate(request, env);
+  if (result === null) return addCorsHeaders(errorResponse(Errors.UNAUTHORIZED));
+  if (result instanceof Response) return addCorsHeaders(result);
+  return result;
 }
 
 function corsHeaders(): HeadersInit {

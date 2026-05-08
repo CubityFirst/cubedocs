@@ -25,7 +25,7 @@ import { use2FA } from "@/hooks/use2FA";
 import { getToken, clearToken } from "@/lib/auth";
 import { UserAvatar } from "@/components/UserAvatar";
 import { AvatarCropDialog } from "@/components/AvatarCropDialog";
-import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertCircle, Camera } from "lucide-react";
+import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertCircle, Camera, Smartphone, Tablet, Laptop, Monitor } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { TIMEZONE_GROUPS, detectTimezoneGroup, getTimezoneGroup, formatTimezoneLabel, formatTimeInZone } from "@/lib/timezone";
@@ -34,6 +34,40 @@ interface WebAuthnCredential {
   id: string;
   name: string;
   created_at: string;
+}
+
+type DeviceKind = "phone" | "tablet" | "laptop" | "desktop";
+
+interface ActiveSession {
+  id: string;
+  createdAt: number;
+  lastUsedAt: number;
+  expiresAt: number;
+  deviceKind: DeviceKind | null;
+  clientLabel: string | null;
+  ip: string | null;
+  current: boolean;
+}
+
+function DeviceIcon({ kind }: { kind: DeviceKind | null }) {
+  const Icon = kind === "phone" ? Smartphone : kind === "tablet" ? Tablet : kind === "laptop" ? Laptop : Monitor;
+  return (
+    <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+      <Icon className="size-5" aria-label={kind ?? "device"} />
+    </div>
+  );
+}
+
+function formatRelative(timestampMs: number): string {
+  const diffMs = Date.now() - timestampMs;
+  const minutes = Math.round(diffMs / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  return new Date(timestampMs).toLocaleDateString();
 }
 
 export function UserSettingsPage() {
@@ -96,6 +130,12 @@ export function UserSettingsPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordSaving, setPasswordSaving] = useState(false);
 
+  // Active sessions state
+  const [sessions, setSessions] = useState<ActiveSession[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(true);
+  const [sessionRevokingId, setSessionRevokingId] = useState<string | null>(null);
+  const [revokingOthers, setRevokingOthers] = useState(false);
+
   const { runWithTwoFA, twoFADialog, busy: twoFABusy } = use2FA({
     totp: totpEnabled,
     webauthn: webauthnCredentials.length > 0,
@@ -143,6 +183,14 @@ export function UserSettingsPage() {
       })
       .catch(() => {})
       .finally(() => setWebauthnLoading(false));
+
+    fetch("/api/me/sessions", { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json() as Promise<{ ok: boolean; data?: { sessions: ActiveSession[] } }>)
+      .then(json => {
+        if (json.ok && json.data) setSessions(json.data.sessions);
+      })
+      .catch(() => {})
+      .finally(() => setSessionsLoading(false));
   }, []);
 
   function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -498,6 +546,49 @@ export function UserSettingsPage() {
     setPendingSecret(null);
     setPendingUri(null);
     setSetupCode("");
+  }
+
+  async function handleRevokeSession(id: string) {
+    setSessionRevokingId(id);
+    try {
+      const token = getToken();
+      const res = await fetch("/api/me/sessions/revoke", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ sessionId: id }),
+      });
+      if (res.ok) {
+        setSessions(prev => prev.filter(s => s.id !== id));
+        toast({ title: "Session revoked" });
+      } else {
+        toast({ title: "Could not revoke session", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Could not revoke session", variant: "destructive" });
+    } finally {
+      setSessionRevokingId(null);
+    }
+  }
+
+  async function handleRevokeOthers() {
+    setRevokingOthers(true);
+    try {
+      const token = getToken();
+      const res = await fetch("/api/me/sessions/revoke-others", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        setSessions(prev => prev.filter(s => s.current));
+        toast({ title: "Other sessions revoked" });
+      } else {
+        toast({ title: "Could not revoke sessions", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Could not revoke sessions", variant: "destructive" });
+    } finally {
+      setRevokingOthers(false);
+    }
   }
 
   async function handleDeleteButtonClick() {
@@ -1018,6 +1109,66 @@ export function UserSettingsPage() {
                 Change password
               </Button>
             </div>
+          </section>
+
+          <Separator className="my-6" />
+
+          {/* Active sessions */}
+          <section id="sessions">
+            <h2 className="text-base font-semibold">Active sessions</h2>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Devices currently signed in to your account. Revoke any you don&apos;t recognize.
+            </p>
+
+            {sessionsLoading ? (
+              <p className="mt-4 text-sm text-muted-foreground">Loading…</p>
+            ) : sessions.length === 0 ? (
+              <p className="mt-4 text-sm text-muted-foreground">No active sessions.</p>
+            ) : (
+              <ul className="mt-4 space-y-2">
+                {sessions.map(s => (
+                  <li key={s.id} className="flex items-center justify-between gap-3 rounded-md border p-3">
+                    <div className="flex min-w-0 flex-1 items-center gap-3">
+                      <DeviceIcon kind={s.deviceKind} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate text-sm font-medium">{s.clientLabel ?? "Unknown device"}</p>
+                          {s.current && (
+                            <span className="rounded bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
+                              This device
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {s.ip ? `${s.ip} · ` : ""}signed in {formatRelative(s.createdAt)}
+                        </p>
+                      </div>
+                    </div>
+                    {!s.current && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={sessionRevokingId === s.id}
+                        onClick={() => handleRevokeSession(s.id)}
+                      >
+                        {sessionRevokingId === s.id ? "Revoking…" : "Revoke"}
+                      </Button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {sessions.some(s => !s.current) && (
+              <Button
+                variant="outline"
+                className="mt-4"
+                disabled={revokingOthers}
+                onClick={handleRevokeOthers}
+              >
+                {revokingOthers ? "Revoking…" : "Revoke all other sessions"}
+              </Button>
+            )}
           </section>
 
           <Separator className="my-6" />

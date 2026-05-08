@@ -249,12 +249,20 @@ export function DocsLayout() {
     fetch("/api/projects", { headers: { Authorization: `Bearer ${token}` } })
       .then(async r => ({
         status: r.status,
-        json: await r.json() as { ok: boolean; data?: Project[] },
+        json: await r.json() as { ok: boolean; data?: Project[]; error?: string },
       }))
       .then(({ status, json }) => {
         if (status === 401) {
           clearToken();
           navigate("/login", { replace: true, state: { from: location.pathname } });
+          return;
+        }
+        if (status === 403 && (json.error === "account_disabled" || json.error === "account_suspended")) {
+          // Auth worker rejected the session because the account is no
+          // longer in good standing — bounce to /login with a banner.
+          clearToken();
+          const reason = json.error === "account_disabled" ? "disabled" : "suspended";
+          navigate(`/login?reason=${reason}`, { replace: true });
           return;
         }
         if (json.ok && json.data) setProjects([...json.data].sort((a, b) => b.is_favourite - a.is_favourite));
@@ -501,7 +509,22 @@ export function DocsLayout() {
             <Settings className="h-4 w-4" />
             Settings
           </Button>
-          <Button variant="ghost" size="sm" className="w-full justify-start gap-2 text-muted-foreground" onClick={() => { clearToken(); navigate("/login"); }}>
+          <Button variant="ghost" size="sm" className="w-full justify-start gap-2 text-muted-foreground" onClick={async () => {
+            // Best-effort: revoke the server-side session so the JWT is dead
+            // even if it gets exfiltrated from localStorage post-logout. We
+            // proceed with the local clear regardless of the network result.
+            const t = getToken();
+            if (t) {
+              try {
+                await fetch("/api/me/sessions/logout", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json", Authorization: `Bearer ${t}` },
+                });
+              } catch { /* ignore */ }
+            }
+            clearToken();
+            navigate("/login");
+          }}>
             <LogOut className="h-4 w-4" />
             Sign out
           </Button>

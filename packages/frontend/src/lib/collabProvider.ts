@@ -1,5 +1,6 @@
 import * as Y from "yjs";
 import { Awareness, encodeAwarenessUpdate, applyAwarenessUpdate } from "y-protocols/awareness";
+import { getToken } from "./auth";
 
 const MSG_SYNC = 0;
 const MSG_AWARENESS = 1;
@@ -27,12 +28,13 @@ export class CollabProvider {
   private destroyed = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectDelay = 1000;
+  private failuresWithoutOpen = 0;
+  private currentAttemptOpened = false;
 
   constructor(
     private readonly ydoc: Y.Doc,
     private readonly awareness: Awareness,
     private readonly docId: string,
-    private readonly token: string,
   ) {
     this.ydoc.on("update", this.onDocUpdate);
     this.awareness.on("update", this.onAwarenessUpdate);
@@ -41,8 +43,16 @@ export class CollabProvider {
 
   private connect() {
     if (this.destroyed) return;
+    // Re-read the token on each attempt so that a refreshed login or revoked
+    // session doesn't leave us pounding the server with a stale token forever.
+    const token = getToken();
+    if (!token) {
+      this.destroyed = true;
+      return;
+    }
+    this.currentAttemptOpened = false;
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${proto}://${location.host}/api/docs/${this.docId}/collab?token=${encodeURIComponent(this.token)}`);
+    const ws = new WebSocket(`${proto}://${location.host}/api/docs/${this.docId}/collab?token=${encodeURIComponent(token)}`);
     ws.binaryType = "arraybuffer";
     ws.addEventListener("open", this.onOpen);
     ws.addEventListener("message", this.onMessage);
@@ -82,6 +92,8 @@ export class CollabProvider {
 
   private onOpen = () => {
     this.reconnectDelay = 1000;
+    this.failuresWithoutOpen = 0;
+    this.currentAttemptOpened = true;
     this.sendSyncPayload(0, Y.encodeStateVector(this.ydoc));
     this.sendAwareness([this.ydoc.clientID]);
   };
@@ -136,6 +148,17 @@ export class CollabProvider {
 
   private onClose = () => {
     if (this.destroyed) return;
+    // If the socket closed without ever firing `open`, the upgrade was rejected
+    // (auth failure, project flag turned off, etc.) — give up after a few
+    // tries instead of pounding the server every 30s and spamming Vite's WS
+    // proxy with ECONNABORTED/ECONNRESET errors.
+    if (!this.currentAttemptOpened) {
+      this.failuresWithoutOpen++;
+      if (this.failuresWithoutOpen >= 5) {
+        this.destroyed = true;
+        return;
+      }
+    }
     this.reconnectTimer = setTimeout(() => {
       this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30_000);
       this.connect();
