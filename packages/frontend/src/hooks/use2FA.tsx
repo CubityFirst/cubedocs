@@ -178,7 +178,7 @@ export function use2FA({
 
   const twoFADialog = (
     <Dialog open={open} onOpenChange={o => { if (!o) closeDialog(); }}>
-      <DialogContent>
+      <DialogContent hideClose>
         <DialogHeader>
           <DialogTitle>Confirm identity</DialogTitle>
         </DialogHeader>
@@ -278,18 +278,18 @@ export function use2FA({
         )}
 
         <DialogFooter>
+          <Button variant="outline" type="button" onClick={closeDialog} className="mr-auto">
+            Cancel
+          </Button>
           {mode !== "pick" && (totp || webauthn) && (
             <button
               type="button"
-              className="text-xs text-primary underline-offset-4 hover:underline mr-auto"
+              className="text-xs text-primary underline-offset-4 hover:underline"
               onClick={() => { setFieldError(null); setCode(""); setMode("pick"); }}
             >
               Use a different method
             </button>
           )}
-          <Button variant="outline" type="button" onClick={closeDialog}>
-            Cancel
-          </Button>
           {(mode === "totp" || mode === "backup") && (
             <Button type="submit" form="2fa-confirm-form" disabled={busy || code.length === 0}>
               {busy ? "Confirming…" : "Confirm"}

@@ -11,10 +11,30 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { UserAvatar } from "@/components/UserAvatar";
-import { getToken } from "@/lib/auth";
-import { CalendarDays, Building2, Clock } from "lucide-react";
+import { getToken, clearToken } from "@/lib/auth";
+import { CalendarDays, Building2, Clock, Settings, KeyRound, LogOut, ChevronRight } from "lucide-react";
 import { formatTimeInZone, getTimezoneGroup } from "@/lib/timezone";
 import { TimezoneMap } from "@/components/TimezoneMap";
+
+let currentUserIdCache: string | null = null;
+let currentUserIdPromise: Promise<string | null> | null = null;
+function getCurrentUserId(): Promise<string | null> {
+  if (currentUserIdCache !== null) return Promise.resolve(currentUserIdCache);
+  if (currentUserIdPromise) return currentUserIdPromise;
+  const token = getToken();
+  currentUserIdPromise = fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } })
+    .then(r => r.json() as Promise<{ ok: boolean; data?: { userId: string } }>)
+    .then(json => {
+      if (json.ok && json.data) {
+        currentUserIdCache = json.data.userId;
+        return currentUserIdCache;
+      }
+      return null;
+    })
+    .catch(() => null)
+    .finally(() => { currentUserIdPromise = null; });
+  return currentUserIdPromise;
+}
 
 type Role = "limited" | "viewer" | "editor" | "admin" | "owner";
 
@@ -58,6 +78,7 @@ export function UserProfileCard({ userId, name, children }: UserProfileCardProps
   const [open, setOpen] = useState(false);
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isSelf, setIsSelf] = useState<boolean>(currentUserIdCache === userId);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -73,6 +94,13 @@ export function UserProfileCard({ userId, name, children }: UserProfileCardProps
       })
       .finally(() => setLoading(false));
   }, [open, userId, profile]);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    getCurrentUserId().then(id => { if (!cancelled) setIsSelf(id === userId); });
+    return () => { cancelled = true; };
+  }, [open, userId]);
 
   function formatDate(iso: string): string {
     return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
@@ -127,46 +155,91 @@ export function UserProfileCard({ userId, name, children }: UserProfileCardProps
 
         <Separator />
 
-        {/* Shared sites */}
-        <div className="px-6 py-5">
-          <div className="mb-3 flex items-center gap-2 text-sm font-medium text-muted-foreground">
-            <Building2 className="size-4" />
-            <span>Shared sites</span>
+        {/* Shared sites — or quick self-actions when viewing your own card */}
+        {isSelf ? (
+          <div className="flex flex-col gap-1 px-3 py-3">
+            <button
+              type="button"
+              onClick={() => { setOpen(false); navigate("/settings"); }}
+              className="group flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-muted/60"
+            >
+              <Settings className="size-4 shrink-0 text-muted-foreground" />
+              <span className="flex-1 text-sm font-medium">Account settings</span>
+              <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => { setOpen(false); navigate("/settings#sessions"); }}
+              className="group flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-muted/60"
+            >
+              <KeyRound className="size-4 shrink-0 text-muted-foreground" />
+              <span className="flex-1 text-sm font-medium">Security &amp; sessions</span>
+              <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                setOpen(false);
+                const t = getToken();
+                if (t) {
+                  try {
+                    await fetch("/api/me/sessions/logout", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json", Authorization: `Bearer ${t}` },
+                    });
+                  } catch { /* ignore */ }
+                }
+                clearToken();
+                navigate("/login");
+              }}
+              className="group flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-destructive/10 hover:text-destructive"
+            >
+              <LogOut className="size-4 shrink-0 text-muted-foreground group-hover:text-destructive" />
+              <span className="flex-1 text-sm font-medium">Sign out</span>
+              <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-destructive" />
+            </button>
           </div>
-
-          {loading && (
-            <div className="space-y-2">
-              <Skeleton className="h-11 w-full rounded-md" />
-              <Skeleton className="h-11 w-full rounded-md" />
-              <Skeleton className="h-11 w-full rounded-md" />
+        ) : (
+          <div className="px-6 py-5">
+            <div className="mb-3 flex items-center gap-2 text-sm font-medium text-muted-foreground">
+              <Building2 className="size-4" />
+              <span>Shared sites</span>
             </div>
-          )}
 
-          {!loading && profile && profile.sharedProjects.length > 0 && (
-            <div className="flex flex-col gap-1">
-              {profile.sharedProjects.map(proj => (
-                <button
-                  key={proj.id}
-                  type="button"
-                  className="flex w-full cursor-pointer items-center justify-between rounded-md px-3 py-2.5 text-left transition-colors hover:bg-muted/60"
-                  onClick={() => { setOpen(false); navigate(`/projects/${proj.id}`); }}
-                >
-                  <span className="truncate text-sm font-medium">{proj.name}</span>
-                  <Badge
-                    className={`ml-3 shrink-0 border-0 px-2 py-0.5 text-xs ${ROLE_COLORS[proj.theirRole]}`}
-                    variant="outline"
+            {loading && (
+              <div className="space-y-2">
+                <Skeleton className="h-11 w-full rounded-md" />
+                <Skeleton className="h-11 w-full rounded-md" />
+                <Skeleton className="h-11 w-full rounded-md" />
+              </div>
+            )}
+
+            {!loading && profile && profile.sharedProjects.length > 0 && (
+              <div className="flex flex-col gap-1">
+                {profile.sharedProjects.map(proj => (
+                  <button
+                    key={proj.id}
+                    type="button"
+                    className="flex w-full cursor-pointer items-center justify-between rounded-md px-3 py-2.5 text-left transition-colors hover:bg-muted/60"
+                    onClick={() => { setOpen(false); navigate(`/projects/${proj.id}`); }}
                   >
-                    {ROLE_LABELS[proj.theirRole]}
-                  </Badge>
-                </button>
-              ))}
-            </div>
-          )}
+                    <span className="truncate text-sm font-medium">{proj.name}</span>
+                    <Badge
+                      className={`ml-3 shrink-0 border-0 px-2 py-0.5 text-xs ${ROLE_COLORS[proj.theirRole]}`}
+                      variant="outline"
+                    >
+                      {ROLE_LABELS[proj.theirRole]}
+                    </Badge>
+                  </button>
+                ))}
+              </div>
+            )}
 
-          {!loading && profile && profile.sharedProjects.length === 0 && (
-            <p className="text-sm text-muted-foreground">No shared sites.</p>
-          )}
-        </div>
+            {!loading && profile && profile.sharedProjects.length === 0 && (
+              <p className="text-sm text-muted-foreground">No shared sites.</p>
+            )}
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

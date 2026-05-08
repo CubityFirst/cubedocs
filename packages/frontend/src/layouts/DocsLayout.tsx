@@ -8,7 +8,7 @@ import { Separator } from "@/components/ui/separator";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Toaster } from "@/components/ui/toaster";
 import { Badge } from "@/components/ui/badge";
@@ -28,6 +28,8 @@ import {
   Search,
 } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { UserAvatar } from "@/components/UserAvatar";
+import { UserProfileCard } from "@/components/UserProfileCard";
 
 interface Project {
   id: string;
@@ -495,39 +497,63 @@ export function DocsLayout() {
         <Separator />
 
         {/* Footer */}
-        <div className="flex flex-col gap-1 p-2">
-          {/* User identity row */}
+        <div className="p-2">
           <div className="flex items-center gap-2 px-2 py-1.5">
-            <span className="flex-1 truncate text-sm font-medium">
-              {userName ?? "—"}
-            </span>
-            <Badge variant="secondary" className={cn("shrink-0 text-[10px] capitalize", !currentProject && "invisible")}>
+            {userId && userName ? (
+              <UserProfileCard userId={userId} name={userName}>
+                <button
+                  type="button"
+                  aria-label="Open profile"
+                  title={userName}
+                  className="flex flex-1 min-w-0 items-center gap-2 rounded-md -mx-1 px-1 py-1 ring-offset-background transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                >
+                  <UserAvatar userId={userId} name={userName} className="size-7 shrink-0 text-xs" />
+                  <span className="flex-1 truncate text-left text-sm font-medium">
+                    {userName}
+                  </span>
+                </button>
+              </UserProfileCard>
+            ) : (
+              <>
+                <div className="size-7 shrink-0 rounded-full bg-muted" />
+                <span className="flex-1 truncate text-sm font-medium">—</span>
+              </>
+            )}
+            <Badge variant="secondary" className={cn("shrink-0 text-[10px] capitalize", !currentProject && "hidden")}>
               {currentProject?.role ?? "owner"}
             </Badge>
+            <button
+              onClick={() => navigate("/settings")}
+              title="Settings"
+              aria-label="Settings"
+              className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              <Settings className="h-4 w-4" />
+            </button>
+            <button
+              onClick={async () => {
+                // Best-effort: revoke the server-side session so the JWT is dead
+                // even if it gets exfiltrated from localStorage post-logout. We
+                // proceed with the local clear regardless of the network result.
+                const t = getToken();
+                if (t) {
+                  try {
+                    await fetch("/api/me/sessions/logout", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json", Authorization: `Bearer ${t}` },
+                    });
+                  } catch { /* ignore */ }
+                }
+                clearToken();
+                navigate("/login");
+              }}
+              title="Sign out"
+              aria-label="Sign out"
+              className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
           </div>
-          <Button variant="ghost" size="sm" className="w-full justify-start gap-2" onClick={() => navigate("/settings")}>
-            <Settings className="h-4 w-4" />
-            Settings
-          </Button>
-          <Button variant="ghost" size="sm" className="w-full justify-start gap-2 text-muted-foreground" onClick={async () => {
-            // Best-effort: revoke the server-side session so the JWT is dead
-            // even if it gets exfiltrated from localStorage post-logout. We
-            // proceed with the local clear regardless of the network result.
-            const t = getToken();
-            if (t) {
-              try {
-                await fetch("/api/me/sessions/logout", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json", Authorization: `Bearer ${t}` },
-                });
-              } catch { /* ignore */ }
-            }
-            clearToken();
-            navigate("/login");
-          }}>
-            <LogOut className="h-4 w-4" />
-            Sign out
-          </Button>
         </div>
         </div>
         <button
@@ -582,7 +608,7 @@ export function DocsLayout() {
         />
       )}
       <Dialog open={creating} onOpenChange={open => { if (!open) { setCreating(false); setError(null); setName(""); setDescription(""); } }}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md" hideClose>
           <DialogHeader className="pb-2">
             <DialogTitle>New site</DialogTitle>
           </DialogHeader>
@@ -611,6 +637,11 @@ export function DocsLayout() {
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
             <DialogFooter className="pt-2">
+              <DialogClose asChild>
+                <Button type="button" variant="outline" disabled={saving}>
+                  Cancel
+                </Button>
+              </DialogClose>
               <Button type="submit" disabled={saving}>
                 {saving ? "Creating…" : "Create site"}
               </Button>

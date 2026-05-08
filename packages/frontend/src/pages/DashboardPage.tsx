@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
-import { BookOpen, Globe, Mail, Plus, Sparkles, Star, Users } from "lucide-react";
+import { BookOpen, Globe, Mail, Plus, Radio, Sparkles, Star, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -16,7 +16,10 @@ interface Project {
   published_at: string | null;
   ai_enabled: number;
   is_favourite: number;
+  features: number;
 }
+
+const REALTIME_FEATURE = 4;
 
 export function DashboardPage() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -126,6 +129,15 @@ export function DashboardPage() {
                       <Sparkles className="h-[18px] w-[18px] text-violet-400" strokeWidth={1.5} />
                     </TooltipTrigger>
                     <TooltipContent>AI features enabled</TooltipContent>
+                  </Tooltip>
+                )}
+
+                {!!(project.features & REALTIME_FEATURE) && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Radio className="h-[18px] w-[18px] text-sky-500" strokeWidth={1.5} />
+                    </TooltipTrigger>
+                    <TooltipContent>Real-time collaboration enabled</TooltipContent>
                   </Tooltip>
                 )}
 

@@ -40,6 +40,7 @@ import { Switch } from "@/components/ui/switch";
 import { useOutletContext } from "react-router-dom";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
 import { UserProfileCard } from "@/components/UserProfileCard";
+import { InlineSaveControls } from "@/components/InlineSaveControls";
 import { Globe, House, Link, Lock, Copy, Check, X, Network, Plus, ChevronDown, RefreshCw, Upload, ImageIcon } from "lucide-react";
 
 type Role = "limited" | "viewer" | "editor" | "admin" | "owner";
@@ -139,7 +140,8 @@ export function SiteSettingsPage() {
   const [project, setProject] = useState<Project | null>(null);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [savingName, setSavingName] = useState(false);
+  const [savingDescription, setSavingDescription] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const { toast } = useToast();
 
@@ -300,28 +302,53 @@ export function SiteSettingsPage() {
       .finally(() => setLoadingLinks(false));
   }, [projectId, token, myRole]);
 
-  async function handleSave(e: React.FormEvent) {
+  async function handleSaveName(e: React.FormEvent) {
     e.preventDefault();
     if (!projectId) return;
-    setSaving(true);
+    setSavingName(true);
     setSaveError(null);
     try {
       const res = await fetch(`/api/projects/${projectId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ name, description: description || null }),
+        body: JSON.stringify({ name }),
       });
       const json = await res.json() as { ok: boolean; data?: Project; error?: string };
       if (json.ok && json.data) {
         setProject(json.data);
-        toast({ title: "Settings saved." });
+        toast({ title: "Name saved." });
       } else {
-        setSaveError("Failed to save settings.");
+        setSaveError("Failed to save name.");
       }
     } catch {
       setSaveError("Could not connect to the server.");
     } finally {
-      setSaving(false);
+      setSavingName(false);
+    }
+  }
+
+  async function handleSaveDescription(e: React.FormEvent) {
+    e.preventDefault();
+    if (!projectId) return;
+    setSavingDescription(true);
+    setSaveError(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ description: description || null }),
+      });
+      const json = await res.json() as { ok: boolean; data?: Project; error?: string };
+      if (json.ok && json.data) {
+        setProject(json.data);
+        toast({ title: "Description saved." });
+      } else {
+        setSaveError("Failed to save description.");
+      }
+    } catch {
+      setSaveError("Could not connect to the server.");
+    } finally {
+      setSavingDescription(false);
     }
   }
 
@@ -883,7 +910,6 @@ export function SiteSettingsPage() {
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">On this page</p>
             <button onClick={() => scrollToSection("general")} className="py-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground">General</button>
             {isAdminOrOwner && <button onClick={() => scrollToSection("publishing")} className="py-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground">Publishing</button>}
-            {isAdminOrOwner && !!(project.features & 1) && <button onClick={() => scrollToSection("custom-link")} className="py-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground flex items-center gap-1.5">Custom Link <PremiumBadge /></button>}
             {isAdminOrOwner && <button onClick={() => scrollToSection("branding")} className="py-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground">Branding</button>}
             {isAdminOrOwner && <button onClick={() => scrollToSection("features")} className="py-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground">Features</button>}
             {isAdminOrOwner && <button onClick={() => scrollToSection("members")} className="py-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground">Members</button>}
@@ -899,41 +925,58 @@ export function SiteSettingsPage() {
       </p>
 
       {/* General settings */}
-      <form onSubmit={handleSave} className="flex flex-col gap-5">
-        <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-5">
+        <form onSubmit={handleSaveName} className="flex flex-col gap-1.5">
           <Label htmlFor="settings-name">Name</Label>
-          <Input
-            id="settings-name"
-            value={name}
-            onChange={e => setName(e.target.value)}
-            required
-            disabled={!isAdminOrOwner}
-          />
-        </div>
+          <div className="flex items-center">
+            <InlineSaveControls
+              changed={isAdminOrOwner && name !== project.name}
+              saving={savingName}
+              onReset={() => setName(project.name)}
+              saveDisabled={!name.trim() || name.trim() === project.name}
+              resetLabel="Reset name"
+              saveLabel="Save name"
+            >
+              <Input
+                id="settings-name"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                required
+                disabled={!isAdminOrOwner}
+                className="flex-1 pr-9"
+              />
+            </InlineSaveControls>
+          </div>
+        </form>
 
-        <div className="flex flex-col gap-1.5">
+        <form onSubmit={handleSaveDescription} className="flex flex-col gap-1.5">
           <Label htmlFor="settings-description">Description</Label>
-          <Input
-            id="settings-description"
-            placeholder="A short description of this site"
-            value={description}
-            onChange={e => setDescription(e.target.value)}
-            disabled={!isAdminOrOwner}
-          />
-        </div>
+          <div className="flex items-center">
+            <InlineSaveControls
+              changed={isAdminOrOwner && description !== (project.description ?? "")}
+              saving={savingDescription}
+              onReset={() => setDescription(project.description ?? "")}
+              resetLabel="Reset description"
+              saveLabel="Save description"
+            >
+              <Input
+                id="settings-description"
+                placeholder="A short description of this site"
+                value={description}
+                onChange={e => setDescription(e.target.value)}
+                disabled={!isAdminOrOwner}
+                className="flex-1 pr-9"
+              />
+            </InlineSaveControls>
+          </div>
+        </form>
 
         {saveError && (
           <Alert variant="destructive">
             <AlertDescription>{saveError}</AlertDescription>
           </Alert>
         )}
-
-        {isAdminOrOwner && (
-          <Button type="submit" disabled={saving} className="self-start">
-            {saving ? "Saving…" : "Save changes"}
-          </Button>
-        )}
-      </form>
+      </div>
 
       {/* Publishing section — admins and owners only */}
       {isAdminOrOwner && (
@@ -998,64 +1041,6 @@ export function SiteSettingsPage() {
         </>
       )}
 
-      {/* Custom Link section — admins and owners only, requires CUSTOM_LINK_ENABLED flag */}
-      {isAdminOrOwner && !!(project.features & 1) && (
-        <>
-          <Separator className="my-10" />
-          <div className="flex flex-col gap-4">
-            <div id="custom-link">
-              <h3 className="text-base font-semibold flex items-center gap-2">Custom Link <PremiumBadge /></h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Set a custom URL so your public site can be shared at a memorable address.
-              </p>
-            </div>
-            <form onSubmit={handleSaveSlug} className="flex flex-col gap-3">
-              <div className="flex flex-col gap-1.5">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground shrink-0">{window.location.origin}/s/</span>
-                  <Input
-                    id="vanity-slug"
-                    value={vanitySlug}
-                    onChange={e => setVanitySlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
-                    placeholder="my-site"
-                    className="flex-1"
-                  />
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Lowercase letters, numbers, and hyphens only. 3–50 characters. The original project link will continue to work.
-                </p>
-              </div>
-              {slugError && (
-                <Alert variant="destructive">
-                  <AlertDescription>{slugError}</AlertDescription>
-                </Alert>
-              )}
-              <div className="flex items-center gap-3">
-                <Button type="submit" disabled={savingSlug} className="self-start">
-                  {savingSlug ? "Saving…" : "Save"}
-                </Button>
-                {project.vanity_slug && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="text-muted-foreground"
-                    onClick={() => {
-                      const url = `${window.location.origin}/s/${project.vanity_slug}`;
-                      navigator.clipboard.writeText(url);
-                      toast({ title: "Custom link copied to clipboard." });
-                    }}
-                  >
-                    <Link className="h-3.5 w-3.5 mr-1.5" />
-                    Copy link
-                  </Button>
-                )}
-              </div>
-            </form>
-          </div>
-        </>
-      )}
-
       {/* Branding section — admins and owners only */}
       {isAdminOrOwner && (
         <>
@@ -1064,7 +1049,7 @@ export function SiteSettingsPage() {
             <div id="branding">
               <h3 className="text-base font-semibold">Branding</h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                Upload a logo to display in the top-left of your published site instead of the site name.
+                Customize how your published site looks and is shared.
               </p>
             </div>
             <div className="flex items-center gap-4 rounded-md border border-border px-4 py-3">
@@ -1120,6 +1105,63 @@ export function SiteSettingsPage() {
               <Alert variant="destructive">
                 <AlertDescription>{logoError}</AlertDescription>
               </Alert>
+            )}
+            {/* Custom Link — requires CUSTOM_LINK_ENABLED flag */}
+            {!!(project.features & 1) && (
+              <div id="custom-link" className="flex flex-col gap-3 rounded-md border border-border px-4 py-3">
+                <div>
+                  <p className="text-sm font-medium flex items-center gap-2">Custom Link <PremiumBadge /></p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Set a custom URL so your public site can be shared at a memorable address.
+                  </p>
+                </div>
+                <form onSubmit={handleSaveSlug} className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground shrink-0">{window.location.origin}/s/</span>
+                      <InlineSaveControls
+                        changed={vanitySlug.trim() !== (project.vanity_slug ?? "")}
+                        saving={savingSlug}
+                        onReset={() => setVanitySlug(project.vanity_slug ?? "")}
+                        resetLabel="Reset custom link"
+                        saveLabel="Save custom link"
+                      >
+                        <Input
+                          id="vanity-slug"
+                          value={vanitySlug}
+                          onChange={e => setVanitySlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+                          placeholder="my-site"
+                          className="flex-1 pr-9"
+                        />
+                      </InlineSaveControls>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Lowercase letters, numbers, and hyphens only. 3–50 characters. The original project link will continue to work.
+                    </p>
+                  </div>
+                  {slugError && (
+                    <Alert variant="destructive">
+                      <AlertDescription>{slugError}</AlertDescription>
+                    </Alert>
+                  )}
+                  {project.vanity_slug && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="self-start text-muted-foreground"
+                      onClick={() => {
+                        const url = `${window.location.origin}/s/${project.vanity_slug}`;
+                        navigator.clipboard.writeText(url);
+                        toast({ title: "Custom link copied to clipboard." });
+                      }}
+                    >
+                      <Link className="h-3.5 w-3.5 mr-1.5" />
+                      Copy link
+                    </Button>
+                  )}
+                </form>
+              </div>
             )}
           </div>
         </>

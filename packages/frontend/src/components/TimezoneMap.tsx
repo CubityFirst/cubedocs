@@ -65,19 +65,20 @@ export function TimezoneMap({ lon, lat }: TimezoneMapProps) {
       aria-hidden="true"
     >
       {/* Ocean — dark base */}
-      <rect width={W} height={H} fill="#111827" />
+      <rect width={W} height={H} fill="#171717" />
 
       {/* Land — bright in daylight */}
-      <path d={landPath} fill="#71717a" />
+      <path d={landPath} fill="#737373" />
 
       {/* Night overlay — darkens everything on the night side */}
-      <path d={nightPath} fill="rgba(4,8,20,0.82)" />
+      <path d={nightPath} fill="rgba(8,8,8,0.82)" />
 
 
       {/* Timezone marker */}
-      <style>{`@keyframes tz-pulse{0%{r:3.5;opacity:.8}100%{r:14;opacity:0}}`}</style>
-      <circle cx={mx} cy={my} r={3.5} fill="none" stroke="white" strokeWidth={1.5} style={{ animation: "tz-pulse 2s ease-out infinite" }} />
-      <circle cx={mx} cy={my} r={3.5} fill="white" />
+      <style>{`@keyframes tz-pulse{0%{r:4;opacity:0;stroke-width:1}40%{opacity:1;stroke-width:2}100%{r:32;opacity:0;stroke-width:.5}}@keyframes tz-core{0%,100%{r:3.5}50%{r:5}}`}</style>
+      <circle cx={mx} cy={my} r={4} fill="none" stroke="white" style={{ animation: "tz-pulse 2.6s ease-out infinite" }} />
+      <circle cx={mx} cy={my} r={4} fill="none" stroke="white" style={{ animation: "tz-pulse 2.6s ease-out infinite", animationDelay: "1.3s" }} />
+      <circle cx={mx} cy={my} r={3.5} fill="white" style={{ animation: "tz-core 2.6s ease-in-out infinite" }} />
     </svg>
   );
 }

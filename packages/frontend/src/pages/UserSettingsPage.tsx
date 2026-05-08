@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 import zxcvbn from "zxcvbn";
 import QRCode from "react-qr-code";
 import { startRegistration } from "@simplewebauthn/browser";
@@ -25,10 +25,20 @@ import { use2FA } from "@/hooks/use2FA";
 import { getToken, clearToken } from "@/lib/auth";
 import { UserAvatar } from "@/components/UserAvatar";
 import { AvatarCropDialog } from "@/components/AvatarCropDialog";
-import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertCircle, Camera, Smartphone, Tablet, Laptop, Monitor } from "lucide-react";
+import { InlineSaveControls } from "@/components/InlineSaveControls";
+import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertCircle, Camera, Smartphone, Tablet, Laptop, Monitor, Upload } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { TIMEZONE_GROUPS, detectTimezoneGroup, getTimezoneGroup, formatTimezoneLabel, formatTimeInZone } from "@/lib/timezone";
+
+const STRENGTH_LABELS = ["Very weak", "Weak", "Fair", "Strong", "Very strong"];
+const STRENGTH_COLORS = [
+  "bg-red-500",
+  "bg-orange-500",
+  "bg-yellow-500",
+  "bg-blue-500",
+  "bg-green-500",
+];
 
 interface WebAuthnCredential {
   id: string;
@@ -72,6 +82,15 @@ function formatRelative(timestampMs: number): string {
 
 export function UserSettingsPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  useEffect(() => {
+    if (!location.hash) return;
+    const id = location.hash.slice(1);
+    // Defer to next frame so the section has rendered before we scroll.
+    requestAnimationFrame(() => {
+      document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, [location.hash]);
   const [userId, setUserId] = useState("");
   const [name, setName] = useState("");
   const [currentName, setCurrentName] = useState("");
@@ -663,122 +682,130 @@ export function UserSettingsPage() {
             <h2 className="text-base font-semibold">Account</h2>
             <p className="mt-0.5 text-sm text-muted-foreground">Update your personal information.</p>
 
-            {userId && (
-              <div className="mt-4">
-                <input
-                  ref={avatarInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/gif"
-                  className="hidden"
-                  onChange={handleAvatarChange}
-                />
-                <Popover open={avatarPopoverOpen} onOpenChange={setAvatarPopoverOpen}>
-                  <PopoverTrigger asChild>
-                    <button type="button" className="relative group rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                      <UserAvatar userId={userId} name={name || "?"} className="size-24 text-2xl" cacheBust={avatarKey} />
-                      <div className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-                        {avatarUploading
-                          ? <Loader2 className="size-6 text-white animate-spin" />
-                          : <Camera className="size-6 text-white" />}
-                      </div>
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-40 p-1" align="start">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="w-full justify-start"
-                      disabled={avatarUploading}
-                      onClick={() => avatarInputRef.current?.click()}
-                    >
-                      Upload photo
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="w-full justify-start text-destructive hover:text-destructive"
-                      disabled={avatarUploading}
-                      onClick={handleRemoveAvatar}
-                    >
-                      Remove photo
-                    </Button>
-                  </PopoverContent>
-                </Popover>
-
-                {cropFile && (
-                  <AvatarCropDialog
-                    file={cropFile}
-                    onApply={handleCropApply}
-                    onClose={() => setCropFile(null)}
-                  />
-                )}
-              </div>
-            )}
-
             <form onSubmit={handleSaveName} className="mt-4 flex flex-col gap-4">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="email">Email</Label>
-                <div className="flex items-center gap-2 max-w-sm">
-                  <Input id="email" value={email} disabled className="flex-1" />
-                  {emailVerified === true && emailVerificationEnabled && (
-                    <Popover>
+              <div className="flex items-center gap-5">
+                {userId && (
+                  <>
+                    <input
+                      ref={avatarInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      className="hidden"
+                      onChange={handleAvatarChange}
+                    />
+                    <Popover open={avatarPopoverOpen} onOpenChange={setAvatarPopoverOpen}>
                       <PopoverTrigger asChild>
-                        <button type="button" className="inline-flex shrink-0 focus:outline-none">
-                          <CheckCircle2 className="size-4 text-green-500" />
+                        <button type="button" className="relative group rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0">
+                          <UserAvatar userId={userId} name={name || "?"} className="size-32 text-3xl" cacheBust={avatarKey} />
+                          <div className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                            {avatarUploading
+                              ? <Loader2 className="size-6 text-white animate-spin" />
+                              : <Camera className="size-6 text-white" />}
+                          </div>
                         </button>
                       </PopoverTrigger>
-                      <PopoverContent side="top" className="w-auto px-3 py-1.5 text-xs">
-                        Email verified
+                      <PopoverContent className="w-40 p-1" align="start">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="w-full justify-start"
+                          disabled={avatarUploading}
+                          onClick={() => avatarInputRef.current?.click()}
+                        >
+                          <Upload className="size-3.5 mr-2" />
+                          Upload photo
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="w-full justify-start text-destructive hover:text-destructive"
+                          disabled={avatarUploading}
+                          onClick={handleRemoveAvatar}
+                        >
+                          <Trash2 className="size-3.5 mr-2" />
+                          Remove photo
+                        </Button>
                       </PopoverContent>
                     </Popover>
-                  )}
-                  {emailVerified === false && emailVerificationEnabled && (
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <button type="button" className="inline-flex shrink-0 focus:outline-none">
-                          <AlertCircle className="size-4 text-amber-500" />
-                        </button>
-                      </PopoverTrigger>
-                      <PopoverContent side="top" className="w-auto px-3 py-1.5 text-xs">
-                        Email not verified
-                      </PopoverContent>
-                    </Popover>
-                  )}
-                </div>
-                {emailVerified === false && emailVerificationEnabled && (
-                  <Button
-                    type="button"
-                    variant="link"
-                    size="sm"
-                    className="w-fit px-0 h-auto text-xs"
-                    onClick={handleResendVerification}
-                    disabled={resendingVerification}
-                  >
-                    {resendingVerification ? "Sending…" : "Resend verification email"}
-                  </Button>
+
+                    {cropFile && (
+                      <AvatarCropDialog
+                        file={cropFile}
+                        onApply={handleCropApply}
+                        onClose={() => setCropFile(null)}
+                      />
+                    )}
+                  </>
                 )}
-              </div>
 
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="display-name">Display name</Label>
-                <Input
-                  id="display-name"
-                  value={name}
-                  onChange={e => setName(e.target.value)}
-                  className="max-w-sm"
-                  required
-                />
-              </div>
+                <div className="flex flex-col gap-3 min-w-0 max-w-xs flex-1">
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="email">Email</Label>
+                    <div className="flex items-center gap-2">
+                      <Input id="email" value={email} disabled className="flex-1" />
+                      {emailVerified === true && emailVerificationEnabled && (
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <button type="button" className="inline-flex shrink-0 focus:outline-none">
+                              <CheckCircle2 className="size-4 text-green-500" />
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent side="top" className="w-auto px-3 py-1.5 text-xs">
+                            Email verified
+                          </PopoverContent>
+                        </Popover>
+                      )}
+                      {emailVerified === false && emailVerificationEnabled && (
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <button type="button" className="inline-flex shrink-0 focus:outline-none">
+                              <AlertCircle className="size-4 text-amber-500" />
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent side="top" className="w-auto px-3 py-1.5 text-xs">
+                            Email not verified
+                          </PopoverContent>
+                        </Popover>
+                      )}
+                    </div>
+                    {emailVerified === false && emailVerificationEnabled && (
+                      <Button
+                        type="button"
+                        variant="link"
+                        size="sm"
+                        className="w-fit px-0 h-auto text-xs"
+                        onClick={handleResendVerification}
+                        disabled={resendingVerification}
+                      >
+                        {resendingVerification ? "Sending…" : "Resend verification email"}
+                      </Button>
+                    )}
+                  </div>
 
-              <div>
-                <Button
-                  type="submit"
-                  disabled={saving || !name.trim() || name.trim() === currentName}
-                >
-                  {saving ? "Saving…" : "Save changes"}
-                </Button>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="display-name">Display name</Label>
+                    <div className="flex items-center">
+                      <InlineSaveControls
+                        changed={name !== currentName}
+                        saving={saving}
+                        onReset={() => setName(currentName)}
+                        saveDisabled={!name.trim() || name.trim() === currentName}
+                        resetLabel="Reset display name"
+                        saveLabel="Save display name"
+                      >
+                        <Input
+                          id="display-name"
+                          value={name}
+                          onChange={e => setName(e.target.value)}
+                          className="flex-1 pr-9"
+                          required
+                        />
+                      </InlineSaveControls>
+                    </div>
+                  </div>
+                </div>
               </div>
             </form>
 
@@ -928,7 +955,12 @@ export function UserSettingsPage() {
                 <Button variant="outline" onClick={handleViewBackupCodes} disabled={twoFABusy || backupCodesLoading}>
                   {backupCodesLoading ? "Loading…" : "View Backup Codes"}
                 </Button>
-                <Button variant="outline" onClick={handleDisableTOTP} disabled={twoFABusy}>
+                <Button
+                  variant="outline"
+                  className="border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  onClick={handleDisableTOTP}
+                  disabled={twoFABusy}
+                >
                   Disable authenticator app
                 </Button>
               </div>
@@ -1040,7 +1072,7 @@ export function UserSettingsPage() {
                                   type="button"
                                   variant="ghost"
                                   size="icon"
-                                  className="size-7 shrink-0 text-muted-foreground hover:text-destructive"
+                                  className="size-7 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
                                   onClick={() => handleDeleteKey(cred.id)}
                                   disabled={processingKeyId !== null || twoFABusy}
                                 >
@@ -1241,7 +1273,7 @@ export function UserSettingsPage() {
           </AlertDialog>
 
           <Dialog open={changePasswordOpen} onOpenChange={open => { if (!open) resetPasswordDialog(); setChangePasswordOpen(open); }}>
-              <DialogContent>
+              <DialogContent hideClose>
                 <DialogHeader>
                   <DialogTitle>Change password</DialogTitle>
                 </DialogHeader>
@@ -1268,9 +1300,22 @@ export function UserSettingsPage() {
                       autoComplete="new-password"
                       required
                     />
-                    {newPassword && zxcvbn(newPassword).score < 3 && (
-                      <p className="text-xs text-destructive">Password is too weak. Try adding more characters or symbols.</p>
-                    )}
+                    {newPassword && (() => {
+                      const score = zxcvbn(newPassword).score;
+                      return (
+                        <div className="space-y-1">
+                          <div className="flex gap-1">
+                            {[0, 1, 2, 3, 4].map(i => (
+                              <div
+                                key={i}
+                                className={`h-1 flex-1 rounded-full transition-colors ${i <= score ? STRENGTH_COLORS[score] : "bg-muted"}`}
+                              />
+                            ))}
+                          </div>
+                          <p className="text-xs text-muted-foreground">{STRENGTH_LABELS[score]}</p>
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   <div className="flex flex-col gap-1.5">
@@ -1290,7 +1335,7 @@ export function UserSettingsPage() {
 
                 </form>
                 <DialogFooter>
-                  <Button variant="outline" type="button" onClick={() => { resetPasswordDialog(); setChangePasswordOpen(false); }}>
+                  <Button variant="outline" type="button" onClick={() => { resetPasswordDialog(); setChangePasswordOpen(false); }} className="mr-auto">
                     Cancel
                   </Button>
                   <Button
