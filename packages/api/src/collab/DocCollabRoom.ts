@@ -8,6 +8,22 @@ import type { Env } from "../index";
 const MSG_SYNC = 0;
 const MSG_AWARENESS = 1;
 
+// Per-WS-frame ceiling. Legitimate Yjs traffic is small (steady-state edits + awareness are
+// well under 1 KB); the only large message is the initial sync of full state from a connecting
+// client, which for a markdown doc stays comfortably below this. CF's WS frame cap is ~1 MB,
+// so this turns "frame dropped" into "socket closed with reason".
+const MAX_MESSAGE_BYTES = 512 * 1024;
+
+// Total Y.Doc state ceiling, measured by Y.encodeStateAsUpdate(...).byteLength. ~40× the
+// largest realistic markdown doc + edit history. Crossing this freezes the room so persist()
+// is a no-op — on next DO load we restore the pre-bloat snapshot from R2.
+const MAX_DOC_STATE_BYTES = 2 * 1024 * 1024;
+
+// Y.encodeStateAsUpdate is O(state size) so we only run the full check when accumulated
+// delta since the last check exceeds this. Updates are append-merged, so summed delta is
+// an upper bound on growth between checks.
+const DELTA_RECHECK_BYTES = 64 * 1024;
+
 interface WsAttachment {
   userId: string;
   userName: string;
@@ -31,6 +47,8 @@ export class DocCollabRoom implements DurableObject {
   private awareness: awarenessProtocol.Awareness | null = null;
   private editors: Map<string, string> | null = null; // userId → userName
   private lastAlarmSetAt = 0;
+  private frozen = false;
+  private pendingDeltaBytes = 0;
 
   constructor(ctx: DurableObjectState, env: Env) {
     this.ctx = ctx;
@@ -45,7 +63,15 @@ export class DocCollabRoom implements DurableObject {
     try {
       const raw = await this.ctx.storage.get<unknown>("ydoc");
       const stored = toUint8Array(raw);
-      if (stored) Y.applyUpdate(ydoc, stored);
+      if (stored) {
+        Y.applyUpdate(ydoc, stored);
+        if (stored.byteLength > MAX_DOC_STATE_BYTES) {
+          // Persisted snapshot is already over the cap. Freeze immediately so persist() is a
+          // no-op — refusing to write the bloat back to R2 is the only useful response here.
+          console.error(`[DocCollabRoom] stored state ${stored.byteLength}B exceeds cap ${MAX_DOC_STATE_BYTES}B; freezing room`);
+          this.frozen = true;
+        }
+      }
     } catch (err) {
       console.error("[DocCollabRoom] failed to restore ydoc from storage:", err);
     }
@@ -66,6 +92,7 @@ export class DocCollabRoom implements DurableObject {
     this.awareness = awareness;
 
     ydoc.on("update", (update: Uint8Array, origin: unknown) => {
+      this.pendingDeltaBytes += update.byteLength;
       const encoder = encoding.createEncoder();
       encoding.writeVarUint(encoder, MSG_SYNC);
       syncProtocol.writeUpdate(encoder, update);
@@ -106,6 +133,8 @@ export class DocCollabRoom implements DurableObject {
       this.ydoc = null;
     }
     this.editors = null;
+    this.frozen = false;
+    this.pendingDeltaBytes = 0;
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -183,8 +212,21 @@ export class DocCollabRoom implements DurableObject {
   }
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
+    // Reject oversized frames before doing any work. String length undercounts UTF-8 bytes
+    // but Yjs traffic is binary; a string this long is itself anomalous.
+    const messageSize = typeof message === "string" ? message.length : message.byteLength;
+    if (messageSize > MAX_MESSAGE_BYTES) {
+      try { ws.close(1009, "message too large"); } catch { /* */ }
+      return;
+    }
+
     try {
       await this.ensureLoaded();
+
+      if (this.frozen) {
+        try { ws.close(1008, "doc size limit exceeded"); } catch { /* */ }
+        return;
+      }
 
       const data = typeof message === "string"
         ? new TextEncoder().encode(message)
@@ -208,6 +250,21 @@ export class DocCollabRoom implements DurableObject {
             try { ws.send(encoding.toUint8Array(replyEncoder)); } catch { /* */ }
           }
           if (syncType === 2) {
+            // Update was applied to ydoc. If we've absorbed enough delta since the last
+            // check, run the (expensive) full state size check and freeze if over cap.
+            if (this.pendingDeltaBytes > DELTA_RECHECK_BYTES) {
+              this.pendingDeltaBytes = 0;
+              const stateSize = Y.encodeStateAsUpdate(this.ydoc!).byteLength;
+              if (stateSize > MAX_DOC_STATE_BYTES) {
+                console.error(`[DocCollabRoom] Y.Doc state ${stateSize}B exceeds cap ${MAX_DOC_STATE_BYTES}B; freezing room`);
+                this.frozen = true;
+                for (const sock of this.ctx.getWebSockets()) {
+                  try { sock.close(1008, "doc size limit exceeded"); } catch { /* */ }
+                }
+                return;
+              }
+            }
+
             // Throttle alarm rewrites to once every 5s. Each setAlarm is a storage write,
             // and the previous code rewrote the alarm on every keystroke. The alarm still
             // fires ~30s after the last edit (between 30s and 35s, depending on which
@@ -301,6 +358,9 @@ export class DocCollabRoom implements DurableObject {
 
   private async persist(): Promise<void> {
     if (!this.ydoc) return;
+    // Refuse to write bloated state back to R2. The previously-good snapshot already in
+    // storage is what we want a future load to restore from.
+    if (this.frozen) return;
 
     const bytes = Y.encodeStateAsUpdate(this.ydoc);
     await this.ctx.storage.put("ydoc", bytes);

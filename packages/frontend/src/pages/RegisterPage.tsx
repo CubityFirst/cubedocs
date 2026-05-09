@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AuthForm } from "@/components/AuthForm";
 import { Turnstile } from "@/components/Turnstile";
-import { getToken } from "@/lib/auth";
+import { getToken, setToken } from "@/lib/auth";
 
 const annexWordmark = <img src="/annexwordmark.svg" alt="Annex" className="h-10 w-auto invert" />;
 
@@ -57,10 +57,13 @@ export function RegisterPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, email, password, turnstileToken }),
       });
-      const json = await res.json() as { ok: boolean; data?: { email: string; verificationSent: boolean }; error?: string };
+      const json = await res.json() as { ok: boolean; data?: { email: string; verificationSent: boolean; token?: string }; error?: string };
       if (json.ok && json.data) {
         if (json.data.verificationSent) {
           navigate("/check-email", { replace: true, state: { email: json.data.email } });
+        } else if (json.data.token) {
+          setToken(json.data.token);
+          navigate("/dashboard", { replace: true });
         } else {
           navigate("/login", { replace: true });
         }

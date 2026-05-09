@@ -4,6 +4,8 @@ import { hashPassword } from "../password";
 import { verifyTurnstile } from "../turnstile";
 import { createVerificationToken } from "../verification";
 import { sendVerificationEmail } from "../email";
+import { signJwt } from "../jwt";
+import { createSession, SESSION_TTL_MS } from "../sessions";
 import type { Env } from "../index";
 
 export async function handleRegister(request: Request, env: Env): Promise<Response> {
@@ -46,5 +48,20 @@ export async function handleRegister(request: Request, env: Env): Promise<Respon
     return okResponse({ verificationSent: true, email: body.email.toLowerCase() }, 201);
   }
 
-  return okResponse({ verificationSent: false, email: body.email.toLowerCase() }, 201);
+  const expiresAt = Date.now() + SESSION_TTL_MS;
+  const sid = await createSession(env, id, request, expiresAt);
+  const token = await signJwt(
+    { userId: id, email: body.email.toLowerCase(), expiresAt, isAdmin: false, sid },
+    env.JWT_SECRET,
+  );
+
+  return okResponse(
+    {
+      verificationSent: false,
+      email: body.email.toLowerCase(),
+      token,
+      user: { id, email: body.email.toLowerCase(), name: body.name, createdAt: now },
+    },
+    201,
+  );
 }

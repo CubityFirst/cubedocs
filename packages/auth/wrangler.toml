@@ -12,7 +12,7 @@ migrations_dir = "migrations"
 
 [triggers]
 # Weekly sweep of long-dead session rows (see scheduled handler).
-crons = ["0 3 * * 0"]
+crons = ["0 3 * * SUN"]
 
 [vars]
 JWT_ISSUER = "https://auth.cubedocs.com"

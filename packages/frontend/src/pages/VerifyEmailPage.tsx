@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { setToken } from "@/lib/auth";
 
 export function VerifyEmailPage() {
   const location = useLocation();
@@ -26,10 +27,17 @@ export function VerifyEmailPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token }),
     })
-      .then(res => res.json() as Promise<{ ok: boolean; error?: string }>)
-      .then(json => setState(json.ok ? "success" : "failure"))
+      .then(res => res.json() as Promise<{ ok: boolean; data?: { verified: boolean; token?: string }; error?: string }>)
+      .then(json => {
+        if (json.ok && json.data?.token) {
+          setToken(json.data.token);
+          navigate("/dashboard", { replace: true });
+          return;
+        }
+        setState(json.ok ? "success" : "failure");
+      })
       .catch(() => setState("failure"));
-  }, [token]);
+  }, [token, navigate]);
 
   async function handleResend() {
     if (!resendEmail.trim()) return;

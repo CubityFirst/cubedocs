@@ -1,9 +1,10 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { EditorView, keymap } from "@codemirror/view";
-import { EditorState } from "@codemirror/state";
+import { ChangeSet, EditorState } from "@codemirror/state";
 import { defaultKeymap, historyKeymap, history, indentWithTab } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { Wikilink } from "./lezer/wikilinkExtension";
+import { Comment as MdCommentExt } from "./lezer/commentExtension";
 import { calloutContinueOnEnter, calloutBreakOnShiftEnter } from "./commands/calloutEnter";
 import { tableContinueOnEnter } from "./commands/tableEnter";
 import * as Y from "yjs";
@@ -13,6 +14,22 @@ import { userColor, userColorLight } from "@/lib/userColor";
 import { CollabProvider } from "@/lib/collabProvider";
 import { ctxCompartment, modeCompartment, modeExtension, ctxExtension, buildCtxForMode, type WysiwygMode } from "./modes";
 import { defaultRendererCtx, type RendererCtx } from "./context/RendererContext";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuShortcut,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Bold, ClipboardPaste, Copy, Italic, Link as LinkIcon, List, ListChecks, ListOrdered, Pilcrow, Scissors, Type, Underline } from "lucide-react";
 import "./styles.css";
 
 const editorTheme = EditorView.theme({
@@ -47,6 +64,11 @@ interface Props {
   autoFocus?: boolean;
   collab?: { docId: string; user: CollabUser };
   onAwarenessChange?: (editors: { userId: string; name: string; color: string }[]) => void;
+  // Soft signal from collab server (e.g. one frame too large to sync). Show a toast.
+  onCollabWarning?: (reason: string) => void;
+  // Terminal signal from collab server (e.g. doc size cap exceeded — room frozen).
+  // The provider stops reconnecting; the parent should drop out of edit mode.
+  onCollabFatal?: (reason: string) => void;
   rendererCtx?: RendererCtx;
 }
 
@@ -98,6 +120,54 @@ function applyMarkerCm(view: EditorView, marker: string) {
   });
 }
 
+type ListKind = "bullet" | "numbered" | "task";
+const ANY_LIST_PREFIX = /^(\s*)(?:- \[[ xX]\] |- |\d+\. )/;
+
+function applyLinePrefixCm(view: EditorView, kind: ListKind) {
+  const sel = view.state.selection.main;
+  const startLine = view.state.doc.lineAt(sel.from);
+  const endLine = view.state.doc.lineAt(sel.to);
+
+  const lines: { from: number; text: string; existing: RegExpMatchArray | null }[] = [];
+  for (let n = startLine.number; n <= endLine.number; n++) {
+    const line = view.state.doc.line(n);
+    lines.push({ from: line.from, text: line.text, existing: line.text.match(ANY_LIST_PREFIX) });
+  }
+
+  const isThisKind = (m: RegExpMatchArray | null) => {
+    if (!m) return false;
+    const rest = m[0].slice(m[1].length);
+    if (kind === "bullet") return rest === "- ";
+    if (kind === "task") return /^- \[[ xX]\] $/.test(rest);
+    return /^\d+\. $/.test(rest);
+  };
+  const allThisKind = lines.length > 0 && lines.every(l => isThisKind(l.existing));
+
+  const newPrefix = (i: number, indent: string): string => {
+    if (kind === "bullet") return `${indent}- `;
+    if (kind === "task") return `${indent}- [ ] `;
+    return `${indent}${i + 1}. `;
+  };
+
+  const changes = lines.map((l, i) => {
+    const indent = l.existing?.[1] ?? "";
+    const existingLen = l.existing?.[0].length ?? indent.length;
+    if (allThisKind) {
+      return { from: l.from + indent.length, to: l.from + existingLen, insert: "" };
+    }
+    return { from: l.from, to: l.from + existingLen, insert: newPrefix(i, indent) };
+  });
+
+  const changeSet = ChangeSet.of(changes, view.state.doc.length);
+  view.dispatch({
+    changes: changeSet,
+    selection: {
+      anchor: changeSet.mapPos(sel.anchor, 1),
+      head: changeSet.mapPos(sel.head, 1),
+    },
+  });
+}
+
 export function WysiwygEditor({
   mode,
   value,
@@ -106,6 +176,8 @@ export function WysiwygEditor({
   autoFocus = false,
   collab,
   onAwarenessChange,
+  onCollabWarning,
+  onCollabFatal,
   rendererCtx,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -118,6 +190,10 @@ export function WysiwygEditor({
   onChangeRef.current = onChange;
   const onAwarenessChangeRef = useRef(onAwarenessChange);
   onAwarenessChangeRef.current = onAwarenessChange;
+  const onCollabWarningRef = useRef(onCollabWarning);
+  onCollabWarningRef.current = onCollabWarning;
+  const onCollabFatalRef = useRef(onCollabFatal);
+  onCollabFatalRef.current = onCollabFatal;
 
   const initialValueRef = useRef(value);
   const collabRef = useRef(collab);
@@ -184,12 +260,15 @@ export function WysiwygEditor({
 
       yjsExtensions.push(yCollab(yText, awareness));
 
-      provider = new CollabProvider(ydoc, awareness, collabOpts.docId);
+      provider = new CollabProvider(ydoc, awareness, collabOpts.docId, {
+        onWarning: (reason) => onCollabWarningRef.current?.(reason),
+        onFatal: (reason) => onCollabFatalRef.current?.(reason),
+      });
     }
 
     const extensions = [
       history(),
-      markdown({ base: markdownLanguage, extensions: [Wikilink] }),
+      markdown({ base: markdownLanguage, extensions: [Wikilink, MdCommentExt] }),
       editorTheme,
       EditorView.lineWrapping,
       keymap.of([
@@ -281,17 +360,223 @@ export function WysiwygEditor({
     });
   }, [value]);
 
+  const [hasSelection, setHasSelection] = useState(false);
+
+  const refreshSelection = useCallback(() => {
+    const view = viewRef.current;
+    if (!view) { setHasSelection(false); return; }
+    setHasSelection(!view.state.selection.main.empty);
+  }, []);
+
+  const handleCut = useCallback(async () => {
+    const view = viewRef.current;
+    if (!view) return;
+    const sel = view.state.selection.main;
+    if (sel.empty) return;
+    const text = view.state.sliceDoc(sel.from, sel.to);
+    try { await navigator.clipboard.writeText(text); } catch { return; }
+    view.dispatch({
+      changes: { from: sel.from, to: sel.to, insert: "" },
+      selection: { anchor: sel.from },
+    });
+    view.focus();
+  }, []);
+
+  const handleCopy = useCallback(async () => {
+    const view = viewRef.current;
+    if (!view) return;
+    const sel = view.state.selection.main;
+    if (sel.empty) return;
+    const text = view.state.sliceDoc(sel.from, sel.to);
+    try { await navigator.clipboard.writeText(text); } catch { /* ignore */ }
+    view.focus();
+  }, []);
+
+  const handlePaste = useCallback(async () => {
+    const view = viewRef.current;
+    if (!view) return;
+    let text = "";
+    try { text = await navigator.clipboard.readText(); } catch { return; }
+    if (!text) return;
+    const sel = view.state.selection.main;
+    view.dispatch({
+      changes: { from: sel.from, to: sel.to, insert: text },
+      selection: { anchor: sel.from + text.length },
+    });
+    view.focus();
+  }, []);
+
+  const handleFormat = useCallback((marker: "**" | "*" | "__") => {
+    const view = viewRef.current;
+    if (!view) return;
+    applyMarkerCm(view, marker);
+    view.focus();
+  }, []);
+
+  const handleList = useCallback((kind: ListKind) => {
+    const view = viewRef.current;
+    if (!view) return;
+    applyLinePrefixCm(view, kind);
+    view.focus();
+  }, []);
+
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+  const [linkText, setLinkText] = useState("");
+  const [linkUrl, setLinkUrl] = useState("");
+  const linkRangeRef = useRef<{ from: number; to: number }>({ from: 0, to: 0 });
+
+  const handleOpenLinkDialog = useCallback(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const sel = view.state.selection.main;
+    const selected = view.state.sliceDoc(sel.from, sel.to);
+    linkRangeRef.current = { from: sel.from, to: sel.to };
+    setLinkText(selected);
+    setLinkUrl("");
+    setLinkDialogOpen(true);
+  }, []);
+
+  const handleSubmitLink = useCallback((e: React.FormEvent) => {
+    e.preventDefault();
+    const view = viewRef.current;
+    if (!view) return;
+    const url = linkUrl.trim();
+    if (!url) return;
+    const text = linkText.trim() || url;
+    const insert = `[${text}](${url})`;
+    const { from, to } = linkRangeRef.current;
+    view.dispatch({
+      changes: { from, to, insert },
+      selection: { anchor: from + insert.length },
+    });
+    setLinkDialogOpen(false);
+    view.focus();
+  }, [linkText, linkUrl]);
+
   // Reading mode flows inline (height: auto, no scroll). Editing/raw mode
   // fills its positioned parent (absolute inset-0).
   const layoutClass = mode === "reading"
     ? "cm-wysiwyg cm-wysiwyg--reading"
     : "cm-wysiwyg absolute inset-0 bg-background text-foreground";
 
-  return (
+  const containerEl = (
     <div
       ref={containerRef}
       className={layoutClass}
       spellCheck={false}
     />
+  );
+
+  if (mode === "reading") return containerEl;
+
+  return (
+    <>
+    <ContextMenu onOpenChange={(open) => { if (open) refreshSelection(); }}>
+      <ContextMenuTrigger asChild>{containerEl}</ContextMenuTrigger>
+      <ContextMenuContent className="w-48">
+        <ContextMenuItem disabled={!hasSelection} onSelect={handleCut}>
+          <Scissors />
+          Cut
+          <ContextMenuShortcut>Ctrl+X</ContextMenuShortcut>
+        </ContextMenuItem>
+        <ContextMenuItem disabled={!hasSelection} onSelect={handleCopy}>
+          <Copy />
+          Copy
+          <ContextMenuShortcut>Ctrl+C</ContextMenuShortcut>
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={handlePaste}>
+          <ClipboardPaste />
+          Paste
+          <ContextMenuShortcut>Ctrl+V</ContextMenuShortcut>
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onSelect={handleOpenLinkDialog}>
+          <LinkIcon />
+          Create link…
+        </ContextMenuItem>
+        <ContextMenuSub>
+          <ContextMenuSubTrigger
+            disabled={!hasSelection}
+            className="gap-2 data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
+          >
+            <Type />
+            Format
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent className="w-44">
+            <ContextMenuItem onSelect={() => handleFormat("**")}>
+              <Bold />
+              Bold
+              <ContextMenuShortcut>Ctrl+B</ContextMenuShortcut>
+            </ContextMenuItem>
+            <ContextMenuItem onSelect={() => handleFormat("*")}>
+              <Italic />
+              Italic
+              <ContextMenuShortcut>Ctrl+I</ContextMenuShortcut>
+            </ContextMenuItem>
+            <ContextMenuItem onSelect={() => handleFormat("__")}>
+              <Underline />
+              Underline
+              <ContextMenuShortcut>Ctrl+U</ContextMenuShortcut>
+            </ContextMenuItem>
+          </ContextMenuSubContent>
+        </ContextMenuSub>
+        <ContextMenuSub>
+          <ContextMenuSubTrigger className="gap-2">
+            <Pilcrow />
+            Paragraph
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent className="w-48">
+            <ContextMenuItem onSelect={() => handleList("bullet")}>
+              <List />
+              Bullet list
+            </ContextMenuItem>
+            <ContextMenuItem onSelect={() => handleList("numbered")}>
+              <ListOrdered />
+              Numbered list
+            </ContextMenuItem>
+            <ContextMenuItem onSelect={() => handleList("task")}>
+              <ListChecks />
+              Task list
+            </ContextMenuItem>
+          </ContextMenuSubContent>
+        </ContextMenuSub>
+      </ContextMenuContent>
+    </ContextMenu>
+    <Dialog open={linkDialogOpen} onOpenChange={setLinkDialogOpen}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Create link</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmitLink} className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="link-text">Text</Label>
+            <Input
+              id="link-text"
+              placeholder="Link text"
+              value={linkText}
+              onChange={e => setLinkText(e.target.value)}
+              autoFocus={linkText.length === 0}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="link-url">URL</Label>
+            <Input
+              id="link-url"
+              type="url"
+              placeholder="https://example.com"
+              value={linkUrl}
+              onChange={e => setLinkUrl(e.target.value)}
+              autoFocus={linkText.length > 0}
+              required
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setLinkDialogOpen(false)}>Cancel</Button>
+            <Button type="submit" disabled={!linkUrl.trim()}>Insert</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

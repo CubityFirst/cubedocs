@@ -14,6 +14,7 @@ import { visitListItem } from "./block/list";
 import { visitLink } from "./inline/link";
 import { visitImage } from "./inline/image";
 import { visitWikilink } from "./inline/wikilink";
+import { visitComment } from "./inline/comment";
 import { frontmatterPass } from "./block/frontmatter";
 
 export function buildDecorations(state: EditorState): DecorationSet {
@@ -77,6 +78,9 @@ function buildDecorationsInner(state: EditorState): DecorationSet {
           return;
         case "Wikilink":
           visitWikilink(args);
+          return false;
+        case "MdComment":
+          visitComment(args);
           return false;
         case "Link":
           visitLink(args);

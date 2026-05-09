@@ -18,7 +18,7 @@ export async function handleAi(
       `SELECT d.id, d.title, d.project_id, d.updated_at, d.ai_summary, d.ai_summary_version
        FROM docs d
        INNER JOIN project_members pm ON pm.project_id = d.project_id
-       WHERE d.id = ? AND pm.user_id = ?`,
+       WHERE d.id = ? AND pm.user_id = ? AND pm.accepted = 1`,
     ).bind(body.docId, user.userId).first<{
       id: string;
       title: string;

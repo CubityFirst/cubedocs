@@ -5,7 +5,7 @@ async function getCallerRole(db: D1Database, projectId: string, userId: string):
   const row = await db.prepare(`
     SELECT pm.role
     FROM projects p
-    LEFT JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = ?
+    LEFT JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = ? AND pm.accepted = 1
     WHERE p.id = ?
   `).bind(userId, projectId).first<{ role: Role | null }>();
   if (row === null) return null;

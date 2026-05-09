@@ -26,7 +26,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { HistorySheet, type RevisionMeta } from "@/components/HistorySheet";
 import { HistoryBanner } from "@/components/HistoryBanner";
-import { Pencil, X, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight, Sparkles, Users, UserPlus, Trash2, HelpCircle } from "lucide-react";
+import { Pencil, X, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight, Sparkles, Users, UserPlus, Trash2, HelpCircle, Code2 } from "lucide-react";
 import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
 import { getToken } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
@@ -243,6 +243,7 @@ export function DocPage() {
   const [changelogText, setChangelogText] = useState("");
   const [aiSummaryLoading, setAiSummaryLoading] = useState(false);
   const [markdownHelpOpen, setMarkdownHelpOpen] = useState(false);
+  const [rawMode, setRawMode] = useState(false);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [docShares, setDocShares] = useState<DocShareMember[]>([]);
   const [sharesLoading, setSharesLoading] = useState(false);
@@ -624,6 +625,16 @@ export function DocPage() {
             >
               <HelpCircle className="h-4 w-4" />
             </Button>
+            <Button
+              variant={rawMode ? "secondary" : "ghost"}
+              size="icon"
+              onClick={() => setRawMode(v => !v)}
+              title={rawMode ? "Switch to WYSIWYG editor" : "Switch to raw markdown"}
+              aria-pressed={rawMode}
+              className="h-8 w-8"
+            >
+              <Code2 className="h-4 w-4" />
+            </Button>
             <Button variant="ghost" size="sm" onClick={cancelEditing} className="gap-1.5">
               <X className="h-3.5 w-3.5" />
               Cancel
@@ -638,13 +649,28 @@ export function DocPage() {
         <div className="flex flex-1 overflow-hidden">
           <div className="relative flex-1 overflow-hidden">
             <WysiwygEditor
-              mode="editing"
+              mode={rawMode ? "raw" : "editing"}
               value={draft}
               onChange={setDraft}
               onSave={handleSaveClick}
               autoFocus={!location.state?.isNew}
               collab={realtimeEnabled && currentUser ? { docId: doc.id, user: currentUser } : undefined}
               onAwarenessChange={realtimeEnabled ? setRemoteEditors : undefined}
+              onCollabWarning={(reason) => {
+                toast({
+                  title: "Change too large to sync",
+                  description: reason || "Try splitting it into smaller edits.",
+                  variant: "destructive",
+                });
+              }}
+              onCollabFatal={(reason) => {
+                toast({
+                  title: "Document is read-only",
+                  description: reason || "This document has reached its maximum size. Contact an administrator.",
+                  variant: "destructive",
+                });
+                cancelEditing();
+              }}
               rendererCtx={wysiwygCtx}
             />
           </div>

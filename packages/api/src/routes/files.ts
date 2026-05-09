@@ -4,7 +4,7 @@ import type { Env } from "../index";
 const MAX_SIZE = 50 * 1024 * 1024; // 50MB
 
 async function getCallerRole(db: D1Database, projectId: string, userId: string): Promise<Role | null> {
-  const row = await db.prepare("SELECT role FROM project_members WHERE project_id = ? AND user_id = ?")
+  const row = await db.prepare("SELECT role FROM project_members WHERE project_id = ? AND user_id = ? AND accepted = 1")
     .bind(projectId, userId).first<{ role: Role }>();
   return row?.role ?? null;
 }

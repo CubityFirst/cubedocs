@@ -2,6 +2,29 @@ import { Decoration } from "@codemirror/view";
 import { cursorTouches, type Visitor } from "../types";
 import { LinkWidget } from "../../widgets/LinkWidget";
 
+// Block `javascript:`, `data:`, `vbscript:`, etc. URL parsing is robust to
+// percent-encoded scheme delimiters and case tricks; entity-encoded payloads
+// have invalid scheme characters and parse as relative.
+function sanitizeHref(url: string): string | null {
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = new URL(trimmed, "https://placeholder.invalid/");
+    const protocol = parsed.protocol.toLowerCase();
+    if (
+      protocol === "http:" ||
+      protocol === "https:" ||
+      protocol === "mailto:" ||
+      protocol === "tel:"
+    ) {
+      return trimmed;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export const visitLink: Visitor = ({ node, state, sel, reveal, decos }) => {
   // Walk children to extract the text range and URL. Bail out if this isn't
   // a complete `[text](url)` — Lezer also marks `[text]` (without url) as a
@@ -42,7 +65,10 @@ export const visitLink: Visitor = ({ node, state, sel, reveal, decos }) => {
     : "";
   if (!text) return;
 
+  const safeHref = sanitizeHref(url);
+  if (safeHref === null) return; // unsafe scheme — leave raw markdown visible
+
   decos.push(
-    Decoration.replace({ widget: new LinkWidget({ text, href: url }) }).range(node.from, node.to),
+    Decoration.replace({ widget: new LinkWidget({ text, href: safeHref }) }).range(node.from, node.to),
   );
 };

@@ -7,7 +7,7 @@ import type { Env } from "../index";
 type BlameEntry = { u: string; n: string; t: string; c: string | null } | null;
 
 async function getCallerInfo(db: D1Database, projectId: string, userId: string): Promise<{ role: Role; name: string } | null> {
-  const row = await db.prepare("SELECT role, name FROM project_members WHERE project_id = ? AND user_id = ?")
+  const row = await db.prepare("SELECT role, name FROM project_members WHERE project_id = ? AND user_id = ? AND accepted = 1")
     .bind(projectId, userId).first<{ role: Role; name: string }>();
   return row ? { role: row.role, name: row.name } : null;
 }
