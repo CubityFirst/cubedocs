@@ -29,7 +29,7 @@ import { HistorySheet, type RevisionMeta } from "@/components/HistorySheet";
 import { HistoryBanner } from "@/components/HistoryBanner";
 import { Pencil, X, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight, Sparkles, Users, UserPlus, Trash2, HelpCircle, Code2, AlertCircle } from "lucide-react";
 import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
-import { getToken } from "@/lib/auth";
+import { apiFetchJson } from "@/lib/apiFetch";
 import { useToast } from "@/hooks/use-toast";
 
 function toId(text: string): string {
@@ -74,13 +74,6 @@ function extractHeadings(content: string): Heading[] {
   return headings;
 }
 
-interface BlameEntry {
-  u: string;
-  n: string;
-  t: string;
-  c?: string | null;
-}
-
 function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, max) + "…" : s;
 }
@@ -111,6 +104,15 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   return (
     <div className="flex flex-col gap-1.5">
       <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</p>
+      {children}
+    </div>
+  );
+}
+
+function MajorSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-4">
+      <h3 className="text-base font-semibold">{title}</h3>
       {children}
     </div>
   );
@@ -169,7 +171,6 @@ interface Doc {
   hide_title?: boolean | null;
   myRole?: string;
   myPermission?: string | null;
-  blame?: (BlameEntry | null)[];
   ai_summary?: string | null;
   ai_summary_version?: string | null;
   tags?: string | null;
@@ -272,17 +273,15 @@ export function DocPage() {
     setEditing(false);
     setCollabFatal(false);
     setCollabFatalReason(null);
-    const token = getToken();
-    fetch(`/api/docs/${docId}`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json())
-      .then((json: { ok: boolean; data?: Doc }) => {
-        if (json.ok && json.data) {
-          setDoc(json.data);
-          setMyRole(json.data.myRole ?? null);
-          setMyPermission(json.data.myPermission ?? null);
+    apiFetchJson<Doc>(`/api/docs/${docId}`)
+      .then(result => {
+        if (result.ok && result.data) {
+          setDoc(result.data);
+          setMyRole(result.data.myRole ?? null);
+          setMyPermission(result.data.myPermission ?? null);
           if (location.state?.isNew) {
-            setTitleDraft(json.data.title);
-            setDraft(json.data.content);
+            setTitleDraft(result.data.title);
+            setDraft(result.data.content);
             setEditing(true);
             navigate(location.pathname, { replace: true, state: { folderPath: location.state.folderPath } });
           }
@@ -332,17 +331,16 @@ export function DocPage() {
 
   function generateSummary() {
     if (!doc || aiSummaryLoading) return;
-    const token = getToken();
     setAiSummaryLoading(true);
-    fetch("/api/ai/summarize", {
+    apiFetchJson<{ summary?: string }>("/api/ai/summarize", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ docId: doc.id }),
     })
-      .then(r => r.json())
-      .then((json: { ok: boolean; data?: { summary?: string } }) => {
-        if (json.ok && json.data?.summary) {
-          setDoc(prev => prev ? { ...prev, ai_summary: json.data!.summary, ai_summary_version: prev.updated_at } : prev);
+      .then(result => {
+        if (result.ok && result.data?.summary) {
+          const summary = result.data.summary;
+          setDoc(prev => prev ? { ...prev, ai_summary: summary, ai_summary_version: prev.updated_at } : prev);
         }
       })
       .catch(() => {})
@@ -377,13 +375,8 @@ export function DocPage() {
     if (!docId) return;
     setResettingCollab(true);
     try {
-      const token = getToken();
-      const res = await fetch(`/api/docs/${docId}/collab/reset`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const json = await res.json() as { ok: boolean };
-      if (json.ok) {
+      const result = await apiFetchJson(`/api/docs/${docId}/collab/reset`, { method: "POST" });
+      if (result.ok) {
         setCollabFatal(false);
         setCollabFatalReason(null);
         toast({ title: "Realtime sync restored." });
@@ -402,18 +395,19 @@ export function DocPage() {
     setSaving(true);
     setSaveError(null);
     try {
-      const token = getToken();
       const body: Record<string, unknown> = { title: titleDraft, content: draft };
       if (changelog) body.changelog = changelog;
-      const res = await fetch(`/api/docs/${docId}`, {
+      const result = await apiFetchJson<Doc>(`/api/docs/${docId}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const json = await res.json() as { ok: boolean; data?: Doc };
-      if (json.ok && json.data) {
-        setDoc(json.data);
-        updateDocTitle(docId, json.data.title);
+      if (result.ok && result.data) {
+        const data = result.data;
+        // Spread-merge so fields the PUT response doesn't echo (display_title,
+        // hide_title, ai_summary, myRole, myPermission) survive the update.
+        setDoc(prev => prev ? { ...prev, ...data } : data);
+        updateDocTitle(docId, data.title);
         setEditing(false);
       } else {
         setSaveError("Failed to save. Please try again.");
@@ -439,16 +433,17 @@ export function DocPage() {
     setTogglingPublish(true);
     const publishedAt = doc.published_at ? null : new Date().toISOString();
     try {
-      const token = getToken();
-      const res = await fetch(`/api/docs/${docId}`, {
+      const result = await apiFetchJson<Doc>(`/api/docs/${docId}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ publishedAt }),
       });
-      const json = await res.json() as { ok: boolean; data?: Doc };
-      if (json.ok && json.data) {
-        setDoc(json.data);
-        toast({ title: json.data.published_at ? "Document published." : "Document unpublished." });
+      if (result.ok && result.data) {
+        const data = result.data;
+        // Spread-merge — settings PUTs no longer echo content, so replacing
+        // would clobber it.
+        setDoc(prev => prev ? { ...prev, ...data } : data);
+        toast({ title: data.published_at ? "Document published." : "Document unpublished." });
       }
     } catch {
       toast({ title: "Could not update publish state.", variant: "destructive" });
@@ -460,14 +455,15 @@ export function DocPage() {
   async function handleToggleLastUpdated(show: boolean) {
     if (!docId || !doc) return;
     try {
-      const token = getToken();
-      const res = await fetch(`/api/docs/${docId}`, {
+      const result = await apiFetchJson<Doc>(`/api/docs/${docId}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ showLastUpdated: show }),
       });
-      const json = await res.json() as { ok: boolean; data?: Doc };
-      if (json.ok && json.data) setDoc(json.data);
+      if (result.ok && result.data) {
+        const data = result.data;
+        setDoc(prev => prev ? { ...prev, ...data } : data);
+      }
     } catch {
       // fail silently
     }
@@ -476,14 +472,15 @@ export function DocPage() {
   async function handleToggleHeading(show: boolean) {
     if (!docId || !doc) return;
     try {
-      const token = getToken();
-      const res = await fetch(`/api/docs/${docId}`, {
+      const result = await apiFetchJson<Doc>(`/api/docs/${docId}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ showHeading: show }),
       });
-      const json = await res.json() as { ok: boolean; data?: Doc };
-      if (json.ok && json.data) setDoc(json.data);
+      if (result.ok && result.data) {
+        const data = result.data;
+        setDoc(prev => prev ? { ...prev, ...data } : data);
+      }
     } catch {
       // fail silently
     }
@@ -493,18 +490,14 @@ export function DocPage() {
     setHistoryOpen(true);
     setViewingRevision(null);
     setRevisions(null);
-    const token = getToken();
-    const res = await fetch(`/api/docs/${docId}/revisions`, { headers: { Authorization: `Bearer ${token}` } });
-    const json = await res.json() as { ok: boolean; data?: RevisionMeta[] };
-    if (json.ok) setRevisions(json.data ?? []);
+    const result = await apiFetchJson<RevisionMeta[]>(`/api/docs/${docId}/revisions`);
+    if (result.ok) setRevisions(result.data ?? []);
   }
 
   async function viewRevision(revisionId: string) {
     setLoadingRevision(true);
-    const token = getToken();
-    const res = await fetch(`/api/docs/${docId}/revisions/${revisionId}`, { headers: { Authorization: `Bearer ${token}` } });
-    const json = await res.json() as { ok: boolean; data?: RevisionDetail };
-    if (json.ok && json.data) setViewingRevision(json.data);
+    const result = await apiFetchJson<RevisionDetail>(`/api/docs/${docId}/revisions/${revisionId}`);
+    if (result.ok && result.data) setViewingRevision(result.data);
     setLoadingRevision(false);
   }
 
@@ -512,16 +505,15 @@ export function DocPage() {
     if (!docId || !viewingRevision) return;
     setReverting(true);
     try {
-      const token = getToken();
-      const res = await fetch(`/api/docs/${docId}`, {
+      const result = await apiFetchJson<Doc>(`/api/docs/${docId}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: viewingRevision.content }),
       });
-      const json = await res.json() as { ok: boolean; data?: Doc };
-      if (json.ok && json.data) {
-        setDoc(json.data);
-        updateDocTitle(docId, json.data.title);
+      if (result.ok && result.data) {
+        const data = result.data;
+        setDoc(prev => prev ? { ...prev, ...data } : data);
+        updateDocTitle(docId, data.title);
         setViewingRevision(null);
         toast({ title: "Document reverted to historical version." });
       } else {
@@ -537,16 +529,13 @@ export function DocPage() {
   async function openShareDialog() {
     setShareDialogOpen(true);
     setSharesLoading(true);
-    const token = getToken();
-    const [sharesRes, membersRes] = await Promise.all([
-      fetch(`/api/docs/${docId}/shares`, { headers: { Authorization: `Bearer ${token}` } }),
-      fetch(`/api/projects/${projectId}/members`, { headers: { Authorization: `Bearer ${token}` } }),
+    const [sharesResult, membersResult] = await Promise.all([
+      apiFetchJson<DocShareMember[]>(`/api/docs/${docId}/shares`),
+      apiFetchJson<{ userId: string; name: string; email: string; role: string }[]>(`/api/projects/${projectId}/members`),
     ]);
-    const sharesJson = await sharesRes.json() as { ok: boolean; data?: DocShareMember[] };
-    const membersJson = await membersRes.json() as { ok: boolean; data?: { userId: string; name: string; email: string; role: string }[] };
-    if (sharesJson.ok) setDocShares(sharesJson.data ?? []);
-    if (membersJson.ok) {
-      setLimitedViewerMembers((membersJson.data ?? [])
+    if (sharesResult.ok) setDocShares(sharesResult.data ?? []);
+    if (membersResult.ok) {
+      setLimitedViewerMembers((membersResult.data ?? [])
         .filter(m => m.role === "limited")
         .map(m => ({ userId: m.userId, name: m.name, email: m.email })));
     }
@@ -556,14 +545,12 @@ export function DocPage() {
   async function addShare(userId: string, permission: SharePermission) {
     setAddingShareUserId(userId);
     try {
-      const token = getToken();
-      const res = await fetch(`/api/docs/${docId}/shares`, {
+      const result = await apiFetchJson<DocShareMember>(`/api/docs/${docId}/shares`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, permission }),
       });
-      const json = await res.json() as { ok: boolean; data?: DocShareMember };
-      if (json.ok && json.data) setDocShares(prev => [...prev.filter(s => s.userId !== userId), json.data!]);
+      if (result.ok && result.data) setDocShares(prev => [...prev.filter(s => s.userId !== userId), result.data!]);
     } finally {
       setAddingShareUserId(null);
     }
@@ -572,14 +559,12 @@ export function DocPage() {
   async function updateSharePermission(userId: string, permission: SharePermission) {
     setUpdatingShareUserId(userId);
     try {
-      const token = getToken();
-      const res = await fetch(`/api/docs/${docId}/shares/${userId}`, {
+      const result = await apiFetchJson(`/api/docs/${docId}/shares/${userId}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ permission }),
       });
-      const json = await res.json() as { ok: boolean };
-      if (json.ok) setDocShares(prev => prev.map(s => s.userId === userId ? { ...s, permission } : s));
+      if (result.ok) setDocShares(prev => prev.map(s => s.userId === userId ? { ...s, permission } : s));
     } finally {
       setUpdatingShareUserId(null);
     }
@@ -588,13 +573,8 @@ export function DocPage() {
   async function removeShare(userId: string) {
     setRemovingShareUserId(userId);
     try {
-      const token = getToken();
-      const res = await fetch(`/api/docs/${docId}/shares/${userId}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const json = await res.json() as { ok: boolean };
-      if (json.ok) setDocShares(prev => prev.filter(s => s.userId !== userId));
+      const result = await apiFetchJson(`/api/docs/${docId}/shares/${userId}`, { method: "DELETE" });
+      if (result.ok) setDocShares(prev => prev.filter(s => s.userId !== userId));
     } finally {
       setRemovingShareUserId(null);
     }
@@ -604,18 +584,15 @@ export function DocPage() {
     if (!doc?.folder_id || !projectId) return;
     setFolderShareLoading(true);
     try {
-      const token = getToken();
-      const res = await fetch(`/api/projects/${projectId}/folder-shares`, {
+      const result = await apiFetchJson<{ granted: number }>(`/api/projects/${projectId}/folder-shares`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, folderId: doc.folder_id, permission }),
       });
-      const json = await res.json() as { ok: boolean; data?: { granted: number } };
-      if (json.ok) {
-        const sharesRes = await fetch(`/api/docs/${docId}/shares`, { headers: { Authorization: `Bearer ${token}` } });
-        const sharesJson = await sharesRes.json() as { ok: boolean; data?: DocShareMember[] };
-        if (sharesJson.ok) setDocShares(sharesJson.data ?? []);
-        toast({ title: `Shared ${json.data?.granted ?? 0} documents in this folder.` });
+      if (result.ok) {
+        const sharesResult = await apiFetchJson<DocShareMember[]>(`/api/docs/${docId}/shares`);
+        if (sharesResult.ok) setDocShares(sharesResult.data ?? []);
+        toast({ title: `Shared ${result.data?.granted ?? 0} documents in this folder.` });
       }
     } finally {
       setFolderShareLoading(false);
@@ -745,7 +722,17 @@ export function DocPage() {
               <DialogDescription>Supported syntax in this editor.</DialogDescription>
             </DialogHeader>
             <div className="overflow-y-auto max-h-[60vh] mt-3 pr-4">
-              <div className="flex flex-col gap-5 pb-2 text-sm">
+              <div className="flex flex-col gap-6 pb-2 text-sm">
+                <MajorSection title="Frontmatter">
+                  <Section title="YAML metadata block">
+                    <Code>{`---\ntitle: My Document\nsidebar_position: 1\nhide_title: false\ntags: [api, internal]\ndescription: A short summary used for share-link previews.\nimage: /api/files/abc123/content\n---`}</Code>
+                    <p className="text-xs text-muted-foreground mt-1">Optional YAML block at the very top of the document. Recognized keys: <span className="font-mono">title</span> (overrides the document name in the rendered view), <span className="font-mono">sidebar_position</span> (sort order in the navigation tree), <span className="font-mono">hide_title</span>, <span className="font-mono">tags</span> (inline <span className="font-mono">[a, b]</span> or YAML list), <span className="font-mono">description</span> (overrides the auto-extracted first-paragraph summary used for <span className="font-mono">og:description</span> on share links), <span className="font-mono">image</span> (URL or <span className="font-mono">/api/files/&lt;id&gt;/content</span> path used for <span className="font-mono">og:image</span> on share links).</p>
+                  </Section>
+                </MajorSection>
+
+                <Separator />
+
+                <MajorSection title="Markdown">
                 <Section title="Headings">
                   <Code>{`# H1\n## H2\n### H3`}</Code>
                 </Section>
@@ -753,7 +740,8 @@ export function DocPage() {
                   <Code>{`**bold**       Ctrl+B\n*italic*       Ctrl+I\n__underline__  Ctrl+U\n~~strikethrough~~`}</Code>
                 </Section>
                 <Section title="Links & images">
-                  <Code>{`[link text](https://example.com)\n![alt text](https://example.com/img.png)\n![alt](img.png){width=300}             fixed width (px)\n![alt](img.png){width=50%}             percentage width\n![alt](img.png){width=400 height=200}  width and height`}</Code>
+                  <Code>{`[link text](https://example.com)\n[email me](mailto:hello@example.com)\n[call](tel:+15551234567)\n![alt text](https://example.com/img.png)\n![alt](img.png){width=300}             fixed width (px)\n![alt](img.png){width=50%}             percentage width\n![alt](img.png){width=400 height=200}  width and height`}</Code>
+                  <p className="text-xs text-muted-foreground mt-1">Allowed URL schemes: <span className="font-mono">http</span>, <span className="font-mono">https</span>, <span className="font-mono">mailto</span>, <span className="font-mono">tel</span>. Other schemes are stripped.</p>
                 </Section>
                 <Section title="Document links">
                   <Code>{`[[My Document]]                   link by title\n[[My Document|custom label]]      link with display text\n[[My Document#section]]           link to a heading anchor\n[[My Document#section|see this]]  anchor link with label`}</Code>
@@ -774,9 +762,14 @@ export function DocPage() {
                 <Section title="Blockquote">
                   <Code>{`> This is a blockquote.`}</Code>
                 </Section>
+                <Section title="Comments">
+                  <Code>{`%% hidden note for editors %%`}</Code>
+                  <p className="text-xs text-muted-foreground mt-1">Inline only — text between <span className="font-mono">%%</span> markers is stripped from the rendered output.</p>
+                </Section>
                 <Section title="Callouts">
                   <Code>{`> [!note]\n> This is a note.\n\n> [!warning] Watch out\n> Something to be careful about.\n\n> [!tip]+ Foldable tip\n> This starts open.\n\n> [!danger]- Foldable danger\n> This starts closed.`}</Code>
-                  <p className="text-xs text-muted-foreground mt-1">Types: <span className="font-mono">note</span>, <span className="font-mono">info</span>, <span className="font-mono">tip</span>, <span className="font-mono">success</span>, <span className="font-mono">warning</span>, <span className="font-mono">danger</span>, <span className="font-mono">bug</span>, <span className="font-mono">question</span>, <span className="font-mono">quote</span>, <span className="font-mono">example</span>, <span className="font-mono">abstract</span>, <span className="font-mono">todo</span>, <span className="font-mono">failure</span></p>
+                  <p className="text-xs text-muted-foreground mt-1">Types: <span className="font-mono">note</span>, <span className="font-mono">info</span>, <span className="font-mono">tip</span>, <span className="font-mono">success</span>, <span className="font-mono">warning</span>, <span className="font-mono">danger</span>, <span className="font-mono">bug</span>, <span className="font-mono">question</span>, <span className="font-mono">quote</span>, <span className="font-mono">example</span>, <span className="font-mono">abstract</span>, <span className="font-mono">todo</span>, <span className="font-mono">failure</span>.</p>
+                  <p className="text-xs text-muted-foreground mt-1">Aliases: <span className="font-mono">summary</span>/<span className="font-mono">tldr</span> → abstract, <span className="font-mono">hint</span>/<span className="font-mono">important</span> → tip, <span className="font-mono">check</span>/<span className="font-mono">done</span> → success, <span className="font-mono">help</span>/<span className="font-mono">faq</span> → question, <span className="font-mono">caution</span>/<span className="font-mono">attention</span> → warning, <span className="font-mono">fail</span>/<span className="font-mono">missing</span> → failure, <span className="font-mono">error</span> → danger, <span className="font-mono">cite</span> → quote.</p>
                 </Section>
                 <Section title="Horizontal rule">
                   <Code>{`---`}</Code>
@@ -785,6 +778,7 @@ export function DocPage() {
                   <Code>{`\`dice: 1d20\`             standard roll\n\`dice: 2d6+1d4+3\`       compound expression\n\`dice: 4d6kh3\`          keep highest 3\n\`dice: 4d6kl3\`          keep lowest 3\n\`dice: 2d8r1\`           reroll 1s (unlimited)\n\`dice: 2d8r<3\`          reroll less than 3\n\`dice: 2d8r>5\`          reroll greater than 5\n\`dice: 2d8r1r3\`         reroll 1s and 3s\n\`dice: 4d6kh3r1\`        keep highest 3, reroll 1s\n\`dice: 2d10ro<2\`        reroll once if less than 2\n\`dice: 2dF\`             fate/fudge dice (-1, 0, +1)\n\`dice: 1d[2,4,6,8]\`    custom numeric faces\n\`dice: 1d[fire,ice]\`   random string table\n\`dice: 2d6[Fire]\`      inline label\n\`dice: 2d6%4\`          modulus\n\`dice: 2d6**2\`         exponentiation\n\`dice: floor(2d6/3)\`   math function\n\`dice: (2d6+1d4)*2\`    grouping with parentheses\n\`dice: 1d20 Attack Roll\`         overall label\n\`dice: 1d20+5 \\ +5 for initiative\` label with separator`}</Code>
                   <p className="text-xs text-muted-foreground mt-1">Click the die icon to roll. Click again to re-roll. Hover the result for a full breakdown. Math functions: <span className="font-mono">floor</span>, <span className="font-mono">ceil</span>, <span className="font-mono">round</span>, <span className="font-mono">abs</span>.</p>
                 </Section>
+                </MajorSection>
               </div>
             </div>
           </DialogContent>

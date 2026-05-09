@@ -4,55 +4,10 @@ import { indexDocLinks, invalidateProjectGraphIndex } from "../lib/docLinks";
 import { upsertFtsRow, deleteFtsRow } from "../lib/fts";
 import type { Env } from "../index";
 
-type BlameEntry = { u: string; n: string; t: string; c: string | null } | null;
-
 async function getCallerInfo(db: D1Database, projectId: string, userId: string): Promise<{ role: Role; name: string } | null> {
   const row = await db.prepare("SELECT role, name FROM project_members WHERE project_id = ? AND user_id = ? AND accepted = 1")
     .bind(projectId, userId).first<{ role: Role; name: string }>();
   return row ? { role: row.role, name: row.name } : null;
-}
-
-function computeBlame(
-  oldLines: string[],
-  newLines: string[],
-  oldBlame: BlameEntry[],
-  current: { u: string; n: string; t: string; c: string | null },
-): BlameEntry[] {
-  const m = oldLines.length;
-  const n = newLines.length;
-
-  if (m > 3000 || n > 3000) {
-    return newLines.map((line, i) =>
-      i < m && line === oldLines[i] ? (oldBlame[i] ?? null) : current,
-    );
-  }
-
-  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      dp[i][j] = oldLines[i - 1] === newLines[j - 1]
-        ? dp[i - 1][j - 1] + 1
-        : Math.max(dp[i - 1][j], dp[i][j - 1]);
-    }
-  }
-
-  const matchMap = new Map<number, number>();
-  let i = m, j = n;
-  while (i > 0 && j > 0) {
-    if (oldLines[i - 1] === newLines[j - 1]) {
-      matchMap.set(j - 1, i - 1);
-      i--; j--;
-    } else if (dp[i - 1][j] >= dp[i][j - 1]) {
-      i--;
-    } else {
-      j--;
-    }
-  }
-
-  return newLines.map((_, idx) => {
-    const oldIdx = matchMap.get(idx);
-    return oldIdx !== undefined ? (oldBlame[oldIdx] ?? null) : current;
-  });
 }
 
 export async function handleDocs(
@@ -236,16 +191,14 @@ export async function handleDocs(
     }
     const row = await env.DB.prepare("SELECT * FROM docs WHERE id = ?").bind(docId).first<Doc>();
     if (!row) return errorResponse(Errors.NOT_FOUND);
-    const [r2Content, r2Blame] = await Promise.all([
-      env.ASSETS.get(`${meta.project_id}/${docId}`),
-      env.ASSETS.get(`${meta.project_id}/${docId}.blame`),
-    ]);
+    const r2Content = await env.ASSETS.get(`${meta.project_id}/${docId}`);
     const content = r2Content ? await r2Content.text() : "";
-    const blame: BlameEntry[] = r2Blame ? JSON.parse(await r2Blame.text()) : [];
     const fm = parseFrontmatter(content);
     const display_title = fm.title ?? null;
     const hide_title = fm.hide_title ?? null;
-    return okResponse({ ...row, content, blame, myRole: caller.role, myPermission, display_title, hide_title });
+    const description = fm.description ?? null;
+    const image = fm.image ?? null;
+    return okResponse({ ...row, content, myRole: caller.role, myPermission, display_title, hide_title, description, image });
   }
 
   // PUT /docs/:id — editor or above
@@ -276,24 +229,13 @@ export async function handleDocs(
     }
 
     const now = new Date().toISOString();
-    let returnContent: string | undefined;
+    let savedContent: string | undefined;
 
     if (body.content !== undefined) {
-      returnContent = body.content;
-      const blameKey = `${doc.project_id}/${docId}.blame`;
-      const [oldR2, oldBlameR2] = await Promise.all([
-        env.ASSETS.get(`${doc.project_id}/${docId}`),
-        env.ASSETS.get(blameKey),
-      ]);
+      const oldR2 = await env.ASSETS.get(`${doc.project_id}/${docId}`);
       const oldContent = oldR2 ? await oldR2.text() : "";
       if (body.content !== oldContent) {
-        const oldBlame: BlameEntry[] = oldBlameR2 ? JSON.parse(await oldBlameR2.text()) : [];
-        const newBlame = computeBlame(
-          oldContent.split("\n"),
-          body.content.split("\n"),
-          oldBlame,
-          { u: user.userId, n: caller.name, t: now, c: body.changelog ?? null },
-        );
+        savedContent = body.content;
 
         // Collect collab contributors (clears the DO's tracked set for the next session)
         let contributorsJson: string | null = null;
@@ -317,7 +259,6 @@ export async function handleDocs(
         const revisionId = crypto.randomUUID();
         await Promise.all([
           env.ASSETS.put(`${doc.project_id}/${docId}`, body.content),
-          env.ASSETS.put(blameKey, JSON.stringify(newBlame)),
           env.ASSETS.put(`${doc.project_id}/${docId}/v/${revisionId}`, body.content),
         ]);
         await env.DB.prepare(
@@ -333,45 +274,51 @@ export async function handleDocs(
     const newSidebarPosition = newFm !== undefined ? (newFm.sidebar_position ?? null) : undefined;
     const newTags = newFm !== undefined ? (newFm.tags ? JSON.stringify(newFm.tags) : null) : undefined;
 
-    await env.DB.prepare(
-      "UPDATE docs SET title = COALESCE(?, title), published_at = ?, show_heading = COALESCE(?, show_heading), show_last_updated = COALESCE(?, show_last_updated), updated_at = ? WHERE id = ?",
-    ).bind(body.title ?? null, body.publishedAt ?? null, showHeading, showLastUpdated, now, docId).run();
-
-    if (newSidebarPosition !== undefined) {
-      await env.DB.prepare("UPDATE docs SET sidebar_position = ? WHERE id = ?")
-        .bind(newSidebarPosition, docId).run();
-    }
-
-    if (newTags !== undefined) {
-      await env.DB.prepare("UPDATE docs SET tags = ? WHERE id = ?")
-        .bind(newTags, docId).run();
-    }
-
-    if (body.folderId !== undefined) {
-      await env.DB.prepare("UPDATE docs SET folder_id = ? WHERE id = ?")
-        .bind(body.folderId, docId).run();
-    }
+    // Build dynamic SET clause. Splitting published_at out of the COALESCE
+    // group is required: an undefined publishedAt should leave the column
+    // untouched, but null is a meaningful explicit unpublish, so we can't use
+    // COALESCE there.
+    const sets: string[] = [];
+    const binds: unknown[] = [];
+    if (body.title !== undefined) { sets.push("title = ?"); binds.push(body.title); }
+    if (body.publishedAt !== undefined) { sets.push("published_at = ?"); binds.push(body.publishedAt); }
+    if (showHeading !== null) { sets.push("show_heading = ?"); binds.push(showHeading); }
+    if (showLastUpdated !== null) { sets.push("show_last_updated = ?"); binds.push(showLastUpdated); }
+    if (newSidebarPosition !== undefined) { sets.push("sidebar_position = ?"); binds.push(newSidebarPosition); }
+    if (newTags !== undefined) { sets.push("tags = ?"); binds.push(newTags); }
+    if (body.folderId !== undefined) { sets.push("folder_id = ?"); binds.push(body.folderId); }
+    sets.push("updated_at = ?");
+    binds.push(now);
+    binds.push(docId);
+    await env.DB.prepare(`UPDATE docs SET ${sets.join(", ")} WHERE id = ?`).bind(...binds).run();
 
     // Title or folder changes affect how *other* docs' wikilinks resolve, so the project-wide index must be rebuilt.
     if ((body.title && body.title !== doc.title) || body.folderId !== undefined) {
       await invalidateProjectGraphIndex(env, doc.project_id);
     }
 
-    if (returnContent === undefined) {
-      const r2Object = await env.ASSETS.get(`${doc.project_id}/${docId}`);
-      returnContent = r2Object ? await r2Object.text() : "";
+    // Only re-index FTS when the body changed (title or content). Settings-only
+    // toggles don't affect search.
+    if (body.title !== undefined || savedContent !== undefined) {
+      const ftsContent = savedContent ?? (await (async () => {
+        const r2 = await env.ASSETS.get(`${doc.project_id}/${docId}`);
+        return r2 ? await r2.text() : "";
+      })());
+      await upsertFtsRow(env.DB, docId, doc.project_id, body.title ?? doc.title, ftsContent);
     }
-    await upsertFtsRow(env.DB, docId, doc.project_id, body.title ?? doc.title, returnContent);
+
     const updated = {
       ...doc,
       title: body.title ?? doc.title,
-      published_at: body.publishedAt ?? null,
+      published_at: body.publishedAt !== undefined ? body.publishedAt : doc.published_at,
       show_heading: showHeading !== null ? showHeading : doc.show_heading,
       show_last_updated: showLastUpdated !== null ? showLastUpdated : doc.show_last_updated,
       folder_id: body.folderId !== undefined ? body.folderId : doc.folder_id,
       updated_at: now,
     };
-    return okResponse({ ...updated, content: returnContent });
+    // Only echo content when it was sent. Clients toggling settings already
+    // have the content locally and merge non-content fields into existing state.
+    return okResponse(savedContent !== undefined ? { ...updated, content: savedContent } : updated);
   }
 
   // DELETE /docs/:id — editor or above
@@ -390,7 +337,6 @@ export async function handleDocs(
       .bind(docId).all<{ id: string }>();
     await Promise.all([
       env.ASSETS.delete(`${doc.project_id}/${docId}`),
-      env.ASSETS.delete(`${doc.project_id}/${docId}.blame`),
       ...revisions.results.map(r => env.ASSETS.delete(`${doc.project_id}/${docId}/v/${r.id}`)),
     ]);
     await env.DB.prepare("DELETE FROM docs WHERE id = ?").bind(docId).run();

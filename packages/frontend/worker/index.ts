@@ -58,6 +58,24 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+// Resolve a frontmatter `image:` value into an absolute URL safe for
+// `<meta property="og:image">`. OG consumers (Slack, Twitter, Discord) only
+// follow absolute URLs, so anything relative gets the request origin prepended.
+// `/api/files/<id>` paths are rewritten to the public-files endpoint with the
+// project context, mirroring AuthenticatedImage's client-side rewrite.
+export function resolveImageUrl(raw: string, requestUrl: URL, projectId: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (trimmed.startsWith("/api/files/")) {
+    let publicPath = trimmed.replace("/api/files/", "/api/public/files/");
+    publicPath += (publicPath.includes("?") ? "&" : "?") + `projectId=${encodeURIComponent(projectId)}`;
+    return `${requestUrl.origin}${publicPath}`;
+  }
+  if (trimmed.startsWith("/")) return `${requestUrl.origin}${trimmed}`;
+  return null;
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     try {
@@ -87,15 +105,22 @@ export default {
             const json = await metaRes.json<{
               ok: boolean;
               data?: {
-                doc: { title: string; display_title: string | null; content: string };
-                project: { name: string };
+                doc: {
+                  title: string;
+                  display_title: string | null;
+                  description: string | null;
+                  image: string | null;
+                  content: string;
+                };
+                project: { id: string; name: string };
               };
             }>();
             if (json.ok && json.data) {
               const { doc, project } = json.data;
               const docTitle = doc.display_title ?? doc.title;
               const pageTitle = `${docTitle} - ${project.name}`;
-              const description = extractFirstParagraph(doc.content);
+              const description = doc.description ?? extractFirstParagraph(doc.content);
+              const ogImage = doc.image ? resolveImageUrl(doc.image, url, project.id) : null;
 
               const indexRes = await env.ASSETS.fetch(
                 new Request(new URL("/", request.url).toString(), request),
@@ -107,6 +132,7 @@ export default {
                   `<meta property="og:title" content="${escapeHtml(pageTitle)}" />`,
                   description ? `<meta property="og:description" content="${escapeHtml(description)}" />` : "",
                   description ? `<meta name="description" content="${escapeHtml(description)}" />` : "",
+                  ogImage ? `<meta property="og:image" content="${escapeHtml(ogImage)}" />` : "",
                 ].filter(Boolean).join("\n");
                 html = html.replace(/<\/head>/, `${ogTags}\n</head>`);
                 const response = new Response(html, {

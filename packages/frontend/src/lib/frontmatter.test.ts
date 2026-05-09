@@ -74,13 +74,39 @@ describe("parseFrontmatter", () => {
   });
 
   it("parses multiple fields together", () => {
-    const md = "---\ntitle: My Doc\nsidebar_position: 1\nhide_title: true\ntags: [a, b]\n---\n";
+    const md = "---\ntitle: My Doc\nsidebar_position: 1\nhide_title: true\ntags: [a, b]\ndescription: A summary.\nimage: /api/files/abc/content\n---\n";
     expect(parseFrontmatter(md)).toEqual({
       title: "My Doc",
       sidebar_position: 1,
       hide_title: true,
       tags: ["a", "b"],
+      description: "A summary.",
+      image: "/api/files/abc/content",
     });
+  });
+
+  it("parses unquoted description", () => {
+    expect(parseFrontmatter("---\ndescription: A short summary.\n---\n")).toEqual({ description: "A short summary." });
+  });
+
+  it("parses double-quoted description, stripping quotes", () => {
+    expect(parseFrontmatter("---\ndescription: \"With: a colon\"\n---\n")).toEqual({ description: "With: a colon" });
+  });
+
+  it("ignores empty description", () => {
+    expect(parseFrontmatter("---\ndescription:\n---\n")).toEqual({});
+  });
+
+  it("parses image with file path", () => {
+    expect(parseFrontmatter("---\nimage: /api/files/abc123/content\n---\n")).toEqual({ image: "/api/files/abc123/content" });
+  });
+
+  it("parses image with quoted absolute URL", () => {
+    expect(parseFrontmatter("---\nimage: \"https://example.com/cover.png\"\n---\n")).toEqual({ image: "https://example.com/cover.png" });
+  });
+
+  it("ignores empty image", () => {
+    expect(parseFrontmatter("---\nimage:\n---\n")).toEqual({});
   });
 
   it("ignores unknown keys", () => {

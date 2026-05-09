@@ -4,7 +4,7 @@ import { Image, FileCode, FileArchive, FileText, File, Music, Download, Link, Ch
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { AuthenticatedImage } from "@/components/AuthenticatedImage";
-import { getToken } from "@/lib/auth";
+import { apiFetch, apiFetchJson } from "@/lib/apiFetch";
 import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
 
 interface FileRecord {
@@ -53,12 +53,10 @@ export function FilePage() {
 
   useEffect(() => {
     if (!fileId) return;
-    const token = getToken();
-    fetch(`/api/files/${fileId}`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json())
-      .then((json: { ok: boolean; data?: FileRecord }) => {
-        if (json.ok && json.data) {
-          setFile(json.data);
+    apiFetchJson<FileRecord>(`/api/files/${fileId}`)
+      .then(result => {
+        if (result.ok && result.data) {
+          setFile(result.data);
           const rawPath: { id: string | null; name: string }[] = location.state?.folderPath ?? [];
           const basePath = location.state?.basePath ?? `/projects/${projectId}`;
           // Folder ancestry without the project crumb. FileManager prefixes it; direct nav doesn't.
@@ -75,9 +73,9 @@ export function FilePage() {
               state: { restorePath: [{ id: null, name: projectName }, ...folderAncestry.slice(0, i + 1)] },
             }),
           }));
-          setBreadcrumbs([projectCrumb, ...folderCrumbs, { id: fileId ?? null, name: json.data.name }]);
-          if (json.data.mime_type.startsWith("audio/")) {
-            fetch(`/api/files/${fileId}/content`, { headers: { Authorization: `Bearer ${token}` } })
+          setBreadcrumbs([projectCrumb, ...folderCrumbs, { id: fileId ?? null, name: result.data.name }]);
+          if (result.data.mime_type.startsWith("audio/")) {
+            apiFetch(`/api/files/${fileId}/content`)
               .then(r => r.blob())
               .then(blob => setAudioBlobUrl(URL.createObjectURL(blob)))
               .catch(() => {});
@@ -95,10 +93,7 @@ export function FilePage() {
     if (!file) return;
     setDownloading(true);
     try {
-      const token = getToken();
-      const res = await fetch(`/api/files/${file.id}/content`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await apiFetch(`/api/files/${file.id}/content`);
       if (!res.ok) return;
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);

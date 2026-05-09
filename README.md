@@ -12,7 +12,7 @@ A collaborative documentation platform built on Cloudflare's edge infrastructure
 - Syntax highlighting via Shiki
 - Custom callout blocks (note, warning, tip, error, success)
 - Real-time collaborative editing (Yjs CRDT over WebSocket)
-- Full revision history with line-by-line blame
+- Full revision history with per-save author attribution
 
 **Projects & Organisation**
 - Project-level publishing with clean vanity slugs

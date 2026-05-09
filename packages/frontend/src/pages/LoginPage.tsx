@@ -51,11 +51,25 @@ function adminHandoffErrorMessage(error?: string): string {
 
 const annexWordmark = <img src="/annexwordmark.svg" alt="Annex" className="h-10 w-auto invert" />;
 
+// Accept only same-origin relative paths. Rejects protocol-relative (`//evil`),
+// schemed (`https://…`), and anything that doesn't start with a single slash.
+function safeNextPath(raw: string | null): string | null {
+  if (!raw) return null;
+  if (!raw.startsWith("/")) return null;
+  if (raw.startsWith("//")) return null;
+  return raw;
+}
+
 export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const from = (location.state as { from?: string } | null)?.from ?? "/dashboard";
   const searchParams = new URLSearchParams(location.search);
+  // Prefer the ?next= param set by apiFetch when it forced a sign-out; fall
+  // back to React Router state (set by direct navigations to /login); finally
+  // default to /dashboard.
+  const nextParam = safeNextPath(searchParams.get("next"));
+  const fromState = (location.state as { from?: string } | null)?.from;
+  const from = nextParam ?? fromState ?? "/dashboard";
   const adminReturnTo = normalizeAdminReturnTo(searchParams.get("returnTo"));
   const logoutRequested = searchParams.get("logout") === "1";
   const reasonParam = searchParams.get("reason");

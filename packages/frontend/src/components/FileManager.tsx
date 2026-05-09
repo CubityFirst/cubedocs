@@ -12,7 +12,7 @@ import { ResizableTable, ResizableTableRow } from "@/components/ui/resizable-tab
 import { Badge } from "@/components/ui/badge";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { useToast } from "@/hooks/use-toast";
-import { getToken } from "@/lib/auth";
+import { apiFetch, apiFetchJson } from "@/lib/apiFetch";
 import { UserProfileCard } from "@/components/UserProfileCard";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -171,37 +171,14 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
   }, [currentFolderId, projectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (folders.length === 0) { setFolderCounts(new Map()); return; }
-    const token = getToken();
-    if (!token) return;
-    fetch(`/api/folders/counts?projectId=${projectId}&type=docs`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json() as Promise<{ ok: boolean; data?: Record<string, { docs: number; folders: number }> }>)
-      .then(json => {
-        if (!json.ok || !json.data) return;
-        const next = new Map<string, { files: number; folders: number }>();
-        for (const folder of folders) {
-          const c = json.data[folder.id];
-          if (c) next.set(folder.id, { files: c.docs, folders: c.folders });
-        }
-        setFolderCounts(next);
-      })
-      .catch(() => {});
-  }, [folders]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
     if (!searchQuery.trim()) {
       setSearchResults(null);
       return;
     }
     const timer = setTimeout(async () => {
-      const token = getToken();
-      if (!token) return;
       const folderParam = currentFolderId ? `&rootFolderId=${currentFolderId}` : "";
-      const res = await fetch(`/api/docs?projectId=${projectId}&q=${encodeURIComponent(searchQuery.trim())}${folderParam}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const json = await res.json() as { ok: boolean; data?: DocItem[] };
-      if (json.ok && json.data) setSearchResults(json.data);
+      const result = await apiFetchJson<DocItem[]>(`/api/docs?projectId=${projectId}&q=${encodeURIComponent(searchQuery.trim())}${folderParam}`);
+      if (result.ok && result.data) setSearchResults(result.data);
     }, 250);
     return () => clearTimeout(timer);
   }, [searchQuery, projectId, currentFolderId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -233,32 +210,25 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
       setFiles([]);
     }, 150);
 
-    const token = getToken();
-    if (!token) return;
-
-    const folderParam = currentFolderId ? `&parentId=${currentFolderId}` : "";
-    const folderIdParam = currentFolderId ? `&folderId=${currentFolderId}` : "&folderId=";
-
-    const [foldersRes, docsRes, filesRes] = await Promise.all([
-      fetch(`/api/folders?projectId=${projectId}&type=docs${folderParam}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      }),
-      fetch(`/api/docs?projectId=${projectId}${folderIdParam}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      }),
-      fetch(`/api/files?projectId=${projectId}${folderIdParam}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      }),
-    ]);
-
-    const foldersJson = await foldersRes.json() as { ok: boolean; data?: FolderItem[] };
-    const docsJson = await docsRes.json() as { ok: boolean; data?: DocItem[] };
-    const filesJson = await filesRes.json() as { ok: boolean; data?: FileItem[] };
+    const folderParam = currentFolderId ? `?folderId=${currentFolderId}` : "";
+    const result = await apiFetchJson<{
+      folders: FolderItem[];
+      docs: DocItem[];
+      files: FileItem[];
+      folderCounts: Record<string, { docs: number; folders: number }>;
+    }>(`/api/projects/${projectId}/contents${folderParam}`);
 
     if (loadingTimerRef.current) { clearTimeout(loadingTimerRef.current); loadingTimerRef.current = null; }
-    if (foldersJson.ok && foldersJson.data) setFolders(foldersJson.data);
-    if (docsJson.ok && docsJson.data) setDocs(docsJson.data);
-    if (filesJson.ok && filesJson.data) setFiles(filesJson.data);
+    if (result.ok && result.data) {
+      setFolders(result.data.folders);
+      setDocs(result.data.docs);
+      setFiles(result.data.files);
+      const counts = new Map<string, { files: number; folders: number }>();
+      for (const [id, c] of Object.entries(result.data.folderCounts)) {
+        counts.set(id, { files: c.docs, folders: c.folders });
+      }
+      setFolderCounts(counts);
+    }
     setLoading(false);
   }
 
@@ -277,15 +247,13 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
     if (!newFolderName.trim() || creatingFolder) return;
     setCreatingFolder(true);
     try {
-      const token = getToken();
-      const res = await fetch("/api/folders", {
+      const result = await apiFetchJson<FolderItem>("/api/folders", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: newFolderName.trim(), projectId, parentId: currentFolderId, type: "docs" }),
       });
-      const json = await res.json() as { ok: boolean; data?: FolderItem };
-      if (json.ok && json.data) {
-        setFolders(prev => [...prev, json.data!].sort((a, b) => a.name.localeCompare(b.name)));
+      if (result.ok && result.data) {
+        setFolders(prev => [...prev, result.data!].sort((a, b) => a.name.localeCompare(b.name)));
         setNewFolderName("");
         setShowNewFolder(false);
       }
@@ -298,16 +266,14 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
     if (creatingDoc) return;
     setCreatingDoc(true);
     try {
-      const token = getToken();
-      const res = await fetch("/api/docs", {
+      const result = await apiFetchJson<DocItem & { id: string }>("/api/docs", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: "Untitled", content: "", projectId, folderId: currentFolderId }),
       });
-      const json = await res.json() as { ok: boolean; data?: DocItem & { id: string } };
-      if (json.ok && json.data) {
-        onDocCreated(json.data);
-        navigate(`/projects/${projectId}/docs/${json.data.id}`, { state: { isNew: true, folderPath: path } });
+      if (result.ok && result.data) {
+        onDocCreated(result.data);
+        navigate(`/projects/${projectId}/docs/${result.data.id}`, { state: { isNew: true, folderPath: path } });
       }
     } finally {
       setCreatingDoc(false);
@@ -315,34 +281,39 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
   }
 
   async function moveDoc(docId: string, targetFolderId: string | null) {
-    const token = getToken();
-    await fetch(`/api/docs/${docId}`, {
+    if (targetFolderId === currentFolderId) return;
+    setDocs(prev => prev.filter(d => d.id !== docId));
+    setSelectedDocs(prev => { if (!prev.has(docId)) return prev; const next = new Set(prev); next.delete(docId); return next; });
+    const result = await apiFetchJson(`/api/docs/${docId}`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ folderId: targetFolderId }),
     });
-    await loadContents();
+    if (!result.ok) {
+      toast({ title: "Failed to move document.", variant: "destructive" });
+      await loadContents();
+    }
   }
 
   async function moveFolder(folderId: string, targetParentId: string | null) {
-    const token = getToken();
-    await fetch(`/api/folders/${folderId}`, {
+    if (targetParentId === currentFolderId) return;
+    setFolders(prev => prev.filter(f => f.id !== folderId));
+    const result = await apiFetchJson(`/api/folders/${folderId}`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ parentId: targetParentId }),
     });
-    await loadContents();
+    if (!result.ok) {
+      toast({ title: "Failed to move folder.", variant: "destructive" });
+      await loadContents();
+    }
   }
 
   async function downloadDoc(doc: DocItem) {
-    const token = getToken();
-    const res = await fetch(`/api/docs/${doc.id}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const json = await res.json() as { ok: boolean; data?: { content: string; title: string } };
-    if (!json.ok || !json.data) return;
-    const content = json.data.content ?? "";
-    const title = json.data.title || "Untitled";
+    const result = await apiFetchJson<{ content: string; title: string }>(`/api/docs/${doc.id}`);
+    if (!result.ok || !result.data) return;
+    const content = result.data.content ?? "";
+    const title = result.data.title || "Untitled";
     const filename = `${title.replace(/[<>:"/\\|?*]/g, "_")}.md`;
     const blob = new Blob([content], { type: "text/markdown" });
     const url = URL.createObjectURL(blob);
@@ -364,14 +335,12 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
     setSummary(null);
     setSummarizing(true);
     try {
-      const token = getToken();
-      const res = await fetch("/api/ai/summarize", {
+      const result = await apiFetchJson<{ summary: string }>("/api/ai/summarize", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ docId: doc.id }),
       });
-      const json = await res.json() as { ok: boolean; data?: { summary: string } };
-      if (json.ok && json.data) setSummary(json.data.summary);
+      if (result.ok && result.data) setSummary(result.data.summary);
       else setSummary("Failed to generate summary.");
     } catch {
       setSummary("Failed to generate summary.");
@@ -385,8 +354,7 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
   }
 
   async function downloadFile(file: FileItem) {
-    const token = getToken();
-    const res = await fetch(`/api/files/${file.id}/content`, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await apiFetch(`/api/files/${file.id}/content`);
     if (!res.ok) return;
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
@@ -398,33 +366,41 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
   }
 
   async function moveFile(fileId: string, targetFolderId: string | null) {
-    const token = getToken();
-    await fetch(`/api/files/${fileId}`, {
+    if (targetFolderId === currentFolderId) return;
+    setFiles(prev => prev.filter(f => f.id !== fileId));
+    setSelectedFiles(prev => { if (!prev.has(fileId)) return prev; const next = new Set(prev); next.delete(fileId); return next; });
+    const result = await apiFetchJson(`/api/files/${fileId}`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ folderId: targetFolderId }),
     });
-    await loadContents();
+    if (!result.ok) {
+      toast({ title: "Failed to move file.", variant: "destructive" });
+      await loadContents();
+    }
   }
 
   async function handleDeleteConfirmed() {
     if (deleting) return;
     setDeleting(true);
     setDeleteConfirmOpen(false);
-    const token = getToken();
     try {
-      await Promise.all([
-        ...[...selectedDocs].map(id =>
-          fetch(`/api/docs/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } })
-        ),
-        ...[...selectedFiles].map(id =>
-          fetch(`/api/files/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } })
-        ),
+      const docIds = [...selectedDocs];
+      const fileIds = [...selectedFiles];
+      const results = await Promise.all([
+        ...docIds.map(async id => ({ kind: "doc" as const, id, ok: (await apiFetch(`/api/docs/${id}`, { method: "DELETE" })).ok })),
+        ...fileIds.map(async id => ({ kind: "file" as const, id, ok: (await apiFetch(`/api/files/${id}`, { method: "DELETE" })).ok })),
       ]);
-      setDocs(prev => prev.filter(d => !selectedDocs.has(d.id)));
-      setFiles(prev => prev.filter(f => !selectedFiles.has(f.id)));
-      setSelectedDocs(new Set());
-      setSelectedFiles(new Set());
+      const deletedDocs = new Set(results.filter(r => r.kind === "doc" && r.ok).map(r => r.id));
+      const deletedFiles = new Set(results.filter(r => r.kind === "file" && r.ok).map(r => r.id));
+      const failed = results.filter(r => !r.ok).length;
+      setDocs(prev => prev.filter(d => !deletedDocs.has(d.id)));
+      setFiles(prev => prev.filter(f => !deletedFiles.has(f.id)));
+      setSelectedDocs(prev => { const next = new Set(prev); for (const id of deletedDocs) next.delete(id); return next; });
+      setSelectedFiles(prev => { const next = new Set(prev); for (const id of deletedFiles) next.delete(id); return next; });
+      if (failed > 0) {
+        toast({ title: `${failed} item${failed === 1 ? "" : "s"} couldn't be deleted.`, variant: "destructive" });
+      }
     } finally {
       setDeleting(false);
     }
@@ -434,29 +410,29 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
     e.preventDefault();
     if (!renameTarget || !renameName.trim() || renaming) return;
     setRenaming(true);
-    const token = getToken();
     try {
+      const trimmed = renameName.trim();
       if (renameTarget.type === "folder") {
-        await fetch(`/api/folders/${renameTarget.id}`, {
+        await apiFetch(`/api/folders/${renameTarget.id}`, {
           method: "PUT",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ name: renameName.trim() }),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: trimmed }),
         });
-        setFolders(prev => prev.map(f => f.id === renameTarget.id ? { ...f, name: renameName.trim() } : f));
+        setFolders(prev => prev.map(f => f.id === renameTarget.id ? { ...f, name: trimmed } : f));
       } else if (renameTarget.type === "doc") {
-        await fetch(`/api/docs/${renameTarget.id}`, {
+        await apiFetch(`/api/docs/${renameTarget.id}`, {
           method: "PUT",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ title: renameName.trim() }),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: trimmed }),
         });
-        setDocs(prev => prev.map(d => d.id === renameTarget.id ? { ...d, title: renameName.trim() } : d));
+        setDocs(prev => prev.map(d => d.id === renameTarget.id ? { ...d, title: trimmed } : d));
       } else {
-        await fetch(`/api/files/${renameTarget.id}`, {
+        await apiFetch(`/api/files/${renameTarget.id}`, {
           method: "PUT",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ name: renameName.trim() }),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: trimmed }),
         });
-        setFiles(prev => prev.map(f => f.id === renameTarget.id ? { ...f, name: renameName.trim() } : f));
+        setFiles(prev => prev.map(f => f.id === renameTarget.id ? { ...f, name: trimmed } : f));
       }
       setRenameTarget(null);
     } finally {
@@ -467,17 +443,16 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
   async function handleContextDelete() {
     if (!contextDeleteTarget || contextDeleting) return;
     setContextDeleting(true);
-    const token = getToken();
     const { type, id } = contextDeleteTarget;
     try {
       if (type === "folder") {
-        await fetch(`/api/folders/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+        await apiFetch(`/api/folders/${id}`, { method: "DELETE" });
         setFolders(prev => prev.filter(f => f.id !== id));
       } else if (type === "doc") {
-        await fetch(`/api/docs/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+        await apiFetch(`/api/docs/${id}`, { method: "DELETE" });
         setDocs(prev => prev.filter(d => d.id !== id));
       } else {
-        await fetch(`/api/files/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+        await apiFetch(`/api/files/${id}`, { method: "DELETE" });
         setFiles(prev => prev.filter(f => f.id !== id));
       }
       setContextDeleteTarget(null);
@@ -487,24 +462,20 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
   }
 
   const uploadFileAndCreateDoc = useCallback(async (file: File) => {
-    const token = getToken();
-    if (!token) return;
-
     setUploadingCount(c => c + 1);
     try {
       // .md files → import content as a new document
       if (file.name.endsWith(".md")) {
         const content = await file.text();
         const title = file.name.slice(0, -3) || "Untitled";
-        const docRes = await fetch("/api/docs", {
+        const docResult = await apiFetchJson<DocItem & { id: string }>("/api/docs", {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ title, content, projectId, folderId: currentFolderId }),
         });
-        const docJson = await docRes.json() as { ok: boolean; data?: DocItem & { id: string } };
-        if (docJson.ok && docJson.data) {
-          onDocCreated(docJson.data);
-          setDocs(prev => [...prev, docJson.data!].sort((a, b) => a.title.localeCompare(b.title)));
+        if (docResult.ok && docResult.data) {
+          onDocCreated(docResult.data);
+          setDocs(prev => [...prev, docResult.data!].sort((a, b) => a.title.localeCompare(b.title)));
         }
         return;
       }
@@ -514,14 +485,9 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
       form.append("file", file);
       form.append("projectId", projectId);
       if (currentFolderId) form.append("folderId", currentFolderId);
-      const uploadRes = await fetch("/api/files", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: form,
-      });
-      const uploadJson = await uploadRes.json() as { ok: boolean; data?: FileItem };
-      if (uploadJson.ok && uploadJson.data) {
-        setFiles(prev => [...prev, uploadJson.data!].sort((a, b) => a.name.localeCompare(b.name)));
+      const uploadResult = await apiFetchJson<FileItem>("/api/files", { method: "POST", body: form });
+      if (uploadResult.ok && uploadResult.data) {
+        setFiles(prev => [...prev, uploadResult.data!].sort((a, b) => a.name.localeCompare(b.name)));
       }
     } finally {
       setUploadingCount(c => c - 1);

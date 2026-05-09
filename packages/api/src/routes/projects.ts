@@ -110,6 +110,138 @@ export async function handleProjects(
     return okResponse({ id, name: body.name, ownerId: user.userId, createdAt: now }, 201);
   }
 
+  // GET /projects/:id/contents?folderId=… — bundled folder + doc + file listing
+  // for the FileManager view, plus project-wide folder counts. Replaces 4
+  // separate calls (folders, docs, files, folder-counts) with a single
+  // auth-checked round trip. Limited members see only docs they have shares
+  // for, the ancestor folders to those docs, no files, and no counts.
+  if (projectId && parts[1] === "contents" && request.method === "GET") {
+    const role = await getCallerRole(env.DB, projectId, user.userId);
+    if (role === null) return errorResponse(Errors.NOT_FOUND);
+
+    const folderId = url.searchParams.get("folderId");
+    const folderFilter: string | null = folderId ? folderId : null;
+    const isLimited = role === "limited";
+
+    type FolderRow = { id: string; name: string; type: string; project_id: string; parent_id: string | null; created_at: string };
+    type DocWithAuthor = {
+      id: string; title: string; folder_id: string | null; author_id: string;
+      created_at: string; updated_at: string; sidebar_position: number | null; tags: string | null;
+      author_name: string; author_role: string | null; is_home: number;
+    };
+    type FileRow = {
+      id: string; name: string; mime_type: string; size: number; project_id: string;
+      folder_id: string | null; uploaded_by: string; created_at: string;
+      uploader_name: string; uploader_role: string | null;
+    };
+    type CountRow = { folder_id: string; folders: number; docs: number };
+
+    const foldersQuery = isLimited
+      ? env.DB.prepare(
+          `WITH accessible_folder_ids AS (
+             SELECT DISTINCT d.folder_id
+             FROM docs d
+             JOIN doc_shares ds ON ds.doc_id = d.id AND ds.user_id = ?
+             WHERE d.project_id = ? AND d.folder_id IS NOT NULL
+           ),
+           ancestors(id, parent_id) AS (
+             SELECT f.id, f.parent_id FROM folders f WHERE f.id IN (SELECT folder_id FROM accessible_folder_ids)
+             UNION ALL
+             SELECT f.id, f.parent_id FROM folders f JOIN ancestors a ON f.id = a.parent_id
+           )
+           SELECT DISTINCT f.id, f.name, f.type, f.project_id, f.parent_id, f.created_at
+           FROM folders f
+           WHERE f.id IN (SELECT id FROM ancestors) AND f.project_id = ? AND f.type = 'docs'
+             AND f.parent_id IS ?
+           ORDER BY f.name ASC`,
+        ).bind(user.userId, projectId, projectId, folderFilter)
+      : (folderFilter
+          ? env.DB.prepare("SELECT * FROM folders WHERE project_id = ? AND parent_id = ? AND type = 'docs' ORDER BY name ASC")
+              .bind(projectId, folderFilter)
+          : env.DB.prepare("SELECT * FROM folders WHERE project_id = ? AND parent_id IS NULL AND type = 'docs' ORDER BY name ASC")
+              .bind(projectId));
+
+    const docSelect = `
+      SELECT d.id, d.title, d.folder_id, d.author_id, d.created_at, d.updated_at, d.sidebar_position, d.tags,
+        COALESCE(pm.name, d.author_id) AS author_name,
+        pm.role AS author_role,
+        CASE WHEN p.home_doc_id = d.id THEN 1 ELSE 0 END AS is_home
+      FROM docs d
+      LEFT JOIN project_members pm ON pm.project_id = d.project_id AND pm.user_id = d.author_id
+      LEFT JOIN projects p ON p.id = d.project_id
+    `;
+    const docOrder = "ORDER BY CASE WHEN d.sidebar_position IS NULL THEN 1 ELSE 0 END, d.sidebar_position ASC, d.title ASC";
+    const sharesJoin = "JOIN doc_shares ds ON ds.doc_id = d.id AND ds.user_id = ?";
+
+    const docsQuery = isLimited
+      ? (folderFilter
+          ? env.DB.prepare(`${docSelect} ${sharesJoin} WHERE d.project_id = ? AND d.folder_id = ? ${docOrder}`)
+              .bind(user.userId, projectId, folderFilter)
+          : env.DB.prepare(`${docSelect} ${sharesJoin} WHERE d.project_id = ? AND d.folder_id IS NULL ${docOrder}`)
+              .bind(user.userId, projectId))
+      : (folderFilter
+          ? env.DB.prepare(`${docSelect} WHERE d.project_id = ? AND d.folder_id = ? ${docOrder}`)
+              .bind(projectId, folderFilter)
+          : env.DB.prepare(`${docSelect} WHERE d.project_id = ? AND d.folder_id IS NULL ${docOrder}`)
+              .bind(projectId));
+
+    const fileSelect = `
+      SELECT f.id, f.name, f.mime_type, f.size, f.project_id, f.folder_id, f.uploaded_by, f.created_at,
+        COALESCE(pm.name, f.uploaded_by) AS uploader_name,
+        pm.role AS uploader_role
+      FROM files f
+      LEFT JOIN project_members pm ON pm.project_id = f.project_id AND pm.user_id = f.uploaded_by
+    `;
+    const filesQuery = isLimited
+      ? null
+      : (folderFilter
+          ? env.DB.prepare(`${fileSelect} WHERE f.project_id = ? AND f.folder_id = ? ORDER BY f.name ASC`)
+              .bind(projectId, folderFilter)
+          : env.DB.prepare(`${fileSelect} WHERE f.project_id = ? AND f.folder_id IS NULL ORDER BY f.name ASC`)
+              .bind(projectId));
+
+    const countsQuery = isLimited
+      ? null
+      : env.DB.prepare(`
+          WITH RECURSIVE subtree(ancestor_id, folder_id) AS (
+            SELECT id, id FROM folders WHERE project_id = ? AND type = 'docs'
+            UNION ALL
+            SELECT s.ancestor_id, f.id
+              FROM folders f JOIN subtree s ON f.parent_id = s.folder_id
+             WHERE f.project_id = ? AND f.type = 'docs'
+          )
+          SELECT
+            s.ancestor_id AS folder_id,
+            COUNT(DISTINCT CASE WHEN s.folder_id != s.ancestor_id THEN s.folder_id END) AS folders,
+            COUNT(i.id) AS docs
+          FROM subtree s
+          LEFT JOIN docs i ON i.folder_id = s.folder_id AND i.project_id = ?
+          GROUP BY s.ancestor_id
+        `).bind(projectId, projectId, projectId);
+
+    // db.batch runs all statements in a single round-trip to D1 instead of N
+    // separate RPCs. Limited members skip files + counts (they have no access
+    // to either), so the statement list shrinks accordingly.
+    const stmts = isLimited
+      ? [foldersQuery, docsQuery]
+      : [foldersQuery, docsQuery, filesQuery!, countsQuery!];
+    const batchResults = await env.DB.batch(stmts);
+    const foldersRes = batchResults[0] as D1Result<FolderRow>;
+    const docsRes = batchResults[1] as D1Result<DocWithAuthor>;
+    const filesRes = isLimited ? { results: [] as FileRow[] } : batchResults[2] as D1Result<FileRow>;
+    const countsRes = isLimited ? { results: [] as CountRow[] } : batchResults[3] as D1Result<CountRow>;
+
+    const folderCounts: Record<string, { docs: number; folders: number }> = {};
+    for (const r of countsRes.results) folderCounts[r.folder_id] = { docs: r.docs, folders: r.folders };
+
+    return okResponse({
+      folders: foldersRes.results,
+      docs: docsRes.results,
+      files: filesRes.results,
+      folderCounts,
+    });
+  }
+
   // GET /projects/:id — any member can view
   if (projectId && request.method === "GET") {
     const role = await getCallerRole(env.DB, projectId, user.userId);
@@ -242,10 +374,7 @@ export async function handleProjects(
 
     // Delete R2 assets in parallel
     await Promise.all([
-      ...docIds.flatMap(docId => [
-        env.ASSETS.delete(`${projectId}/${docId}`),
-        env.ASSETS.delete(`${projectId}/${docId}.blame`),
-      ]),
+      ...docIds.map(docId => env.ASSETS.delete(`${projectId}/${docId}`)),
       ...revisions.results.map(r => env.ASSETS.delete(`${projectId}/${r.asset_id}/v/${r.id}`)),
       ...files.results.map(f => env.ASSETS.delete(`files/${f.id}`)),
       env.ASSETS.delete(`site-logos/${projectId}`),

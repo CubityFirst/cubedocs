@@ -76,4 +76,10 @@ describe("remarkImageAttrs", () => {
     expect(para.children).toHaveLength(2);
     expect(para.children![1].value).toBe(" a caption");
   });
+
+  it("appends px to bare numeric values", () => {
+    const tree = makePara("img.png", "{width=200 height=50}");
+    run(tree);
+    expect(imageStyle(tree)).toBe("width: 200px; height: 50px");
+  });
 });

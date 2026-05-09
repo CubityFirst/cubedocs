@@ -59,12 +59,28 @@ export async function handleFiles(
     const obj = await env.ASSETS.get(`files/${fileId}`);
     if (!obj) return errorResponse(Errors.NOT_FOUND);
 
+    // File content is immutable — file_id is keyed to a single uploaded blob, and
+    // PUT /files/:id only mutates name/folder. Safe to let the browser cache for
+    // a few minutes even on authenticated reads (Cache-Control: private keeps it
+    // off shared caches). The ETag enables 304 revalidation after expiry.
+    const ifNoneMatch = request.headers.get("If-None-Match");
+    const etag = `"${fileId}"`;
+    if (ifNoneMatch === etag) {
+      return new Response(null, {
+        status: 304,
+        headers: {
+          "ETag": etag,
+          "Cache-Control": canUsePublishedAccess ? "public, max-age=3600" : "private, max-age=300, must-revalidate",
+        },
+      });
+    }
     return new Response(await obj.arrayBuffer(), {
       status: 200,
       headers: {
         "Content-Type": meta.mime_type || "application/octet-stream",
         "Content-Disposition": `inline; filename="${meta.name}"`,
-        "Cache-Control": canUsePublishedAccess ? "public, max-age=3600" : "private, no-store",
+        "Cache-Control": canUsePublishedAccess ? "public, max-age=3600" : "private, max-age=300, must-revalidate",
+        "ETag": etag,
       },
     });
   }
@@ -171,7 +187,15 @@ export async function handleFiles(
       await env.DB.prepare("UPDATE files SET folder_id = ? WHERE id = ?")
         .bind(body.folderId ?? null, fileId).run();
     }
-    return okResponse({ updated: true });
+    const updated = await env.DB.prepare(`
+      SELECT f.id, f.name, f.mime_type, f.size, f.project_id, f.folder_id, f.uploaded_by, f.created_at,
+        COALESCE(pm.name, f.uploaded_by) AS uploader_name,
+        pm.role AS uploader_role
+      FROM files f
+      LEFT JOIN project_members pm ON pm.project_id = f.project_id AND pm.user_id = f.uploaded_by
+      WHERE f.id = ?
+    `).bind(fileId).first<FileRecord>();
+    return okResponse(updated);
   }
 
   // DELETE /files/:id — editor+

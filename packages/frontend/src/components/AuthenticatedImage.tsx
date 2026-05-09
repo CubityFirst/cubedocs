@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { getToken } from "@/lib/auth";
+import { apiFetch } from "@/lib/apiFetch";
 import { Badge } from "@/components/ui/badge";
 import { ImageOff } from "lucide-react";
 
@@ -7,6 +7,28 @@ interface Props extends React.ComponentPropsWithoutRef<"img"> {
   projectId?: string;
   /** Public mode: rewrites /api/files/ to /api/public/files/?projectId= and skips auth. */
   isPublic?: boolean;
+}
+
+// Module-level dedup so concurrent renders of the same image src share a single
+// network fetch. The browser HTTP cache covers subsequent renders within
+// max-age, but the *first* render of a doc with N copies of one image used to
+// fire N parallel fetches because the browser doesn't always coalesce
+// concurrent fetch() calls. We hold the resolved promise briefly after
+// resolution so adjacent component mounts can hit the same in-memory blob.
+const inflight = new Map<string, Promise<Blob | null>>();
+
+function getImageBlob(src: string): Promise<Blob | null> {
+  const existing = inflight.get(src);
+  if (existing) return existing;
+  const p = apiFetch(src).then(r => r.ok ? r.blob() : null, () => null);
+  inflight.set(src, p);
+  // Evict the entry shortly after resolution. 5s comfortably covers a single
+  // document's render cycle without pinning large Blobs in memory afterward.
+  // The `=== p` guard avoids racing a newer entry that replaced this one.
+  p.then(() => setTimeout(() => {
+    if (inflight.get(src) === p) inflight.delete(src);
+  }, 5_000));
+  return p;
 }
 
 export function AuthenticatedImage({ src, alt, projectId, isPublic, ...props }: Props) {
@@ -36,18 +58,15 @@ export function AuthenticatedImage({ src, alt, projectId, isPublic, ...props }: 
     let blobUrl: string | null = null;
     let cancelled = false;
     const fetchSrc = projectId ? `${src}?projectId=${projectId}` : src;
-    fetch(fetchSrc, { headers: { Authorization: `Bearer ${getToken()}` } })
-      .then(r => r.ok ? r.blob() : null)
-      .then(blob => {
-        if (cancelled) return;
-        if (blob) {
-          blobUrl = URL.createObjectURL(blob);
-          setResolvedSrc(blobUrl);
-        } else {
-          setFailed(true);
-        }
-      })
-      .catch(() => { if (!cancelled) setFailed(true); });
+    getImageBlob(fetchSrc).then(blob => {
+      if (cancelled) return;
+      if (blob) {
+        blobUrl = URL.createObjectURL(blob);
+        setResolvedSrc(blobUrl);
+      } else {
+        setFailed(true);
+      }
+    });
     return () => {
       cancelled = true;
       if (blobUrl) URL.revokeObjectURL(blobUrl);

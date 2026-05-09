@@ -132,7 +132,7 @@ export async function handlePublic(
     }
 
     return okResponse({
-      doc: { id: doc.id, title: doc.title, display_title: fm.title ?? null, hide_title: fm.hide_title ?? null, content, showHeading: doc.show_heading !== 0, showLastUpdated: doc.show_last_updated !== 0, updatedAt: doc.updated_at },
+      doc: { id: doc.id, title: doc.title, display_title: fm.title ?? null, hide_title: fm.hide_title ?? null, description: fm.description ?? null, image: fm.image ?? null, content, showHeading: doc.show_heading !== 0, showLastUpdated: doc.show_last_updated !== 0, updatedAt: doc.updated_at },
       sitePublished,
       project: { id: project.id, name: project.name, vanity_slug: project.vanity_slug ?? null, home_doc_id: project.home_doc_id ?? null, graph_enabled: project.graph_enabled, published_graph_enabled: project.published_graph_enabled, logo_updated_at: project.logo_updated_at ?? null },
       docs,

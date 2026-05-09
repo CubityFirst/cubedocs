@@ -1,8 +1,12 @@
+// NOTE: kept byte-identical with packages/api/src/lib/frontmatter.ts (minus
+// stripFrontmatter, which only the API uses). When adding a key, update both.
 export interface Frontmatter {
   sidebar_position?: number;
   title?: string;
   hide_title?: boolean;
   tags?: string[];
+  description?: string;
+  image?: string;
 }
 
 const FM_REGEX = /^---\r?\n([\s\S]*?)\r?\n---(\r?\n|$)/;
@@ -49,6 +53,12 @@ export function parseFrontmatter(content: string): Frontmatter {
       } else if (val) {
         result.tags = [val.replace(/^['"]|['"]$/g, "").replace(/^#/, "")];
       }
+    } else if (key === "description") {
+      const stripped = val.replace(/^['"]|['"]$/g, "");
+      if (stripped) result.description = stripped;
+    } else if (key === "image") {
+      const stripped = val.replace(/^['"]|['"]$/g, "");
+      if (stripped) result.image = stripped;
     }
   }
 

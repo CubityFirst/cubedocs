@@ -100,10 +100,7 @@ projectsRouter.delete("/:id", async (c) => {
 
   // Delete R2 assets in parallel
   await Promise.all([
-    ...docIds.flatMap(docId => [
-      c.env.ASSETS.delete(`${projectId}/${docId}`),
-      c.env.ASSETS.delete(`${projectId}/${docId}.blame`),
-    ]),
+    ...docIds.map(docId => c.env.ASSETS.delete(`${projectId}/${docId}`)),
     ...revisions.results.map(r => c.env.ASSETS.delete(`${projectId}/${r.asset_id}/v/${r.id}`)),
     ...files.results.map(f => c.env.ASSETS.delete(`files/${f.id}`)),
   ]);

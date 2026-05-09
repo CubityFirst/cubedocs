@@ -28,6 +28,25 @@ export abstract class ReactWidget extends WidgetType {
     this.root.render(
       createElement(RendererReactContext.Provider, { value: ctx }, this.render()),
     );
+    // Explicit cursor placement on click. Relying on CM6's default click
+    // handling is unreliable for `<img>` inside contenteditable (browsers
+    // treat the click as image-selection, not cursor placement) and for
+    // `block: true` widgets where posAtCoords can resolve to a position just
+    // outside the replaced range. We force the cursor inside the widget range
+    // so the visitor's cursor-touches check fires and reveals the markdown.
+    if (this.revealOnClick()) {
+      // pointerdown (not mousedown) so taps on mobile/touch also reveal —
+      // pointer events fire for mouse, touch, and pen and arrive before any
+      // synthesized mouse events.
+      el.addEventListener("pointerdown", (event) => {
+        const pe = event as PointerEvent;
+        if (pe.button !== 0 && pe.button !== undefined) return;
+        const pos = view.posAtDOM(el);
+        event.preventDefault();
+        view.dispatch({ selection: { anchor: pos } });
+        view.focus();
+      });
+    }
     return el;
   }
 

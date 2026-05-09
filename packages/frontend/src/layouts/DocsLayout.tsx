@@ -14,6 +14,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Badge } from "@/components/ui/badge";
 import { Kbd } from "@/components/ui/kbd";
 import { clearToken, getToken } from "@/lib/auth";
+import { apiFetch, apiFetchJson } from "@/lib/apiFetch";
 import {
   BookOpen,
   Settings,
@@ -232,71 +233,45 @@ export function DocsLayout() {
   }, [openSearch]);
 
   useEffect(() => {
-    const token = getToken();
-    if (!token) return;
-    fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json() as Promise<{ ok: boolean; data?: { name: string; userId: string } }>)
-      .then(json => {
-        if (json.ok && json.data) {
-          setUserName(json.data.name);
-          setUserId(json.data.userId);
+    if (!getToken()) return;
+    apiFetchJson<{ name: string; userId: string }>("/api/me")
+      .then(result => {
+        if (result.ok && result.data) {
+          setUserName(result.data.name);
+          setUserId(result.data.userId);
         }
       })
       .catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    const token = getToken();
-    if (!token) return;
-    fetch("/api/projects", { headers: { Authorization: `Bearer ${token}` } })
-      .then(async r => ({
-        status: r.status,
-        json: await r.json() as { ok: boolean; data?: Project[]; error?: string },
-      }))
-      .then(({ status, json }) => {
-        if (status === 401) {
-          clearToken();
-          navigate("/login", { replace: true, state: { from: location.pathname } });
-          return;
-        }
-        if (status === 403 && (json.error === "account_disabled" || json.error === "account_suspended")) {
-          // Auth worker rejected the session because the account is no
-          // longer in good standing — bounce to /login with a banner.
-          clearToken();
-          const reason = json.error === "account_disabled" ? "disabled" : "suspended";
-          navigate(`/login?reason=${reason}`, { replace: true });
-          return;
-        }
-        if (json.ok && json.data) setProjects([...json.data].sort((a, b) => b.is_favourite - a.is_favourite));
+    if (!getToken()) return;
+    apiFetchJson<Project[]>("/api/projects")
+      .then(result => {
+        // 401/403 redirects to /login are handled inside apiFetch; the page is
+        // unloading by the time we get here, so just ignore those statuses.
+        if (result.ok && result.data) setProjects([...result.data].sort((a, b) => b.is_favourite - a.is_favourite));
       })
       .catch(() => {});
   }, [navigate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!projectId) { setDocs([]); setFolders([]); return; }
-    const token = getToken();
-    if (!token) return;
-    fetch(`/api/docs?projectId=${projectId}`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(async r => ({
-        status: r.status,
-        json: await r.json() as { ok: boolean; data?: Doc[] },
-      }))
-      .then(({ status, json }) => {
-        if (status === 401) {
-          clearToken();
-          navigate("/login", { replace: true, state: { from: location.pathname } });
-          return;
-        }
-        if (status === 403 || status === 404) {
+    if (!getToken()) return;
+    apiFetchJson<Doc[]>(`/api/docs?projectId=${projectId}`)
+      .then(result => {
+        // apiFetch already triggered window.location.replace — don't fight it
+        // by also calling React Router navigate.
+        if (result.redirected) return;
+        if (result.status === 403 || result.status === 404) {
           navigate("/dashboard", { replace: true });
           return;
         }
-        if (json.ok && json.data) setDocs(json.data);
+        if (result.ok && result.data) setDocs(result.data);
       })
       .catch(() => {});
-    fetch(`/api/folders?projectId=${projectId}&all=1`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json() as Promise<{ ok: boolean; data?: Folder[] }>)
-      .then(json => { if (json.ok && json.data) setFolders(json.data); })
+    apiFetchJson<Folder[]>(`/api/folders?projectId=${projectId}&all=1`)
+      .then(result => { if (result.ok && result.data) setFolders(result.data); })
       .catch(() => {});
   }, [navigate, projectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -305,19 +280,17 @@ export function DocsLayout() {
     setSaving(true);
     setError(null);
     try {
-      const token = getToken();
-      const res = await fetch("/api/projects", {
+      const result = await apiFetchJson<Project>("/api/projects", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, description: description || undefined }),
       });
-      const json = await res.json() as { ok: boolean; data?: Project; error?: string };
-      if (json.ok && json.data) {
-        setProjects(prev => [json.data!, ...prev]);
+      if (result.ok && result.data) {
+        setProjects(prev => [result.data!, ...prev]);
         setCreating(false);
         setName("");
         setDescription("");
-        navigate(`/projects/${json.data.id}`);
+        navigate(`/projects/${result.data.id}`);
       } else {
         setError("Failed to create site.");
       }
@@ -332,16 +305,14 @@ export function DocsLayout() {
     if (!projectId || creatingDoc) return;
     setCreatingDoc(true);
     try {
-      const token = getToken();
-      const res = await fetch("/api/docs", {
+      const result = await apiFetchJson<Doc & { id: string }>("/api/docs", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: "Untitled", content: "", projectId }),
       });
-      const json = await res.json() as { ok: boolean; data?: Doc & { id: string } };
-      if (json.ok && json.data) {
-        setDocs(prev => [...prev, json.data!]);
-        navigate(`/projects/${projectId}/docs/${json.data.id}`, { state: { isNew: true } });
+      if (result.ok && result.data) {
+        setDocs(prev => [...prev, result.data!]);
+        navigate(`/projects/${projectId}/docs/${result.data.id}`, { state: { isNew: true } });
       }
     } catch {
       // fail silently — user can retry
@@ -535,12 +506,11 @@ export function DocsLayout() {
                 // Best-effort: revoke the server-side session so the JWT is dead
                 // even if it gets exfiltrated from localStorage post-logout. We
                 // proceed with the local clear regardless of the network result.
-                const t = getToken();
-                if (t) {
+                if (getToken()) {
                   try {
-                    await fetch("/api/me/sessions/logout", {
+                    await apiFetch("/api/me/sessions/logout", {
                       method: "POST",
-                      headers: { "Content-Type": "application/json", Authorization: `Bearer ${t}` },
+                      headers: { "Content-Type": "application/json" },
                     });
                   } catch { /* ignore */ }
                 }

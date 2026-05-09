@@ -1,7 +1,7 @@
 import { Decoration } from "@codemirror/view";
 import { cursorTouches, type Visitor } from "../types";
 import { ImageWidget } from "../../widgets/ImageWidget";
-import { ATTR_BLOCK_RE, parseImageAttrs, styleFromAttrs } from "@/lib/imageAttrs";
+import { ATTR_BLOCK_RE, PARTIAL_ATTR_BLOCK_RE, parseImageAttrs, styleFromAttrs } from "@/lib/imageAttrs";
 
 const IMG_RE = /^!\[([^\]]*)\]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)$/;
 
@@ -12,18 +12,21 @@ export const visitImage: Visitor = ({ node, state, sel, reveal, decos }) => {
   const alt = m[1] ?? "";
   const url = m[2] ?? "";
 
-  // Peek at trailing {width=…} attribute block
+  // Peek at any trailing {…} attribute block — both complete and unfinished.
+  // We consume the whole block (including unrecognized or partially-typed
+  // attrs) so the source-mode reveal covers it; otherwise the rendered image
+  // and the trailing `{thing}` text would show side-by-side.
   const lookahead = state.doc.sliceString(node.to, Math.min(node.to + 200, state.doc.length));
-  const attrMatch = lookahead.match(ATTR_BLOCK_RE);
   let style: string | undefined;
   let consumeTo = node.to;
-  if (attrMatch) {
-    const attrs = parseImageAttrs(attrMatch[1]!);
-    const s = styleFromAttrs(attrs);
-    if (s) {
-      style = s;
-      consumeTo = node.to + attrMatch[0].length;
-    }
+  const completeMatch = lookahead.match(ATTR_BLOCK_RE);
+  if (completeMatch) {
+    const attrs = parseImageAttrs(completeMatch[1]!);
+    style = styleFromAttrs(attrs);
+    consumeTo = node.to + completeMatch[0].length;
+  } else {
+    const partialMatch = lookahead.match(PARTIAL_ATTR_BLOCK_RE);
+    if (partialMatch) consumeTo = node.to + partialMatch[0].length;
   }
 
   // Block layout when the image (with optional attrs) is the only non-whitespace
