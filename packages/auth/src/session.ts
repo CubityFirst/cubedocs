@@ -101,11 +101,6 @@ export async function loadCurrentSession(
   };
 }
 
-export async function verifyCurrentSessionToken(token: string, db: D1Database, jwtSecret: string): Promise<Session | null> {
-  const result = await loadCurrentSession(token, db, jwtSecret);
-  return result.kind === "ok" ? result.session : null;
-}
-
 export async function requireCurrentSessionToken(token: string, db: D1Database, jwtSecret: string): Promise<Session | Response> {
   const result = await loadCurrentSession(token, db, jwtSecret);
   if (result.kind === "ok") return result.session;

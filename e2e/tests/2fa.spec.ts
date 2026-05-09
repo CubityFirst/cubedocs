@@ -146,23 +146,12 @@ test.beforeAll(async ({ browser }) => {
   page = await context.newPage();
 });
 
-// Always attempt cleanup — runs even when earlier tests fail.
+// Account cleanup runs in globalTeardown. The "deletes the account — 2FA
+// confirmation required" test exercises the UI delete flow itself.
 test.afterAll(async () => {
   if (cdpSession) {
     await cdpSession.detach().catch(() => {});
     cdpSession = null;
-  }
-  if (page) {
-    try {
-      await page.goto("/settings", { timeout: 10000 });
-      const deleteBtn = page.getByRole("button", { name: /delete account/i });
-      if (await deleteBtn.isVisible({ timeout: 3000 })) {
-        await deleteBtn.click();
-        await page.getByRole("alertdialog").waitFor({ timeout: 5000 });
-        await page.getByRole("button", { name: /yes.*delete.*account/i }).click();
-        await page.waitForURL(/\/(login|register)/, { timeout: 15000 });
-      }
-    } catch { /* already deleted or not signed in */ }
   }
   await context.close();
 });

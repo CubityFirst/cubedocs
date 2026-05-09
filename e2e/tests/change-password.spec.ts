@@ -82,19 +82,8 @@ test.beforeAll(async ({ browser }) => {
   page = await context.newPage();
 });
 
+// Account cleanup runs in globalTeardown.
 test.afterAll(async () => {
-  if (page) {
-    try {
-      await page.goto("/settings", { timeout: 10000 });
-      const deleteBtn = page.getByRole("button", { name: /delete account/i });
-      if (await deleteBtn.isVisible({ timeout: 3000 })) {
-        await deleteBtn.click();
-        await page.getByRole("alertdialog").waitFor({ timeout: 5000 });
-        await page.getByRole("button", { name: /yes.*delete.*account/i }).click();
-        await page.waitForURL(/\/(login|register)/, { timeout: 15000 });
-      }
-    } catch { /* already deleted or not signed in */ }
-  }
   await context.close();
 });
 
@@ -136,7 +125,8 @@ test("submit is disabled while fields are empty", async () => {
 
 test("shows inline error when new password is too weak", async () => {
   await newPasswordField(page).fill("weak");
-  await expect(page.getByText("Password is too weak. Try adding more characters or symbols.")).toBeVisible();
+  // Strength meter renders a "Very weak" / "Weak" label below the field for low-score passwords.
+  await expect(page.getByText(/^(Very weak|Weak)$/)).toBeVisible();
 });
 
 test("shows inline error when confirm does not match", async () => {
@@ -196,12 +186,5 @@ test("new password logs in successfully", async () => {
   await expect(page).not.toHaveURL(/\/login/, { timeout: 10000 });
 });
 
-// ── Cleanup ───────────────────────────────────────────────────────────────────
-
-test("deletes the account", async () => {
-  await page.goto("/settings");
-  await page.getByRole("button", { name: /delete account/i }).click();
-  await expect(page.getByRole("alertdialog")).toBeVisible({ timeout: 5000 });
-  await page.getByRole("button", { name: /yes.*delete.*account/i }).click();
-  await expect(page).toHaveURL(/\/(login|register)/, { timeout: 15000 });
-});
+// Account cleanup runs in globalTeardown (e2e/global-teardown.ts).
+// The 2FA-gated delete path is covered by 2fa.spec.ts.

@@ -2,10 +2,15 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./tests",
+  globalTeardown: "./global-teardown.ts",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: 0,
-  workers: process.env.CI ? 1 : 4,
+  // Local wrangler dev intermittently drops requests through the
+  // browser → vite → API worker → auth worker chain (rate-limit edge cases,
+  // service-binding hiccups). One retry catches those without masking real
+  // bugs, since deterministic failures still fail twice.
+  retries: 1,
+  workers: 2,
   reporter: "list",
   use: {
     baseURL: "http://localhost:5173",

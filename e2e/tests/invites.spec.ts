@@ -79,19 +79,6 @@ async function login(page: Page, user: typeof OWNER) {
   await expect(page).not.toHaveURL(/\/login/, { timeout: 10000 });
 }
 
-async function deleteAccount(page: Page) {
-  try {
-    await page.goto("/settings", { timeout: 8000 });
-    const btn = page.getByRole("button", { name: /delete account/i });
-    if (await btn.isVisible({ timeout: 3000 })) {
-      await btn.click();
-      await page.getByRole("alertdialog").waitFor({ timeout: 5000 });
-      await page.getByRole("button", { name: /yes.*delete.*account/i }).click();
-      await page.waitForURL(/\/(login|register)/, { timeout: 10000 });
-    }
-  } catch { /* already deleted or not signed in */ }
-}
-
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
 test.describe.configure({ mode: "serial" });
@@ -102,8 +89,8 @@ test.beforeAll(async ({ browser }) => {
   [linkCtx,    linkPage]    = await setupContext(browser, fakeIp(5));
 });
 
+// Best-effort project cleanup (account cleanup runs in globalTeardown).
 test.afterAll(async () => {
-  test.setTimeout(90000); // 3 accounts + project deletion can take a while
   if (projectId) {
     try {
       await ownerPage.goto(`/projects/${projectId}/settings`, { timeout: 10000 });
@@ -116,8 +103,7 @@ test.afterAll(async () => {
       }
     } catch {}
   }
-  for (const [ctx, page] of [[ownerCtx, ownerPage], [inviteeCtx, inviteePage], [linkCtx, linkPage]] as [BrowserContext, Page][]) {
-    await deleteAccount(page);
+  for (const ctx of [ownerCtx, inviteeCtx, linkCtx]) {
     try { await ctx.close(); } catch { /* already closed by Playwright on test failure */ }
   }
 });
@@ -260,6 +246,5 @@ test("owner deletes the project", async () => {
   projectId = "";
 });
 
-test("owner deletes their account", async () => { await deleteAccount(ownerPage); });
-test("email-invitee deletes their account", async () => { await deleteAccount(inviteePage); });
-test("link-invitee deletes their account", async () => { await deleteAccount(linkPage); });
+// Account cleanup for all three invitees runs in globalTeardown
+// (e2e/global-teardown.ts). The 2FA-gated delete path is covered by 2fa.spec.ts.

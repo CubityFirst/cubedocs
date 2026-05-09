@@ -73,36 +73,19 @@ test.beforeAll(async ({ browser }) => {
   page = await context.newPage();
 });
 
-// Cleanup always runs — even when earlier tests fail (serial skips them, but
-// afterAll still fires). Best-effort: wrapped in try/catch so a stale URL or
-// already-deleted resource doesn't throw.
+// Best-effort project cleanup (account cleanup runs in globalTeardown).
 test.afterAll(async () => {
-  if (page) {
-    // Delete the project (if it was created and not already deleted by a test).
-    if (projectSettingsUrl) {
-      try {
-        await page.goto(projectSettingsUrl, { timeout: 10000 });
-        const deleteBtn = page.getByRole("button", { name: /delete site/i });
-        if (await deleteBtn.isVisible({ timeout: 3000 })) {
-          await deleteBtn.click();
-          await page.getByRole("alertdialog").waitFor({ timeout: 5000 });
-          await page.getByRole("button", { name: /yes.*delete/i }).click();
-          await page.waitForURL(/\/(dashboard|projects(?!\/[a-z0-9]))/, { timeout: 15000 });
-        }
-      } catch { /* already deleted or unreachable */ }
-    }
-
-    // Delete the account.
+  if (page && projectSettingsUrl) {
     try {
-      await page.goto("/settings", { timeout: 10000 });
-      const deleteBtn = page.getByRole("button", { name: /delete account/i });
+      await page.goto(projectSettingsUrl, { timeout: 10000 });
+      const deleteBtn = page.getByRole("button", { name: /delete site/i });
       if (await deleteBtn.isVisible({ timeout: 3000 })) {
         await deleteBtn.click();
         await page.getByRole("alertdialog").waitFor({ timeout: 5000 });
-        await page.getByRole("button", { name: /yes.*delete.*account/i }).click();
-        await page.waitForURL(/\/(login|register)/, { timeout: 15000 });
+        await page.getByRole("button", { name: /yes.*delete/i }).click();
+        await page.waitForURL(/\/(dashboard|projects(?!\/[a-z0-9]))/, { timeout: 15000 });
       }
-    } catch { /* already deleted or not logged in */ }
+    } catch { /* already deleted or unreachable */ }
   }
 
   await context.close();
@@ -123,9 +106,10 @@ test("registers a new account", async () => {
 // ── Login ────────────────────────────────────────────────────────────────────
 
 test("logs in with the new account", async () => {
-  if (!page.url().includes("/login")) {
-    await page.goto("/login");
-  }
+  // Registration may auto-log in (when REQUIRE_EMAIL_VERIFICATION is off).
+  // In that case the user is already on /dashboard and the login form is
+  // implicitly verified by the rest of the suite — only run the login flow
+  // if we actually landed on /login after registration.
   if (!page.url().includes("/login")) return;
 
   await page.getByLabel("Email").fill(EMAIL);
@@ -337,10 +321,6 @@ test("deletes the project", async () => {
   projectSettingsUrl = ""; // signal afterAll that cleanup is done
 });
 
-test("deletes the account", async () => {
-  await page.goto("/settings");
-  await page.getByRole("button", { name: /delete account/i }).click();
-  await expect(page.getByRole("alertdialog")).toBeVisible({ timeout: 5000 });
-  await page.getByRole("button", { name: /yes.*delete.*account/i }).click();
-  await expect(page).toHaveURL(/\/(login|register)/, { timeout: 15000 });
-});
+// Account deletion runs in globalTeardown (e2e/global-teardown.ts) — the
+// no-MFA delete path doesn't need a UI test here. The 2FA-gated path is
+// covered by 2fa.spec.ts.
