@@ -22,11 +22,13 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { HistorySheet, type RevisionMeta } from "@/components/HistorySheet";
 import { HistoryBanner } from "@/components/HistoryBanner";
-import { Pencil, X, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight, Sparkles, Users, UserPlus, Trash2, HelpCircle, Code2 } from "lucide-react";
+import { Pencil, X, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight, Sparkles, Users, UserPlus, Trash2, HelpCircle, Code2, AlertCircle } from "lucide-react";
 import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
 import { getToken } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
@@ -256,12 +258,21 @@ export function DocPage() {
 
   const [remoteEditors, setRemoteEditors] = useState<{ userId: string; name: string; color: string }[]>([]);
 
+  // Realtime collab fatal state — set when the server rejects further sync because the
+  // doc has exceeded the size cap. The editor remounts in non-collab mode while this is true.
+  const [collabFatal, setCollabFatal] = useState(false);
+  const [collabFatalReason, setCollabFatalReason] = useState<string | null>(null);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [resettingCollab, setResettingCollab] = useState(false);
+
 
 
   useEffect(() => {
     if (!docId) return;
     setLoading(true);
     setEditing(false);
+    setCollabFatal(false);
+    setCollabFatalReason(null);
     const token = getToken();
     fetch(`/api/docs/${docId}`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json())
@@ -358,6 +369,33 @@ export function DocPage() {
   function cancelEditing() {
     setEditing(false);
     setSaveError(null);
+    // Clear collab-fatal state so the next time the user opens the editor it tries collab fresh.
+    setCollabFatal(false);
+    setCollabFatalReason(null);
+  }
+
+  async function handleResetCollab() {
+    if (!docId) return;
+    setResettingCollab(true);
+    try {
+      const token = getToken();
+      const res = await fetch(`/api/docs/${docId}/collab/reset`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json() as { ok: boolean };
+      if (json.ok) {
+        setCollabFatal(false);
+        setCollabFatalReason(null);
+        toast({ title: "Realtime sync restored." });
+      } else {
+        toast({ title: "Couldn't restore realtime sync.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Couldn't restore realtime sync.", variant: "destructive" });
+    } finally {
+      setResettingCollab(false);
+    }
   }
 
   async function handleSave(changelog?: string) {
@@ -646,16 +684,39 @@ export function DocPage() {
           </div>
         </div>
 
+        {collabFatal && (
+          <Alert variant="destructive" className="mx-6 mt-3">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Realtime sync disabled</AlertTitle>
+            <AlertDescription>
+              <p>
+                {collabFatalReason || "This document has exceeded the realtime sync size limit."}{" "}
+                Edits save normally but won't sync live with other users until sync is restored.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-2"
+                disabled={resettingCollab}
+                onClick={() => setResetConfirmOpen(true)}
+              >
+                {resettingCollab ? "Restoring…" : "Restore realtime sync"}
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+
         <div className="flex flex-1 overflow-hidden">
           <div className="relative flex-1 overflow-hidden">
             <WysiwygEditor
+              key={collabFatal ? "fallback" : "collab"}
               mode={rawMode ? "raw" : "editing"}
               value={draft}
               onChange={setDraft}
               onSave={handleSaveClick}
               autoFocus={!location.state?.isNew}
-              collab={realtimeEnabled && currentUser ? { docId: doc.id, user: currentUser } : undefined}
-              onAwarenessChange={realtimeEnabled ? setRemoteEditors : undefined}
+              collab={!collabFatal && realtimeEnabled && currentUser ? { docId: doc.id, user: currentUser } : undefined}
+              onAwarenessChange={realtimeEnabled && !collabFatal ? setRemoteEditors : undefined}
               onCollabWarning={(reason) => {
                 toast({
                   title: "Change too large to sync",
@@ -664,17 +725,33 @@ export function DocPage() {
                 });
               }}
               onCollabFatal={(reason) => {
-                toast({
-                  title: "Document is read-only",
-                  description: reason || "This document has reached its maximum size. Contact an administrator.",
-                  variant: "destructive",
-                });
-                cancelEditing();
+                setCollabFatal(true);
+                setCollabFatalReason(reason || null);
+                setRemoteEditors([]);
               }}
               rendererCtx={wysiwygCtx}
             />
           </div>
         </div>
+
+        <AlertDialog open={resetConfirmOpen} onOpenChange={setResetConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Restore realtime sync?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This wipes the realtime sync state for this document. Any in-progress edits from
+                other users that haven't been saved will be discarded. Save your own changes first
+                if you don't want to lose them.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={resettingCollab}>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleResetCollab} disabled={resettingCollab}>
+                Restore
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Markdown reference dialog */}
         <Dialog open={markdownHelpOpen} onOpenChange={setMarkdownHelpOpen}>

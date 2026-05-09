@@ -1,4 +1,4 @@
-import { okResponse, errorResponse, Errors, ROLE_RANK, type Session, type Doc, type Role } from "../lib";
+import { okResponse, errorResponse, Errors, ProjectFeatures, ROLE_RANK, type Session, type Doc, type Role } from "../lib";
 import { parseFrontmatter } from "../lib/frontmatter";
 import { indexDocLinks, invalidateProjectGraphIndex } from "../lib/docLinks";
 import { upsertFtsRow, deleteFtsRow } from "../lib/fts";
@@ -157,6 +157,34 @@ export async function handleDocs(
       { id, title: body.title, content, projectId: body.projectId, authorId: user.userId, folderId, publishedAt: null, createdAt: now, updatedAt: now },
       201,
     );
+  }
+
+  // POST /docs/:id/collab/reset — editor or above; wipes the collab DO so a frozen room
+  // (state size cap exceeded) can recover. The next WS connection creates a fresh DO,
+  // and the connecting client seeds it from R2's saved markdown.
+  if (docId && subResource === "collab" && subId === "reset" && request.method === "POST") {
+    const meta = await env.DB.prepare("SELECT project_id FROM docs WHERE id = ?").bind(docId).first<{ project_id: string }>();
+    if (!meta) return errorResponse(Errors.NOT_FOUND);
+
+    const project = await env.DB.prepare("SELECT features FROM projects WHERE id = ?").bind(meta.project_id).first<{ features: number }>();
+    if (!project) return errorResponse(Errors.NOT_FOUND);
+    if (!(project.features & ProjectFeatures.REALTIME)) return errorResponse(Errors.FORBIDDEN);
+
+    const caller = await getCallerInfo(env.DB, meta.project_id, user.userId);
+    if (caller === null) return errorResponse(Errors.FORBIDDEN);
+    if (ROLE_RANK[caller.role] < ROLE_RANK["editor"]) return errorResponse(Errors.FORBIDDEN);
+
+    if (env.DOC_COLLAB) {
+      try {
+        const roomId = env.DOC_COLLAB.idFromName(`${meta.project_id}:${docId}`);
+        await env.DOC_COLLAB.get(roomId).fetch(new Request("https://internal/", { method: "DELETE" }));
+      } catch (err) {
+        console.error("[docs/collab/reset] DO reset failed:", err);
+        return errorResponse(Errors.INTERNAL);
+      }
+    }
+
+    return okResponse({ ok: true });
   }
 
   // GET /docs/:id/revisions/:revisionId — any member (limited must have a doc_share)

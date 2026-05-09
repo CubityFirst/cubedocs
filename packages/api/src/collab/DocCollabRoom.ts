@@ -191,6 +191,14 @@ export class DocCollabRoom implements DurableObject {
     this.ctx.acceptWebSocket(server);
     server.serializeAttachment({ userId, userName, clientId: null } satisfies WsAttachment);
 
+    // If the room is frozen on load (persisted state already exceeds the cap), close the
+    // socket immediately. Sending sync step1 first would just be wasted bytes, and waiting
+    // for the client's first message to close means a slightly worse "open then close" UX.
+    if (this.frozen) {
+      try { server.close(1008, "doc size limit exceeded"); } catch { /* */ }
+      return new Response(null, { status: 101, webSocket: client });
+    }
+
     try {
       const syncEncoder = encoding.createEncoder();
       encoding.writeVarUint(syncEncoder, MSG_SYNC);
