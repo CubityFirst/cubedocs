@@ -46,6 +46,13 @@
 | `{3d6+1}<3` | Group success count with modifier per die |
 | `{3d20+5}>21f<10` | Group failure count — success >21 minus failure <10 |
 | `1d20+13>21` | Expression success — roll 1d20+13, show ✓/✗ vs target 21 |
+| `(2+3)d6` | Computed dice count — roll `round(2+3)` d6 dice |
+| `2d(3+3)` | Computed dice sides — roll 2 dice with `round(3+3)` sides each |
+| `(N+Y)d(X+Z)` | Both count and sides may be computed expressions |
+| `2d6m` | Match-show — sum unchanged; pairs (2+ same value) flagged in result |
+| `2d6mt` | Match-tally — total = number of distinct face values appearing 2+ times |
+| `6d6mt3` | mt with minimum match group size of 3 |
+| `5d6mt3>4` | mt requiring 3+ matches AND matched value > 4 |
 
 Reroll conditions can be chained and combined with keep: `4d6kh3r1` rolls 4d6, rerolls 1s, then keeps the highest 3.
 

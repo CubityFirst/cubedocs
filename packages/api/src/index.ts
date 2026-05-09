@@ -25,6 +25,7 @@ export interface Env {
   DOC_COLLAB?: DurableObjectNamespace;
   JWT_SECRET: string;
   OPENAI_API_KEY?: string;
+  RATE_LIMITER_INVITE_LOOKUP: { limit(opts: { key: string }): Promise<{ success: boolean }> };
 }
 
 export default {

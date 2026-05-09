@@ -41,7 +41,8 @@ export async function handleDocShares(
       "SELECT role FROM project_members WHERE project_id = ? AND user_id = ?",
     ).bind(projectId, body.userId).first<{ role: Role }>();
     if (!target) return errorResponse(Errors.NOT_FOUND);
-    if (target.role !== "limited") return errorResponse(Errors.BAD_REQUEST);
+    // Editor/admin/owner already have project-wide edit, so a per-doc share is meaningless.
+    if (ROLE_RANK[target.role] >= ROLE_RANK["editor"]) return errorResponse(Errors.BAD_REQUEST);
 
     const docs = await env.DB.prepare(
       "SELECT id FROM docs WHERE project_id = ? AND folder_id = ?",
@@ -74,13 +75,16 @@ export async function handleDocShares(
   if (callerRole === null) return errorResponse(Errors.NOT_FOUND);
   if (ROLE_RANK[callerRole] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
 
-  // GET /docs/:id/shares — list shares with permission levels
+  // GET /docs/:id/shares — list shares with permission levels.
+  // Only surface shares whose target is below editor; editor/admin/owner already
+  // have project-wide access, so any lingering share row for them (e.g. left
+  // over from a role promotion) is functionally inert and would confuse admins.
   if (!targetUserId && request.method === "GET") {
     const rows = await env.DB.prepare(`
       SELECT ds.user_id, pm.name, pm.email, ds.permission
       FROM doc_shares ds
       JOIN project_members pm ON pm.project_id = ds.project_id AND pm.user_id = ds.user_id
-      WHERE ds.doc_id = ?
+      WHERE ds.doc_id = ? AND pm.role NOT IN ('editor', 'admin', 'owner')
       ORDER BY pm.name ASC
     `).bind(docId).all<{ user_id: string; name: string; email: string; permission: SharePermission }>();
     return okResponse(rows.results.map(r => ({
@@ -98,7 +102,7 @@ export async function handleDocShares(
       "SELECT role FROM project_members WHERE project_id = ? AND user_id = ?",
     ).bind(meta.project_id, body.userId).first<{ role: Role }>();
     if (!target) return errorResponse(Errors.NOT_FOUND);
-    if (target.role !== "limited") return errorResponse(Errors.BAD_REQUEST);
+    if (ROLE_RANK[target.role] >= ROLE_RANK["editor"]) return errorResponse(Errors.BAD_REQUEST);
 
     const now = new Date().toISOString();
     await env.DB.prepare(

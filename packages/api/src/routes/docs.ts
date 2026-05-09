@@ -184,10 +184,12 @@ export async function handleDocs(
     const caller = await getCallerInfo(env.DB, meta.project_id, user.userId);
     if (caller === null) return errorResponse(Errors.FORBIDDEN);
     let myPermission: string | null = null;
-    if (caller.role === "limited") {
+    // limited has no project-wide read access — a doc_share is required.
+    // viewer already reads everything, but a doc_share with permission='edit' uplifts them on this doc.
+    if (caller.role === "limited" || caller.role === "viewer") {
       const share = await env.DB.prepare("SELECT permission FROM doc_shares WHERE doc_id = ? AND user_id = ?").bind(docId, user.userId).first<{ permission: string }>();
-      if (!share) return errorResponse(Errors.FORBIDDEN);
-      myPermission = share.permission;
+      if (caller.role === "limited" && !share) return errorResponse(Errors.FORBIDDEN);
+      myPermission = share?.permission ?? null;
     }
     const row = await env.DB.prepare("SELECT * FROM docs WHERE id = ?").bind(docId).first<Doc>();
     if (!row) return errorResponse(Errors.NOT_FOUND);
@@ -209,21 +211,17 @@ export async function handleDocs(
 
     const caller = await getCallerInfo(env.DB, doc.project_id, user.userId);
     if (caller === null) return errorResponse(Errors.FORBIDDEN);
-    if (ROLE_RANK[caller.role] < ROLE_RANK["editor"]) {
-      if (caller.role === "limited") {
-        const share = await env.DB.prepare("SELECT permission FROM doc_shares WHERE doc_id = ? AND user_id = ?")
-          .bind(docId, user.userId).first<{ permission: string }>();
-        if (!share || share.permission !== "edit") return errorResponse(Errors.FORBIDDEN);
-      } else {
-        return errorResponse(Errors.FORBIDDEN);
-      }
+    const isUpliftedEdit = ROLE_RANK[caller.role] < ROLE_RANK["editor"];
+    if (isUpliftedEdit) {
+      const share = await env.DB.prepare("SELECT permission FROM doc_shares WHERE doc_id = ? AND user_id = ?")
+        .bind(docId, user.userId).first<{ permission: string }>();
+      if (!share || share.permission !== "edit") return errorResponse(Errors.FORBIDDEN);
     }
 
     const body = await request.json<Partial<{ title: string; content: string; publishedAt: string | null; showHeading: boolean; showLastUpdated: boolean; folderId: string | null; changelog: string }>>();
 
-    // Limited members with edit permission cannot change publish state or move docs between folders
-    const isLimitedEdit = caller.role === "limited";
-    if (isLimitedEdit) {
+    // Per-doc edit grants are content-only; structural changes (publish, move) still require project-level editor+.
+    if (isUpliftedEdit) {
       delete body.publishedAt;
       delete body.folderId;
     }

@@ -1122,3 +1122,314 @@ describe("roll — expression-level success threshold operators", () => {
     expect(r.successCount).toBe(0);
   });
 });
+
+// ── Computed dice count / sides — (N+Y)dX and Nd(X+Y) ─────────────────────
+describe("parseDice — computed dice", () => {
+  it("(2+3)d6 stores the count expression on the term", () => {
+    const expr = parseDice("(2+3)d6");
+    expect(expr.root.type).toBe("term");
+    if (expr.root.type !== "term") return;
+    const t = expr.root.term;
+    expect(t.type).toBe("standard");
+    if (t.type !== "standard") return;
+    expect(t.sides).toBe(6);
+    expect(t.computedCount).toBeDefined();
+    expect(t.computedSides).toBeUndefined();
+  });
+
+  it("2d(3+3) stores the sides expression on the term", () => {
+    const expr = parseDice("2d(3+3)");
+    expect(expr.root.type).toBe("term");
+    if (expr.root.type !== "term") return;
+    const t = expr.root.term;
+    expect(t.type).toBe("standard");
+    if (t.type !== "standard") return;
+    expect(t.count).toBe(2);
+    expect(t.computedCount).toBeUndefined();
+    expect(t.computedSides).toBeDefined();
+  });
+
+  it("(2+3)d(2*3) stores both count and sides expressions", () => {
+    const expr = parseDice("(2+3)d(2*3)");
+    expect(expr.root.type).toBe("term");
+    if (expr.root.type !== "term") return;
+    const t = expr.root.term;
+    expect(t.type).toBe("standard");
+    if (t.type !== "standard") return;
+    expect(t.computedCount).toBeDefined();
+    expect(t.computedSides).toBeDefined();
+  });
+
+  it("(2+1)dF stores the count expression on a fate term", () => {
+    const expr = parseDice("(2+1)dF");
+    expect(expr.root.type).toBe("term");
+    if (expr.root.type !== "term") return;
+    const t = expr.root.term;
+    expect(t.type).toBe("fate");
+    if (t.type !== "fate") return;
+    expect(t.computedCount).toBeDefined();
+  });
+
+  it("(2+2)d6kh3 attaches modifiers to the computed-count term", () => {
+    const expr = parseDice("(2+2)d6kh3");
+    expect(expr.root.type).toBe("term");
+    if (expr.root.type !== "term") return;
+    const t = expr.root.term;
+    expect(t.type).toBe("standard");
+    if (t.type !== "standard") return;
+    expect(t.keep).toEqual({ mode: "h", count: 3 });
+    expect(t.computedCount).toBeDefined();
+  });
+});
+
+describe("roll — computed dice", () => {
+  it("(2+3)d6 rolls 5 d6 dice", () => {
+    vi.spyOn(Math, "random")
+      .mockReturnValueOnce(d(6, 4))
+      .mockReturnValueOnce(d(6, 5))
+      .mockReturnValueOnce(d(6, 6))
+      .mockReturnValueOnce(d(6, 1))
+      .mockReturnValueOnce(d(6, 2));
+    const r = roll("(2+3)d6");
+    expect(r.terms[0].rolls).toEqual([4, 5, 6, 1, 2]);
+    expect(r.total).toBe(18);
+  });
+
+  it("2d(3+3) rolls 2 dice with 6 sides each", () => {
+    vi.spyOn(Math, "random")
+      .mockReturnValueOnce(d(6, 3))
+      .mockReturnValueOnce(d(6, 5));
+    const r = roll("2d(3+3)");
+    expect(r.terms[0].rolls).toEqual([3, 5]);
+    expect(r.terms[0].maxFace).toBe(6);
+    expect(r.total).toBe(8);
+  });
+
+  it("(1+1)d(2*3) rolls 2 dice with 6 sides", () => {
+    vi.spyOn(Math, "random")
+      .mockReturnValueOnce(d(6, 6))
+      .mockReturnValueOnce(d(6, 2));
+    const r = roll("(1+1)d(2*3)");
+    expect(r.terms[0].rolls).toEqual([6, 2]);
+    expect(r.total).toBe(8);
+  });
+
+  it("(2.5+0.5)d6 rounds the count to the nearest integer (3)", () => {
+    vi.spyOn(Math, "random")
+      .mockReturnValueOnce(d(6, 1))
+      .mockReturnValueOnce(d(6, 2))
+      .mockReturnValueOnce(d(6, 3));
+    const r = roll("(2.5+0.5)d6");
+    expect(r.terms[0].rolls).toHaveLength(3);
+    expect(r.total).toBe(6);
+  });
+
+  it("(2+0.5)d6 rounds 2.5 up to 3 (Math.round behavior)", () => {
+    vi.spyOn(Math, "random")
+      .mockReturnValueOnce(d(6, 1))
+      .mockReturnValueOnce(d(6, 1))
+      .mockReturnValueOnce(d(6, 1));
+    const r = roll("(2+0.5)d6");
+    expect(r.terms[0].rolls).toHaveLength(3);
+  });
+
+  it("(2+2)d6kh3 keeps top 3 of 4 computed-count dice", () => {
+    vi.spyOn(Math, "random")
+      .mockReturnValueOnce(d(6, 1))
+      .mockReturnValueOnce(d(6, 5))
+      .mockReturnValueOnce(d(6, 4))
+      .mockReturnValueOnce(d(6, 3));
+    const r = roll("(2+2)d6kh3");
+    expect((r.terms[0].kept as number[]).sort()).toEqual([3, 4, 5]);
+    expect(r.total).toBe(12);
+  });
+
+  it("(2+1)dF rolls 3 fate dice", () => {
+    vi.spyOn(Math, "random")
+      .mockReturnValueOnce(fate(1))
+      .mockReturnValueOnce(fate(0))
+      .mockReturnValueOnce(fate(-1));
+    const r = roll("(2+1)dF");
+    expect(r.terms[0].rolls).toEqual([1, 0, -1]);
+    expect(r.total).toBe(0);
+  });
+
+  it("min/max are null for computed dice (count not statically known)", () => {
+    vi.spyOn(Math, "random").mockReturnValue(d(6, 3));
+    const r = roll("(1+2)d6");
+    expect(r.minTotal).toBeNull();
+    expect(r.maxTotal).toBeNull();
+  });
+
+  it("computed term composes with arithmetic: (1+2)d6+5", () => {
+    vi.spyOn(Math, "random")
+      .mockReturnValueOnce(d(6, 4))
+      .mockReturnValueOnce(d(6, 4))
+      .mockReturnValueOnce(d(6, 4));
+    const r = roll("(1+2)d6+5");
+    // 4+4+4 = 12 + 5 = 17
+    expect(r.total).toBe(17);
+  });
+});
+
+// ── Dice matching — m / mt ────────────────────────────────────────────────
+describe("parseDice — matching", () => {
+  it("2d6m parses as show-mode match with default minMatches=2", () => {
+    const expr = parseDice("2d6m");
+    expect(expr.root.type).toBe("term");
+    if (expr.root.type !== "term") return;
+    const t = expr.root.term;
+    expect(t.type).toBe("standard");
+    if (t.type !== "standard") return;
+    expect(t.matches).toEqual({ kind: "show", minMatches: 2 });
+  });
+
+  it("2d6mt parses as tally-mode match", () => {
+    const expr = parseDice("2d6mt");
+    expect(expr.root.type).toBe("term");
+    if (expr.root.type !== "term") return;
+    const t = expr.root.term;
+    expect(t.type).toBe("standard");
+    if (t.type !== "standard") return;
+    expect(t.matches).toEqual({ kind: "tally", minMatches: 2 });
+  });
+
+  it("6d6mt3 sets minMatches=3", () => {
+    const expr = parseDice("6d6mt3");
+    expect(expr.root.type).toBe("term");
+    if (expr.root.type !== "term") return;
+    const t = expr.root.term;
+    expect(t.type).toBe("standard");
+    if (t.type !== "standard") return;
+    expect(t.matches).toEqual({ kind: "tally", minMatches: 3 });
+  });
+
+  it("5d6mt3>4 sets minMatches and target condition", () => {
+    const expr = parseDice("5d6mt3>4");
+    expect(expr.root.type).toBe("term");
+    if (expr.root.type !== "term") return;
+    const t = expr.root.term;
+    expect(t.type).toBe("standard");
+    if (t.type !== "standard") return;
+    expect(t.matches).toEqual({
+      kind: "tally",
+      minMatches: 3,
+      targetCondition: { op: ">", value: 4 },
+    });
+  });
+
+  it("4d6m>4 supports a target condition without minMatches override", () => {
+    const expr = parseDice("4d6m>4");
+    expect(expr.root.type).toBe("term");
+    if (expr.root.type !== "term") return;
+    const t = expr.root.term;
+    expect(t.type).toBe("standard");
+    if (t.type !== "standard") return;
+    expect(t.matches).toEqual({
+      kind: "show",
+      minMatches: 2,
+      targetCondition: { op: ">", value: 4 },
+    });
+  });
+});
+
+describe("roll — matching", () => {
+  it("2d6m: matched pair does not change the total (sum mode)", () => {
+    vi.spyOn(Math, "random")
+      .mockReturnValueOnce(d(6, 4))
+      .mockReturnValueOnce(d(6, 4));
+    const r = roll("2d6m");
+    expect(r.total).toBe(8); // sum unchanged
+    expect(r.terms[0].matchedValues).toEqual([4]);
+    expect(r.terms[0].matchCount).toBe(1);
+  });
+
+  it("2d6m: no pair leaves matchedValues empty", () => {
+    vi.spyOn(Math, "random")
+      .mockReturnValueOnce(d(6, 3))
+      .mockReturnValueOnce(d(6, 5));
+    const r = roll("2d6m");
+    expect(r.total).toBe(8);
+    expect(r.terms[0].matchedValues).toEqual([]);
+    expect(r.terms[0].matchCount).toBe(0);
+  });
+
+  it("2d6mt: matched pair → total = 1", () => {
+    vi.spyOn(Math, "random")
+      .mockReturnValueOnce(d(6, 4))
+      .mockReturnValueOnce(d(6, 4));
+    const r = roll("2d6mt");
+    expect(r.total).toBe(1);
+    expect(r.terms[0].matchCount).toBe(1);
+  });
+
+  it("2d6mt: no pair → total = 0", () => {
+    vi.spyOn(Math, "random")
+      .mockReturnValueOnce(d(6, 1))
+      .mockReturnValueOnce(d(6, 6));
+    const r = roll("2d6mt");
+    expect(r.total).toBe(0);
+    expect(r.terms[0].matchCount).toBe(0);
+  });
+
+  it("4d6mt: two distinct pairs → 2 match groups", () => {
+    vi.spyOn(Math, "random")
+      .mockReturnValueOnce(d(6, 3))
+      .mockReturnValueOnce(d(6, 3))
+      .mockReturnValueOnce(d(6, 5))
+      .mockReturnValueOnce(d(6, 5));
+    const r = roll("4d6mt");
+    expect(r.terms[0].matchedValues).toEqual([3, 5]);
+    expect(r.total).toBe(2);
+  });
+
+  it("6d6mt3: only counts groups of 3 or more", () => {
+    vi.spyOn(Math, "random")
+      .mockReturnValueOnce(d(6, 2))
+      .mockReturnValueOnce(d(6, 2))  // pair of 2s — not enough
+      .mockReturnValueOnce(d(6, 5))
+      .mockReturnValueOnce(d(6, 5))
+      .mockReturnValueOnce(d(6, 5))  // triple of 5s — counts
+      .mockReturnValueOnce(d(6, 1));
+    const r = roll("6d6mt3");
+    expect(r.terms[0].matchedValues).toEqual([5]);
+    expect(r.total).toBe(1);
+  });
+
+  it("5d6mt3>4: requires both 3+ matches AND value > 4", () => {
+    vi.spyOn(Math, "random")
+      .mockReturnValueOnce(d(6, 3))
+      .mockReturnValueOnce(d(6, 3))
+      .mockReturnValueOnce(d(6, 3))  // triple of 3s — fails value > 4
+      .mockReturnValueOnce(d(6, 6))
+      .mockReturnValueOnce(d(6, 6));  // pair of 6s — fails count >= 3
+    const r = roll("5d6mt3>4");
+    expect(r.total).toBe(0);
+  });
+
+  it("5d6mt3>4: both conditions met", () => {
+    vi.spyOn(Math, "random")
+      .mockReturnValueOnce(d(6, 6))
+      .mockReturnValueOnce(d(6, 6))
+      .mockReturnValueOnce(d(6, 6))
+      .mockReturnValueOnce(d(6, 6))
+      .mockReturnValueOnce(d(6, 1));
+    const r = roll("5d6mt3>4");
+    expect(r.terms[0].matchedValues).toEqual([6]);
+    expect(r.total).toBe(1);
+  });
+
+  it("matching considers exploded totals, not just base rolls", () => {
+    // 2d6!m: each die explodes on max. Two dice both roll 6, then explode to 4 each → totals 10, 10.
+    // Equal totals should match.
+    vi.spyOn(Math, "random")
+      .mockReturnValueOnce(d(6, 6))  // die 1: 6 → explodes
+      .mockReturnValueOnce(d(6, 4))  // explosion → 4 (no further)
+      .mockReturnValueOnce(d(6, 6))  // die 2: 6 → explodes
+      .mockReturnValueOnce(d(6, 4)); // explosion → 4 (no further)
+    const r = roll("2d6!mt");
+    expect(r.terms[0].rolls).toEqual([10, 10]);
+    expect(r.terms[0].matchedValues).toEqual([10]);
+    expect(r.total).toBe(1);
+  });
+});

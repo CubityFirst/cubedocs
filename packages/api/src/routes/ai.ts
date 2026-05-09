@@ -60,7 +60,7 @@ export async function handleAi(
           {
             role: "system",
             content:
-              "You are a documentation assistant. Summarise the following document in 1–3 short bullet points using markdown. Focus on the key purpose, main topics, and any important details. Keep the total response under 100 words.",
+              "You are summarizing a documentation page so a reader can decide whether to open it. Write 1–3 short markdown bullets, under 100 words total. Lead with what the doc covers and what someone would do with it.\n\nRules:\n- Don't restate the title (it's shown above the summary).\n- Don't start with \"This document…\", \"Here is a summary\", or similar preambles — go straight to the content.\n- If the doc is a stub or mostly a list/table, say so in one bullet instead of inventing detail.",
           },
           {
             role: "user",

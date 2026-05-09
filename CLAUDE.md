@@ -35,8 +35,6 @@ Authentication uses `Authorization: Bearer <JWT>` headers. JWTs are issued by th
 `packages/frontend/src/lib/dice.ts` — parser and roller for dice notation.
 `packages/frontend/src/components/DiceRoll.tsx` — clickable inline dice roll widget used in rendered markdown.
 
-`specs/dice-spec.txt` — Roll20 feature parity tracker. Check this before implementing new dice features (to avoid duplication) and update the `Ours` column to `done` when a feature is added.
-
 **Supported notation:** see `memories/Dice-Notation.md` — read that file when you need details on dice notation syntax (table of examples, reroll/keep/explode/success-count behavior, operator precedence).
 
 ## Realtime Collaboration

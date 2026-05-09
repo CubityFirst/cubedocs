@@ -27,6 +27,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { HistorySheet, type RevisionMeta } from "@/components/HistorySheet";
 import { HistoryBanner } from "@/components/HistoryBanner";
+import { UserAvatar } from "@/components/UserAvatar";
+import { UserProfileCard } from "@/components/UserProfileCard";
 import { Pencil, X, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight, Sparkles, Users, UserPlus, Trash2, HelpCircle, Code2, AlertCircle } from "lucide-react";
 import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
 import { apiFetchJson } from "@/lib/apiFetch";
@@ -185,10 +187,11 @@ interface DocShareMember {
   permission: SharePermission;
 }
 
-interface LimitedMember {
+interface ShareableMember {
   userId: string;
   name: string;
   email: string;
+  role: string;
 }
 
 interface RevisionDetail extends RevisionMeta {
@@ -249,7 +252,7 @@ export function DocPage() {
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [docShares, setDocShares] = useState<DocShareMember[]>([]);
   const [sharesLoading, setSharesLoading] = useState(false);
-  const [limitedViewerMembers, setLimitedViewerMembers] = useState<LimitedMember[]>([]);
+  const [shareableMembers, setShareableMembers] = useState<ShareableMember[]>([]);
   const [addingShareUserId, setAddingShareUserId] = useState<string | null>(null);
   const [removingShareUserId, setRemovingShareUserId] = useState<string | null>(null);
   const [updatingShareUserId, setUpdatingShareUserId] = useState<string | null>(null);
@@ -535,9 +538,9 @@ export function DocPage() {
     ]);
     if (sharesResult.ok) setDocShares(sharesResult.data ?? []);
     if (membersResult.ok) {
-      setLimitedViewerMembers((membersResult.data ?? [])
-        .filter(m => m.role === "limited")
-        .map(m => ({ userId: m.userId, name: m.name, email: m.email })));
+      setShareableMembers((membersResult.data ?? [])
+        .filter(m => m.role === "limited" || m.role === "viewer")
+        .map(m => ({ userId: m.userId, name: m.name, email: m.email, role: m.role })));
     }
     setSharesLoading(false);
   }
@@ -832,7 +835,7 @@ export function DocPage() {
   }
 
   const headings = extractHeadings(doc.content);
-  const isEditor = myRole === "editor" || myRole === "admin" || myRole === "owner" || (myRole === "limited" && myPermission === "edit");
+  const isEditor = myRole === "editor" || myRole === "admin" || myRole === "owner" || myPermission === "edit";
   const isAdmin = myRole === "admin" || myRole === "owner";
 
   return (
@@ -871,112 +874,146 @@ export function DocPage() {
                   <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
                     <DialogContent className="sm:max-w-md">
                       <DialogHeader>
-                        <DialogTitle>Guest Access</DialogTitle>
+                        <DialogTitle>Document Access</DialogTitle>
                         <DialogDescription>
-                          Control which limited viewers can read this document.
+                          Grant per-document access to limited members, or uplift viewers to edit this document.
                         </DialogDescription>
                       </DialogHeader>
-                      {sharesLoading ? (
-                        <p className="text-sm text-muted-foreground py-2">Loading…</p>
-                      ) : (
-                        <div className="flex flex-col gap-4 py-2">
-                          {docShares.length === 0 ? (
-                            <p className="text-sm text-muted-foreground">No limited members have access to this document.</p>
-                          ) : (
+                      <div className="flex flex-col gap-4 py-2">
+                        <div className="flex flex-col gap-2">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Members with access</p>
+                          {sharesLoading ? (
                             <div className="flex flex-col divide-y divide-border rounded-md border border-border">
-                              {docShares.map(share => (
-                                <div key={share.userId} className="flex items-center gap-3 px-3 py-2.5">
-                                  <div className="flex min-w-0 flex-1 flex-col">
-                                    <span className="truncate text-sm font-medium">{share.name}</span>
-                                    <span className="truncate text-xs text-muted-foreground">{share.email}</span>
-                                  </div>
-                                  <div className="flex items-center gap-1.5 shrink-0">
-                                    <Select
-                                      value={share.permission}
-                                      onValueChange={val => updateSharePermission(share.userId, val as SharePermission)}
-                                      disabled={updatingShareUserId === share.userId}
-                                    >
-                                      <SelectTrigger className="h-7 w-[80px] text-xs">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="view">View</SelectItem>
-                                        <SelectItem value="edit">Edit</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-7 w-7 text-destructive hover:text-destructive"
-                                      onClick={() => removeShare(share.userId)}
-                                      disabled={removingShareUserId === share.userId}
-                                      title="Revoke access"
-                                    >
-                                      <Trash2 className="h-3.5 w-3.5" />
-                                    </Button>
-                                  </div>
+                              {[0, 1].map(i => (
+                                <div key={i} className="flex items-center gap-3 px-3 py-2.5">
+                                  <Skeleton className="size-7 shrink-0 rounded-full" />
+                                  <Skeleton className="h-4 w-32 flex-1" />
+                                  <Skeleton className="h-7 w-[80px] shrink-0 rounded-md" />
+                                  <Skeleton className="size-7 shrink-0 rounded-md" />
                                 </div>
                               ))}
                             </div>
-                          )}
-                          {limitedViewerMembers.filter(m => !docShares.some(s => s.userId === m.userId)).length > 0 && (
-                            <div className="flex flex-col gap-2">
-                              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Add limited member</p>
+                          ) : docShares.length === 0 ? (
+                            <p className="rounded-md border border-dashed border-border px-3 py-2.5 text-sm text-muted-foreground">No users have been granted discrete access yet.</p>
+                          ) : (
                               <div className="flex flex-col divide-y divide-border rounded-md border border-border">
-                                {limitedViewerMembers
-                                  .filter(m => !docShares.some(s => s.userId === m.userId))
-                                  .map(member => (
-                                    <div key={member.userId} className="flex items-center gap-3 px-3 py-2.5">
-                                      <div className="flex min-w-0 flex-1 flex-col">
-                                        <span className="truncate text-sm font-medium">{member.name}</span>
-                                        <span className="truncate text-xs text-muted-foreground">{member.email}</span>
-                                      </div>
-                                      <div className="flex items-center gap-1.5 shrink-0">
-                                        <Select
-                                          value={pendingAddPermission[member.userId] ?? "view"}
-                                          onValueChange={val => setPendingAddPermission(prev => ({ ...prev, [member.userId]: val as SharePermission }))}
-                                        >
-                                          <SelectTrigger className="h-7 w-[80px] text-xs">
-                                            <SelectValue />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            <SelectItem value="view">View</SelectItem>
-                                            <SelectItem value="edit">Edit</SelectItem>
-                                          </SelectContent>
-                                        </Select>
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-7 w-7"
-                                          onClick={() => addShare(member.userId, pendingAddPermission[member.userId] ?? "view")}
-                                          disabled={addingShareUserId === member.userId}
-                                          title="Grant access"
-                                        >
-                                          <UserPlus className="h-3.5 w-3.5" />
-                                        </Button>
-                                        {doc?.folder_id && (
-                                          <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="h-7 px-2 text-xs"
-                                            onClick={() => shareFolderWith(member.userId, pendingAddPermission[member.userId] ?? "view")}
-                                            disabled={folderShareLoading}
-                                            title="Share all docs in this folder"
-                                          >
-                                            Folder
-                                          </Button>
-                                        )}
-                                      </div>
+                                {docShares.map(share => (
+                                  <div key={share.userId} className="flex items-center gap-3 px-3 py-2.5">
+                                    <UserProfileCard userId={share.userId} name={share.name}>
+                                      <button type="button" className="-mx-1 flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded px-1 py-0.5 text-left transition-colors hover:bg-muted/50">
+                                        <UserAvatar userId={share.userId} name={share.name} className="size-7 shrink-0 text-xs" />
+                                        <span className="truncate text-sm font-medium">{share.name}</span>
+                                      </button>
+                                    </UserProfileCard>
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                      <Select
+                                        value={share.permission}
+                                        onValueChange={val => updateSharePermission(share.userId, val as SharePermission)}
+                                        disabled={updatingShareUserId === share.userId}
+                                      >
+                                        <SelectTrigger className="h-7 w-[80px] text-xs">
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="view">View</SelectItem>
+                                          <SelectItem value="edit">Edit</SelectItem>
+                                        </SelectContent>
+                                      </Select>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-7 w-7 text-destructive hover:text-destructive"
+                                        onClick={() => removeShare(share.userId)}
+                                        disabled={removingShareUserId === share.userId}
+                                        title="Revoke access"
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </Button>
                                     </div>
-                                  ))}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          {sharesLoading && (
+                            <div className="flex flex-col gap-2">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Add member</p>
+                              <div className="flex flex-col divide-y divide-border rounded-md border border-border">
+                                {[0, 1].map(i => (
+                                  <div key={i} className="flex items-center gap-3 px-3 py-2.5">
+                                    <Skeleton className="size-7 shrink-0 rounded-full" />
+                                    <Skeleton className="h-4 w-40 flex-1" />
+                                    <Skeleton className="h-7 w-[80px] shrink-0 rounded-md" />
+                                    <Skeleton className="size-7 shrink-0 rounded-md" />
+                                  </div>
+                                ))}
                               </div>
                             </div>
                           )}
-                          {limitedViewerMembers.length === 0 && (
-                            <p className="text-xs text-muted-foreground">No limited members in this project yet. Invite them from Site Settings.</p>
+                          {!sharesLoading && shareableMembers.filter(m => !docShares.some(s => s.userId === m.userId)).length > 0 && (
+                            <div className="flex flex-col gap-2">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Add member</p>
+                              <div className="flex flex-col divide-y divide-border rounded-md border border-border">
+                                {shareableMembers
+                                  .filter(m => !docShares.some(s => s.userId === m.userId))
+                                  .map(member => {
+                                    // Viewers already have read access project-wide, so a 'view' share would be a no-op — default to 'edit' for them.
+                                    const defaultPerm: SharePermission = member.role === "viewer" ? "edit" : "view";
+                                    const selectedPerm = pendingAddPermission[member.userId] ?? defaultPerm;
+                                    return (
+                                      <div key={member.userId} className="flex items-center gap-3 px-3 py-2.5">
+                                        <UserProfileCard userId={member.userId} name={member.name}>
+                                          <button type="button" className="-mx-1 flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded px-1 py-0.5 text-left transition-colors hover:bg-muted/50">
+                                            <UserAvatar userId={member.userId} name={member.name} className="size-7 shrink-0 text-xs" />
+                                            <span className="truncate text-sm font-medium">{member.name} <span className="text-xs font-normal text-muted-foreground">· {member.role}</span></span>
+                                          </button>
+                                        </UserProfileCard>
+                                        <div className="flex items-center gap-1.5 shrink-0">
+                                          <Select
+                                            value={selectedPerm}
+                                            onValueChange={val => setPendingAddPermission(prev => ({ ...prev, [member.userId]: val as SharePermission }))}
+                                          >
+                                            <SelectTrigger className="h-7 w-[80px] text-xs">
+                                              <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {member.role !== "viewer" && <SelectItem value="view">View</SelectItem>}
+                                              <SelectItem value="edit">Edit</SelectItem>
+                                            </SelectContent>
+                                          </Select>
+                                          <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-7 w-7"
+                                            onClick={() => addShare(member.userId, selectedPerm)}
+                                            disabled={addingShareUserId === member.userId}
+                                            title="Grant access"
+                                          >
+                                            <UserPlus className="h-3.5 w-3.5" />
+                                          </Button>
+                                          {doc?.folder_id && (
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              className="h-7 px-2 text-xs"
+                                              onClick={() => shareFolderWith(member.userId, selectedPerm)}
+                                              disabled={folderShareLoading}
+                                              title="Share all docs in this folder"
+                                            >
+                                              Folder
+                                            </Button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                              </div>
+                            </div>
+                          )}
+                          {!sharesLoading && shareableMembers.length === 0 && (
+                            <p className="text-xs text-muted-foreground">No viewers or limited members in this project yet. Invite them from Site Settings.</p>
                           )}
                         </div>
-                      )}
                     </DialogContent>
                   </Dialog>
                 </>

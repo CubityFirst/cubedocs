@@ -59,6 +59,12 @@ export async function handleMembers(
     if (!body.email || !body.role) return errorResponse(Errors.BAD_REQUEST);
     if (!VALID_ROLES.includes(body.role) || body.role === "owner") return errorResponse(Errors.BAD_REQUEST);
 
+    // Per-user rate limit on the email→user lookup. The auth worker enforces
+    // a coarser IP-keyed limit; this one stops any single account from
+    // scraping the email map even from many IPs.
+    const { success } = await env.RATE_LIMITER_INVITE_LOOKUP.limit({ key: user.userId });
+    if (!success) return errorResponse(Errors.RATE_LIMITED);
+
     // Look up the user by email from auth worker
     const lookupRes = await env.AUTH.fetch("https://auth/lookup", {
       method: "POST",
@@ -113,8 +119,18 @@ export async function handleMembers(
       return errorResponse(Errors.FORBIDDEN);
     }
 
-    await env.DB.prepare("UPDATE project_members SET role = ? WHERE project_id = ? AND user_id = ?")
-      .bind(body.role, projectId, targetUserId).run();
+    const stmts = [
+      env.DB.prepare("UPDATE project_members SET role = ? WHERE project_id = ? AND user_id = ?")
+        .bind(body.role, projectId, targetUserId),
+    ];
+    // Promotion to editor or above makes any per-doc share inert (project-wide
+    // access supersedes it). Drop the rows so the share dialog doesn't show
+    // them and so a future demotion doesn't silently re-grant old access.
+    if (ROLE_RANK[body.role] >= ROLE_RANK["editor"]) {
+      stmts.push(env.DB.prepare("DELETE FROM doc_shares WHERE project_id = ? AND user_id = ?")
+        .bind(projectId, targetUserId));
+    }
+    await env.DB.batch(stmts);
 
     const updated = await env.DB.prepare("SELECT * FROM project_members WHERE project_id = ? AND user_id = ?")
       .bind(projectId, targetUserId).first<MemberRow>();

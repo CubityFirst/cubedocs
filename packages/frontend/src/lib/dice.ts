@@ -3,9 +3,18 @@ export type RerollCondition = { op: CompOp; value: number };
 export type CritCondition = { op: CompOp; value: number };
 export type ExplodeMode = "normal" | "compound" | "penetrating";
 
+export type MatchSpec = {
+  /** "show": visual highlight only, total unchanged. "tally": total = number of matched groups (mt). */
+  kind: "show" | "tally";
+  /** Minimum number of dice with the same face value required to count as a match. Default 2. */
+  minMatches: number;
+  /** Optional condition the matched value must satisfy (e.g. mt3>4). */
+  targetCondition?: { op: CompOp; value: number };
+};
+
 export type DiceTerm =
-  | { type: "standard"; count: number; sides: number; keep?: { mode: "h" | "l"; count: number }; reroll?: { conditions: RerollCondition[]; once: boolean }; critSuccess?: CritCondition[]; critFail?: CritCondition[]; explode?: { mode: ExplodeMode; condition?: RerollCondition }; successThreshold?: { op: "<" | ">" | "<=" | ">="; value: number }; failureThreshold?: { op: CompOp; value: number }; sort?: "asc" | "desc" }
-  | { type: "fate"; count: number }
+  | { type: "standard"; count: number; sides: number; computedCount?: DiceNode; computedSides?: DiceNode; keep?: { mode: "h" | "l"; count: number }; reroll?: { conditions: RerollCondition[]; once: boolean }; critSuccess?: CritCondition[]; critFail?: CritCondition[]; explode?: { mode: ExplodeMode; condition?: RerollCondition }; successThreshold?: { op: "<" | ">" | "<=" | ">="; value: number }; failureThreshold?: { op: CompOp; value: number }; sort?: "asc" | "desc"; matches?: MatchSpec }
+  | { type: "fate"; count: number; computedCount?: DiceNode }
   | { type: "pool"; count: number; faces: number[] }
   | { type: "table"; count: number; entries: string[] }
   | { type: "constant"; value: number };
@@ -64,6 +73,12 @@ export interface TermResult {
   failureMet?: boolean[];
   /** Count of kept dice meeting the failure threshold. */
   failureCount?: number;
+  /** Match spec copied from the term (when m/mt was used). */
+  matches?: MatchSpec;
+  /** Distinct kept face values that satisfied the match spec, sorted ascending. */
+  matchedValues?: number[];
+  /** Number of matched groups (== matchedValues.length). For mt this is also the term total. */
+  matchCount?: number;
 }
 
 export interface GroupMember {
@@ -161,6 +176,19 @@ function tokenize(input: string): Token[] {
           if (c === "≤") { atom += "<="; i++; }
           else if (c === "≥") { atom += ">="; i++; }
           else { atom += c; i++; if (i < input.length && input[i] === "=") { atom += "="; i++; } }
+        }
+        // Absorb a balanced (...) group into the atom when it directly follows the
+        // 'd' of a dice prefix — this is computed-sides notation, e.g. 2d(3+3).
+        // Restricted to atoms matching `\d*d$` so function names like `round` (also
+        // ending in d) and other letter-prefixed atoms are not affected.
+        else if (c === "(" && /^\d*d$/i.test(atom)) {
+          let depth = 0;
+          while (i < input.length) {
+            if (input[i] === "(") depth++;
+            else if (input[i] === ")") depth--;
+            atom += input[i++];
+            if (depth === 0) break;
+          }
         }
         else break;
       }
@@ -260,10 +288,33 @@ function parseDiceTerm(s: string): DiceTerm {
     return { type: "table", count, entries: raw };
   }
 
-  if ((m = /^(\d*)d(\d+)/i.exec(s))) {
+  if ((m = /^(\d*)d/i.exec(s))) {
     const count = m[1] ? parseInt(m[1], 10) : 1;
-    const sides = parseInt(m[2], 10);
-    let rest = s.slice(m[0].length);
+    let pos = m[0].length;
+
+    // Sides may be (a) a balanced (...) group already absorbed into the atom by
+    // the tokenizer (computed sides, e.g. 2d(3+3)), or (b) the usual digit run.
+    let sides = 0;
+    let computedSides: DiceNode | undefined;
+    if (s[pos] === "(") {
+      let depth = 0;
+      const start = pos;
+      while (pos < s.length) {
+        if (s[pos] === "(") depth++;
+        else if (s[pos] === ")") depth--;
+        pos++;
+        if (depth === 0) break;
+      }
+      if (depth !== 0) throw new Error(`Unbalanced parens in: "${s}"`);
+      computedSides = parseDice(s.slice(start + 1, pos - 1)).root;
+    } else {
+      const sidesMatch = /^(\d+)/.exec(s.slice(pos));
+      if (!sidesMatch) throw new Error(`Cannot parse dice term: "${s}"`);
+      sides = parseInt(sidesMatch[1], 10);
+      pos += sidesMatch[0].length;
+    }
+
+    let rest = s.slice(pos);
     let keep: { mode: "h" | "l"; count: number } | undefined;
     const rerollConditions: RerollCondition[] = [];
     let rerollOnce = false;
@@ -273,6 +324,7 @@ function parseDiceTerm(s: string): DiceTerm {
     let successThreshold: { op: "<" | ">" | "<=" | ">="; value: number } | undefined;
     let failureThreshold: { op: CompOp; value: number } | undefined;
     let sort: "asc" | "desc" | undefined;
+    let matches: MatchSpec | undefined;
     let mod: RegExpMatchArray | null;
     while (rest.length > 0) {
       if ((mod = /^k([hl])(\d+)/i.exec(rest))) {
@@ -315,6 +367,20 @@ function parseDiceTerm(s: string): DiceTerm {
       } else if (/^s/i.test(rest)) {
         sort = "asc";
         rest = rest.slice(1);
+      } else if ((mod = /^mt(\d+)?(?:([<>]=?)(\d+))?/i.exec(rest))) {
+        // mt = match tally: total becomes count of matched groups.
+        // Optional minMatches digit, optional comparator+value target.
+        // Must be tested before plain `m` and before the success-threshold branch
+        // so `mt3>4` consumes the full modifier rather than splitting on `>4`.
+        const minMatches = mod[1] ? parseInt(mod[1], 10) : 2;
+        const targetCondition = mod[3] !== undefined ? { op: (mod[2] || "=") as CompOp, value: parseInt(mod[3], 10) } : undefined;
+        matches = { kind: "tally", minMatches, ...(targetCondition ? { targetCondition } : {}) };
+        rest = rest.slice(mod[0].length);
+      } else if ((mod = /^m(\d+)?(?:([<>]=?)(\d+))?/i.exec(rest))) {
+        const minMatches = mod[1] ? parseInt(mod[1], 10) : 2;
+        const targetCondition = mod[3] !== undefined ? { op: (mod[2] || "=") as CompOp, value: parseInt(mod[3], 10) } : undefined;
+        matches = { kind: "show", minMatches, ...(targetCondition ? { targetCondition } : {}) };
+        rest = rest.slice(mod[0].length);
       } else if ((mod = /^([<>]=?)(\d+)/.exec(rest))) {
         successThreshold = { op: mod[1] as "<" | ">", value: parseInt(mod[2], 10) };
         rest = rest.slice(mod[0].length);
@@ -329,6 +395,7 @@ function parseDiceTerm(s: string): DiceTerm {
       type: "standard",
       count,
       sides,
+      ...(computedSides ? { computedSides } : {}),
       ...(keep ? { keep } : {}),
       ...(rerollConditions.length > 0 ? { reroll: { conditions: rerollConditions, once: rerollOnce } } : {}),
       ...(critSuccessConditions.length > 0 ? { critSuccess: critSuccessConditions } : {}),
@@ -337,6 +404,7 @@ function parseDiceTerm(s: string): DiceTerm {
       ...(successThreshold ? { successThreshold } : {}),
       ...(failureThreshold ? { failureThreshold } : {}),
       ...(sort ? { sort } : {}),
+      ...(matches ? { matches } : {}),
     };
   }
 
@@ -513,6 +581,20 @@ class DiceParser {
       this.advance();
       const inner = this.parseExpr();
       this.expectRparen();
+
+      // Computed-count dice: (expr)dX or (expr)d(...) or (expr)dF.
+      // The `(expr)` becomes the count, evaluated and rounded at roll time.
+      const next = this.peek();
+      if (next?.kind === "atom" && /^d(\d|[fF]|\()/.test(next.value)) {
+        this.advance();
+        const { termStr, inlineLabel } = extractInlineLabel(next.value);
+        const term = parseDiceTerm("1" + termStr);
+        if (term.type !== "standard" && term.type !== "fate") {
+          throw new Error(`Computed dice count requires standard or fate dice: "(...)d${termStr.slice(1)}"`);
+        }
+        return { type: "term", term: { ...term, computedCount: inner }, ...(inlineLabel ? { inlineLabel } : {}) };
+      }
+
       return inner;
     }
 
@@ -561,13 +643,17 @@ export function cmpMatch(op: CompOp, v: number, threshold: number): boolean {
 function rollDiceTerm(term: DiceTerm): Omit<TermResult, "inlineLabel"> {
   switch (term.type) {
     case "standard": {
+      // Resolve computed count/sides at roll time. Roll20 spec: round to nearest whole number.
+      const count = term.computedCount ? Math.round(evalNode(term.computedCount).total) : term.count;
+      const sides = term.computedSides ? Math.round(evalNode(term.computedSides).total) : term.sides;
+
       const matchesReroll = (v: number): boolean =>
         (term.reroll?.conditions ?? []).some((c) => cmpMatch(c.op, v, c.value));
 
       const matchesExplode = (v: number): boolean => {
         if (!term.explode) return false;
         const cond = term.explode.condition;
-        if (!cond) return v === term.sides;
+        if (!cond) return v === sides;
         return cmpMatch(cond.op, v, cond.value);
       };
 
@@ -575,16 +661,16 @@ function rollDiceTerm(term: DiceTerm): Omit<TermResult, "inlineLabel"> {
       const rerolledFrom: (number | undefined)[] = [];
       const explosionChainsArr: (number[] | undefined)[] = [];
 
-      for (let i = 0; i < term.count; i++) {
-        let v = randInt(1, term.sides);
+      for (let i = 0; i < count; i++) {
+        let v = randInt(1, sides);
         let original: number | undefined;
         if (term.reroll && matchesReroll(v)) {
           original = v;
           if (term.reroll.once) {
-            v = randInt(1, term.sides);
+            v = randInt(1, sides);
           } else {
             let guard = 0;
-            while (matchesReroll(v) && guard++ < 1000) v = randInt(1, term.sides);
+            while (matchesReroll(v) && guard++ < 1000) v = randInt(1, sides);
           }
         }
 
@@ -595,7 +681,7 @@ function rollDiceTerm(term: DiceTerm): Omit<TermResult, "inlineLabel"> {
           let lastRaw = v; // raw value used to check explosion condition
           let guard = 0;
           while (matchesExplode(lastRaw) && guard++ < 100) {
-            lastRaw = randInt(1, term.sides);
+            lastRaw = randInt(1, sides);
             chain.push(mode === "penetrating" ? lastRaw - 1 : lastRaw);
           }
           const dieTotal = chain.reduce((s, x) => s + x, 0);
@@ -664,12 +750,45 @@ function rollDiceTerm(term: DiceTerm): Omit<TermResult, "inlineLabel"> {
       const rawFailureCount = matchFT
         ? kept.filter((v) => typeof v === "number" && matchFT(v as number)).length
         : undefined;
-      const total = matchST
-        ? rawSuccessCount! - (rawFailureCount ?? 0)
-        : kept.reduce((s, v) => s + (v as number), 0);
+      // Matching: scan kept dice for face values appearing minMatches+ times,
+      // optionally satisfying targetCondition. With kind="tally" (mt), the
+      // term total becomes the count of matched groups; with "show" (m) the
+      // total is unchanged but matchedValues is exposed for visual highlighting.
+      let matchedValues: number[] | undefined;
+      let matchCount: number | undefined;
+      if (term.matches) {
+        const counts = new Map<number, number>();
+        for (const v of kept) {
+          if (typeof v !== "number") continue;
+          counts.set(v, (counts.get(v) ?? 0) + 1);
+        }
+        const cond = term.matches.targetCondition;
+        const matched: number[] = [];
+        for (const [val, cnt] of counts) {
+          if (cnt < term.matches.minMatches) continue;
+          if (cond && !cmpMatch(cond.op, val, cond.value)) continue;
+          matched.push(val);
+        }
+        matched.sort((a, b) => a - b);
+        matchedValues = matched;
+        matchCount = matched.length;
+      }
+
+      const total = term.matches?.kind === "tally"
+        ? matchCount ?? 0
+        : matchST
+          ? rawSuccessCount! - (rawFailureCount ?? 0)
+          : kept.reduce((s, v) => s + (v as number), 0);
       const stSuffix = st ? `${st.op}${st.value}` : "";
       const ftSuffix = ft ? `f${ft.op === "=" ? "" : ft.op}${ft.value}` : "";
       const sortSuffix = term.sort === "asc" ? "s" : term.sort === "desc" ? "sd" : "";
+      const matchSuffix = term.matches
+        ? `${term.matches.kind === "tally" ? "mt" : "m"}` +
+          `${term.matches.minMatches !== 2 ? term.matches.minMatches : ""}` +
+          `${term.matches.targetCondition
+              ? `${term.matches.targetCondition.op === "=" ? "" : term.matches.targetCondition.op}${term.matches.targetCondition.value}`
+              : ""}`
+        : "";
 
       let outRolls: number[] = rolls;
       let outRerolledFrom: (number | undefined)[] = rerolledFrom;
@@ -697,9 +816,9 @@ function rollDiceTerm(term: DiceTerm): Omit<TermResult, "inlineLabel"> {
         rolls: outRolls,
         kept: outKept,
         total,
-        label: `${term.count}d${term.sides}${explodeSuffix}${keepSuffix}${rerollSuffix}${csSuffix}${cfSuffix}${stSuffix}${ftSuffix}${sortSuffix}`,
+        label: `${count}d${sides}${explodeSuffix}${keepSuffix}${rerollSuffix}${csSuffix}${cfSuffix}${stSuffix}${ftSuffix}${sortSuffix}${matchSuffix}`,
         minFace: 1,
-        maxFace: term.sides,
+        maxFace: sides,
         ...(outHasRerolls ? { rerolledFrom: outRerolledFrom } : {}),
         ...(outHasExplosions || term.explode ? { explosionChains: outExplosionChains } : {}),
         ...(outCritStatus ? { critStatus: outCritStatus } : {}),
@@ -710,16 +829,18 @@ function rollDiceTerm(term: DiceTerm): Omit<TermResult, "inlineLabel"> {
         ...(ft ? { failureThreshold: ft } : {}),
         ...(outFailureMet ? { failureMet: outFailureMet } : {}),
         ...(rawFailureCount !== undefined ? { failureCount: rawFailureCount, successCount: rawSuccessCount } : {}),
+        ...(term.matches ? { matches: term.matches, matchedValues, matchCount } : {}),
       };
     }
 
     case "fate": {
-      const rolls = Array.from({ length: term.count }, () => randInt(-1, 1));
+      const count = term.computedCount ? Math.round(evalNode(term.computedCount).total) : term.count;
+      const rolls = Array.from({ length: count }, () => randInt(-1, 1));
       return {
         rolls,
         kept: rolls,
         total: rolls.reduce((s, v) => s + v, 0),
-        label: `${term.count}dF`,
+        label: `${count}dF`,
         minFace: -1,
         maxFace: 1,
       };
@@ -951,8 +1072,12 @@ function evalNode(node: DiceNode): EvalResult {
 
 function termMaxTotal(term: DiceTerm): number | null {
   switch (term.type) {
-    case "standard": if (term.explode || term.successThreshold) return null; return (term.keep ? term.keep.count : term.count) * term.sides;
-    case "fate": return term.count;
+    case "standard":
+      if (term.explode || term.successThreshold || term.computedCount || term.computedSides || term.matches?.kind === "tally") return null;
+      return (term.keep ? term.keep.count : term.count) * term.sides;
+    case "fate":
+      if (term.computedCount) return null;
+      return term.count;
     case "pool": return term.count * Math.max(...term.faces);
     case "table": return null;
     case "constant": return term.value;
@@ -961,8 +1086,12 @@ function termMaxTotal(term: DiceTerm): number | null {
 
 function termMinTotal(term: DiceTerm): number | null {
   switch (term.type) {
-    case "standard": if (term.explode || term.successThreshold) return null; return (term.keep ? term.keep.count : term.count) * 1;
-    case "fate": return -term.count;
+    case "standard":
+      if (term.explode || term.successThreshold || term.computedCount || term.computedSides || term.matches?.kind === "tally") return null;
+      return (term.keep ? term.keep.count : term.count) * 1;
+    case "fate":
+      if (term.computedCount) return null;
+      return -term.count;
     case "pool": return term.count * Math.min(...term.faces);
     case "table": return null;
     case "constant": return term.value;

@@ -39,6 +39,16 @@ service = "annex-auth"
 [vars]
 ENVIRONMENT = "production"
 
+# Per-user limiter for the invite-by-email lookup. The auth worker's
+# /lookup also has its own coarser IP-keyed limiter — this one caps any
+# single account from scraping the email→user map even when multiple
+# users share an IP (office NAT).
+[[unsafe.bindings]]
+name = "RATE_LIMITER_INVITE_LOOKUP"
+type = "ratelimit"
+namespace_id = "2001"
+simple = { limit = 8, period = 60 }
+
 # Secrets (set via `wrangler secret put`):
 #   JWT_SECRET      (same value as auth worker — used for local JWT verification)
 #   OPENAI_API_KEY  (OpenAI API key for AI summarisation feature)
