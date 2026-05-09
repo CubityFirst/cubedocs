@@ -1,12 +1,17 @@
 import { toArrayBuffer } from "./crypto";
 
-// PBKDF2-HMAC-SHA256 via WebCrypto. OWASP 2023+ minimum is 600k iterations.
+// PBKDF2-HMAC-SHA256 via WebCrypto. OWASP 2023+ minimum is 600k iterations,
+// but Cloudflare Workers' WebCrypto refuses PBKDF2 calls above 100,000
+// iterations ("NotSupportedError: iteration counts above 100000 are not
+// supported"). Hashes written above the cap throw on verify and lock the
+// user out, so we stay at 100k until either CF raises the cap or we move
+// derivation to Node's crypto via the nodejs_compat path.
 // Stored format is versioned so we can raise the cost ceiling later without
 // invalidating existing hashes:
 //   pbkdf2-1$<iter>$<saltHex>$<hashHex>
 // Hashes written before this format ("<saltHex>:<hashHex>") are still
 // verifiable at the legacy iteration count and rewritten on next login.
-const ITERATIONS = 600_000;
+const ITERATIONS = 100_000;
 const LEGACY_ITERATIONS = 100_000;
 const HASH = "SHA-256";
 const FORMAT_PREFIX = "pbkdf2-1$";
