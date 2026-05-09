@@ -24,10 +24,9 @@ function readVarUint(buf: Uint8Array, offset: number): [number, number] {
 }
 
 export interface CollabProviderOptions {
-  // Soft signal — server rejected one frame but the room is still usable. We keep reconnecting.
-  onWarning?: (reason: string) => void;
-  // Terminal signal — room is in a state where reconnecting is pointless (currently: doc size
-  // cap exceeded, room frozen server-side). The provider stops trying after this fires.
+  // Terminal signal — room is in a state where reconnecting is pointless (doc size cap
+  // exceeded server-side, or our last frame was too big and our local Y.Doc has diverged).
+  // The provider stops trying after this fires.
   onFatal?: (reason: string) => void;
 }
 
@@ -170,20 +169,22 @@ export class CollabProvider {
   private onClose = () => {
     if (this.destroyed) return;
 
-    // Terminal close codes — server is telling us reconnecting won't help.
-    // 1008 (policy violation) is what the server sends when the doc size cap is exceeded
-    // (the room is frozen and any reconnect immediately re-freezes on load).
-    if (this.lastCloseCode === 1008) {
+    // Terminal close codes — reconnecting won't help, fall back to non-collab editing.
+    // 1008 (policy violation): doc size cap exceeded server-side; room frozen, any reconnect
+    //   immediately re-freezes on load.
+    // 1009 (message too big): a frame we sent exceeded MAX_MESSAGE_BYTES. The server rejected
+    //   it before applying, but Yjs applied it locally before sending — so our state has
+    //   diverged from the server's. Reconnecting recomputes the same too-big diff and loops.
+    if (this.lastCloseCode === 1008 || this.lastCloseCode === 1009) {
       this.destroyed = true;
-      this.options.onFatal?.(this.lastCloseReason || "Document is read-only.");
+      // The server's 1009 reason ("message too large") reads awkwardly in the user-facing
+      // alert; force the friendly version. For 1008, prefer the server's reason since it
+      // may carry useful context.
+      const reason = this.lastCloseCode === 1009
+        ? "An edit was too large to sync."
+        : (this.lastCloseReason || "Document is read-only.");
+      this.options.onFatal?.(reason);
       return;
-    }
-
-    // Soft close codes — single frame rejected but the room is still usable.
-    // 1009 (message too big) means our last frame exceeded MAX_MESSAGE_BYTES on the server.
-    // We let the normal reconnect flow happen so the user can keep editing.
-    if (this.lastCloseCode === 1009) {
-      this.options.onWarning?.(this.lastCloseReason || "Last change was too large to sync.");
     }
 
     // If the socket closed without ever firing `open`, the upgrade was rejected

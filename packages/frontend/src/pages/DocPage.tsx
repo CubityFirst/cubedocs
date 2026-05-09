@@ -717,13 +717,6 @@ export function DocPage() {
               autoFocus={!location.state?.isNew}
               collab={!collabFatal && realtimeEnabled && currentUser ? { docId: doc.id, user: currentUser } : undefined}
               onAwarenessChange={realtimeEnabled && !collabFatal ? setRemoteEditors : undefined}
-              onCollabWarning={(reason) => {
-                toast({
-                  title: "Change too large to sync",
-                  description: reason || "Try splitting it into smaller edits.",
-                  variant: "destructive",
-                });
-              }}
               onCollabFatal={(reason) => {
                 setCollabFatal(true);
                 setCollabFatalReason(reason || null);

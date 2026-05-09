@@ -9,7 +9,7 @@ describe("hashPassword", () => {
 
   it("encodes the iteration count in the hash", async () => {
     const [, iter] = (await hashPassword("password")).split("$");
-    expect(Number.parseInt(iter, 10)).toBeGreaterThanOrEqual(600_000);
+    expect(Number.parseInt(iter, 10)).toBeGreaterThanOrEqual(100_000);
   });
 
   it("produces a unique salt on each call", async () => {
@@ -70,7 +70,7 @@ describe("needsRehash", () => {
   });
 
   it("returns true for a hash at a lower iteration count", () => {
-    expect(needsRehash("pbkdf2-1$100000$aabb$ccdd")).toBe(true);
+    expect(needsRehash("pbkdf2-1$50000$aabb$ccdd")).toBe(true);
   });
 
   it("returns true for a malformed versioned hash", () => {

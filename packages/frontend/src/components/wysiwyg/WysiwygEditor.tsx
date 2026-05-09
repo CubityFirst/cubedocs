@@ -64,10 +64,9 @@ interface Props {
   autoFocus?: boolean;
   collab?: { docId: string; user: CollabUser };
   onAwarenessChange?: (editors: { userId: string; name: string; color: string }[]) => void;
-  // Soft signal from collab server (e.g. one frame too large to sync). Show a toast.
-  onCollabWarning?: (reason: string) => void;
-  // Terminal signal from collab server (e.g. doc size cap exceeded — room frozen).
-  // The provider stops reconnecting; the parent should drop out of edit mode.
+  // Terminal signal from collab server — reconnecting won't help (doc size cap exceeded
+  // server-side, or our last frame was too big and local state has diverged). The provider
+  // stops reconnecting; the parent should drop out of collab mode.
   onCollabFatal?: (reason: string) => void;
   rendererCtx?: RendererCtx;
 }
@@ -176,7 +175,6 @@ export function WysiwygEditor({
   autoFocus = false,
   collab,
   onAwarenessChange,
-  onCollabWarning,
   onCollabFatal,
   rendererCtx,
 }: Props) {
@@ -190,8 +188,6 @@ export function WysiwygEditor({
   onChangeRef.current = onChange;
   const onAwarenessChangeRef = useRef(onAwarenessChange);
   onAwarenessChangeRef.current = onAwarenessChange;
-  const onCollabWarningRef = useRef(onCollabWarning);
-  onCollabWarningRef.current = onCollabWarning;
   const onCollabFatalRef = useRef(onCollabFatal);
   onCollabFatalRef.current = onCollabFatal;
 
@@ -261,7 +257,6 @@ export function WysiwygEditor({
       yjsExtensions.push(yCollab(yText, awareness));
 
       provider = new CollabProvider(ydoc, awareness, collabOpts.docId, {
-        onWarning: (reason) => onCollabWarningRef.current?.(reason),
         onFatal: (reason) => onCollabFatalRef.current?.(reason),
       });
     }
