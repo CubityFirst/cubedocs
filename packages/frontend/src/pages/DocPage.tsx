@@ -720,12 +720,12 @@ export function DocPage() {
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Congratulations! You broke it! Realtime sync disabled</AlertDialogTitle>
-              <AlertDialogDescription>
-                {collabFatalReason || "This document has exceeded the realtime sync size limit."}{" "}
-                Your edits still save, but they won't sync live with other users until sync is
-                restored. Restoring wipes the realtime sync state — any unsaved in-progress edits
-                from other users will be discarded, so save your own changes first if you don't
-                want to lose them.
+              <AlertDialogDescription asChild>
+                <div className="space-y-2">
+                  <p>{collabFatalReason || "This document has exceeded the realtime sync size limit."}</p>
+                  <p>Your edits still save, but they won't sync live with other users until sync is restored.</p>
+                  <p>Restoring wipes the realtime sync state. Any unsaved in-progress edits from other users will be discarded, so save your own changes first if you don't want to lose them.</p>
+                </div>
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
