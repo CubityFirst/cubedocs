@@ -22,7 +22,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -654,6 +653,18 @@ export function DocPage() {
           <div className="ml-auto flex items-center gap-2">
             {realtimeEnabled && <EditorPresence editors={remoteEditors} />}
             {saveError && <p className="text-xs text-destructive">{saveError}</p>}
+            {collabFatal && (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => setResetConfirmOpen(true)}
+                title="Realtime sync is disabled — click to restore"
+                className="gap-1.5"
+              >
+                <AlertCircle className="h-3.5 w-3.5" />
+                Sync disabled
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -684,28 +695,6 @@ export function DocPage() {
           </div>
         </div>
 
-        {collabFatal && (
-          <Alert variant="destructive" className="mx-6 mt-3">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Realtime sync disabled</AlertTitle>
-            <AlertDescription>
-              <p>
-                {collabFatalReason || "This document has exceeded the realtime sync size limit."}{" "}
-                Edits save normally but won't sync live with other users until sync is restored.
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-2"
-                disabled={resettingCollab}
-                onClick={() => setResetConfirmOpen(true)}
-              >
-                {resettingCollab ? "Restoring…" : "Restore realtime sync"}
-              </Button>
-            </AlertDescription>
-          </Alert>
-        )}
-
         <div className="flex flex-1 overflow-hidden">
           <div className="relative flex-1 overflow-hidden">
             <WysiwygEditor
@@ -730,17 +719,19 @@ export function DocPage() {
         <AlertDialog open={resetConfirmOpen} onOpenChange={setResetConfirmOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Restore realtime sync?</AlertDialogTitle>
+              <AlertDialogTitle>Congratulations! You broke it! Realtime sync disabled</AlertDialogTitle>
               <AlertDialogDescription>
-                This wipes the realtime sync state for this document. Any in-progress edits from
-                other users that haven't been saved will be discarded. Save your own changes first
-                if you don't want to lose them.
+                {collabFatalReason || "This document has exceeded the realtime sync size limit."}{" "}
+                Your edits still save, but they won't sync live with other users until sync is
+                restored. Restoring wipes the realtime sync state — any unsaved in-progress edits
+                from other users will be discarded, so save your own changes first if you don't
+                want to lose them.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel disabled={resettingCollab}>Cancel</AlertDialogCancel>
               <AlertDialogAction onClick={handleResetCollab} disabled={resettingCollab}>
-                Restore
+                {resettingCollab ? "Restoring…" : "Restore realtime sync"}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
