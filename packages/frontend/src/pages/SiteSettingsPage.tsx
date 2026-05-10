@@ -1201,6 +1201,7 @@ export function SiteSettingsPage() {
             {squareCropFile && (
               <AvatarCropDialog
                 file={squareCropFile}
+                shape="square"
                 onApply={handleSquareCropApply}
                 onClose={() => {
                   setSquareCropFile(null);

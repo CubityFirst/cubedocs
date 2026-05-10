@@ -35,9 +35,14 @@ interface AvatarCropDialogProps {
   file: File;
   onApply: (blob: Blob) => Promise<void>;
   onClose: () => void;
+  /** Visual shape of the crop overlay. The output is always a square 512×512
+   * blob — `shape` only changes the mask cutout + border the user sees while
+   * cropping. Default "circle" for user avatars; pass "square" for project
+   * icons where the rendered image is shown un-clipped. */
+  shape?: "circle" | "square";
 }
 
-export function AvatarCropDialog({ file, onApply, onClose }: AvatarCropDialogProps) {
+export function AvatarCropDialog({ file, onApply, onClose, shape = "circle" }: AvatarCropDialogProps) {
   const [imageSrc, setImageSrc] = useState("");
   const [naturalSize, setNaturalSize] = useState({ w: 1, h: 1 });
   const [minScale, setMinScale] = useState(1);
@@ -250,7 +255,8 @@ export function AvatarCropDialog({ file, onApply, onClose }: AvatarCropDialogPro
             />
           )}
 
-          {/* Dim overlay with circular cutout + white ring */}
+          {/* Dim overlay with cutout + white border. Cutout shape follows the
+              `shape` prop; the bounding box is the same square either way. */}
           <svg
             className="absolute inset-0 pointer-events-none"
             width={CONTAINER_W}
@@ -259,7 +265,11 @@ export function AvatarCropDialog({ file, onApply, onClose }: AvatarCropDialogPro
             <defs>
               <mask id="avatarCropMask">
                 <rect width={CONTAINER_W} height={CONTAINER_H} fill="white" />
-                <circle cx={cx} cy={cy} r={CIRCLE_R} fill="black" />
+                {shape === "square" ? (
+                  <rect x={cx - CIRCLE_R} y={cy - CIRCLE_R} width={CIRCLE_R * 2} height={CIRCLE_R * 2} fill="black" />
+                ) : (
+                  <circle cx={cx} cy={cy} r={CIRCLE_R} fill="black" />
+                )}
               </mask>
             </defs>
             <rect
@@ -268,7 +278,11 @@ export function AvatarCropDialog({ file, onApply, onClose }: AvatarCropDialogPro
               fill="rgba(0,0,0,0.55)"
               mask="url(#avatarCropMask)"
             />
-            <circle cx={cx} cy={cy} r={CIRCLE_R} fill="none" stroke="white" strokeWidth="2" />
+            {shape === "square" ? (
+              <rect x={cx - CIRCLE_R} y={cy - CIRCLE_R} width={CIRCLE_R * 2} height={CIRCLE_R * 2} fill="none" stroke="white" strokeWidth="2" />
+            ) : (
+              <circle cx={cx} cy={cy} r={CIRCLE_R} fill="none" stroke="white" strokeWidth="2" />
+            )}
           </svg>
         </div>
 

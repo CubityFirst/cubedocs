@@ -66,6 +66,33 @@
   padding: 0.3em 0 0.05em;
 }
 
+/* Heading anchor — chain icon shown on hover in reading mode */
+.cm-wysiwyg--reading .cm-h-anchor {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  margin-left: 0.4em;
+  padding: 0.1em;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease;
+}
+.cm-wysiwyg--reading .cm-line:hover .cm-h-anchor {
+  opacity: 0.6;
+}
+.cm-wysiwyg--reading .cm-h-anchor:hover,
+.cm-wysiwyg--reading .cm-h-anchor:focus-visible {
+  opacity: 1;
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--muted));
+  outline: none;
+}
+
 /* Inline marks */
 .cm-wysiwyg .cm-content .cm-strong {
   font-weight: 700;

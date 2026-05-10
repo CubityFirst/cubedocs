@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSwipeGesture } from "@/hooks/useSwipeGesture";
 import { SearchPalette } from "@/components/SearchPalette";
-import { useParams, useNavigate, NavLink } from "react-router-dom";
+import { useParams, useNavigate, NavLink, useLocation } from "react-router-dom";
 import { parseFrontmatter } from "@/lib/frontmatter";
+import { toHeadingId } from "@/lib/headingSlug";
 import { WysiwygEditor } from "@/components/wysiwyg/WysiwygEditor";
 import { GraphView, type GraphData } from "@/components/GraphView";
 import { LinkedDocsPanel } from "@/components/LinkedDocsPanel";
@@ -14,10 +15,6 @@ import { Button } from "@/components/ui/button";
 import { getToken } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { BookOpen, FileText, Folder, House, ChevronLeft, ChevronRight, Search, X, Image, FileCode, FileArchive, File, Music, Download, Network } from "lucide-react";
-
-function toId(text: string): string {
-  return text.toLowerCase().replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-");
-}
 
 interface Heading { level: number; text: string; id: string }
 
@@ -36,7 +33,7 @@ function extractHeadings(content: string): Heading[] {
     const match = line.match(/^(#{1,6})\s+(.+)$/);
     if (match) {
       const text = match[2].trim();
-      headings.push({ level: match[1].length, text, id: toId(text) });
+      headings.push({ level: match[1].length, text, id: toHeadingId(text) });
     }
   }
   return headings;
@@ -326,6 +323,7 @@ export function PublicDocPage() {
   const { projectId, docId } = useParams<{ projectId: string; docId: string }>();
   const isGraph = docId === "graph";
   const navigate = useNavigate();
+  const location = useLocation();
   const [data, setData] = useState<PublicData | null>(null);
   const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -450,6 +448,31 @@ export function PublicDocPage() {
       navigate(`/s/${slug}/${docId}`, { replace: true });
     }
   }, [data, projectId, docId, navigate]);
+
+  // Scroll to #heading anchor when one is present in the URL. Retries for a
+  // few frames because the WysiwygEditor mounts asynchronously and the heading
+  // line (with its slug id) isn't in the DOM the instant `data` becomes set.
+  useEffect(() => {
+    if (!data || isGraph) return;
+    const raw = location.hash.slice(1);
+    if (!raw) return;
+    let hash: string;
+    try { hash = decodeURIComponent(raw); } catch { hash = raw; }
+    if (!hash) return;
+    let cancelled = false;
+    let attempts = 0;
+    function tick() {
+      if (cancelled) return;
+      const el = document.getElementById(hash);
+      if (el) {
+        el.scrollIntoView({ block: "start" });
+        return;
+      }
+      if (++attempts < 30) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+    return () => { cancelled = true; };
+  }, [data, docId, isGraph, location.hash]);
 
   // Fetch graph once when viewing a doc on a project with the published graph enabled
   useEffect(() => {
