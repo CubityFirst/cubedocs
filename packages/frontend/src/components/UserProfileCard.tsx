@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Dialog,
@@ -11,12 +11,14 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { UserAvatar } from "@/components/UserAvatar";
 import { getToken, clearToken } from "@/lib/auth";
-import { CalendarDays, Building2, Clock, Settings, KeyRound, LogOut, ChevronRight, CodeXml, FlaskConical } from "lucide-react";
+import { CalendarDays, Clock, Settings, KeyRound, LogOut, ChevronRight, CodeXml, FlaskConical, Globe } from "lucide-react";
 import { formatTimeInZone, getTimezoneGroup } from "@/lib/timezone";
 import { formatInkSince } from "@/lib/inkDate";
 import { TimezoneMap } from "@/components/TimezoneMap";
+import { InkSparkle } from "@/components/InkSparkle";
 
 let currentUserIdCache: string | null = null;
 let currentUserIdPromise: Promise<string | null> | null = null;
@@ -62,12 +64,21 @@ interface SharedProject {
   theirRole: Role;
 }
 
+interface FavouriteSite {
+  id: string;
+  name: string;
+  vanitySlug: string | null;
+  logoUpdatedAt: string | null;
+}
+
 interface ProfileData {
   userId: string;
   name: string;
   createdAt: string;
   timezone?: string;
   sharedProjects: SharedProject[];
+  favouriteSites: FavouriteSite[];
+  bio?: string;
   personalPlan?: "free" | "ink";
   personalPlanSince?: number | null;
   personalPlanStyle?: string | null;
@@ -76,39 +87,6 @@ interface ProfileData {
 
 const BADGE_DEVELOPER = 1 << 0;
 const BADGE_BETA_TESTER = 1 << 1;
-
-// Sparkles icon (lucide path data) with a gradient stroke matching the
-// Ink avatar ring's three hues. The `ink-icon` class hue-rotates the whole
-// SVG so the gradient cycles through the spectrum like the export PNG
-// does, statically.
-function InkSparkle({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-      aria-hidden
-    >
-      <defs>
-        <linearGradient id="ink-sparkle-stroke" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="hsl(45 100% 60%)" />
-          <stop offset="50%" stopColor="hsl(320 80% 60%)" />
-          <stop offset="100%" stopColor="hsl(200 80% 55%)" />
-        </linearGradient>
-      </defs>
-      <g stroke="url(#ink-sparkle-stroke)">
-        <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />
-        <path d="M20 3v4" />
-        <path d="M22 5h-4" />
-        <path d="M4 17v2" />
-        <path d="M5 18H3" />
-      </g>
-    </svg>
-  );
-}
 
 interface UserProfileCardProps {
   userId: string;
@@ -122,6 +100,29 @@ export function UserProfileCard({ userId, name, children }: UserProfileCardProps
   const [loading, setLoading] = useState(false);
   const [isSelf, setIsSelf] = useState<boolean>(currentUserIdCache === userId);
   const navigate = useNavigate();
+
+  // Animate dialog body height when it changes (loading -> loaded, tab swap).
+  // Outer wrapper holds the explicit, transitioning height; inner div stays
+  // at natural height so the ResizeObserver always sees the true content
+  // size. First measurement comes in as "auto" -> px, which CSS won't
+  // animate, so the open animation is preserved; subsequent px -> px
+  // changes do animate.
+  const innerRef = useRef<HTMLDivElement>(null);
+  const [bodyHeight, setBodyHeight] = useState<number | "auto">("auto");
+  useEffect(() => {
+    if (!open) {
+      setBodyHeight("auto");
+      return;
+    }
+    const el = innerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(entries => {
+      const h = entries[0].contentRect.height;
+      if (h > 0) setBodyHeight(h);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [open]);
 
   useEffect(() => {
     if (!open || profile) return;
@@ -151,10 +152,19 @@ export function UserProfileCard({ userId, name, children }: UserProfileCardProps
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent className="max-w-lg p-0 overflow-hidden" onContextMenu={e => e.stopPropagation()}>
+      <DialogContent
+        className="max-w-lg p-0 overflow-hidden"
+        onContextMenu={e => e.stopPropagation()}
+        onOpenAutoFocus={e => e.preventDefault()}
+      >
         <DialogTitle className="sr-only">{name}'s profile</DialogTitle>
         <DialogDescription className="sr-only">Profile information for {name}</DialogDescription>
 
+        <div
+          style={{ height: bodyHeight === "auto" ? "auto" : `${bodyHeight}px` }}
+          className="overflow-hidden motion-safe:transition-[height] motion-safe:duration-200 motion-safe:ease-out"
+        >
+        <div ref={innerRef}>
         {/* Header */}
         <div className="relative overflow-hidden flex items-center gap-5 px-6 pt-6 pb-5">
           {/* Map background — only when timezone is known */}
@@ -253,7 +263,11 @@ export function UserProfileCard({ userId, name, children }: UserProfileCardProps
           </div>
         </div>
 
-        <Separator />
+        {/* Separator hidden when nothing follows (other-user view, no bio /
+            favourites / shared) so the dialog doesn't show an orphaned line. */}
+        {(isSelf || loading || (profile && (profile.bio || profile.favouriteSites.length > 0 || profile.sharedProjects.length > 0))) && (
+          <Separator />
+        )}
 
         {/* Shared sites — or quick self-actions when viewing your own card */}
         {isSelf ? (
@@ -299,22 +313,55 @@ export function UserProfileCard({ userId, name, children }: UserProfileCardProps
               <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-destructive" />
             </button>
           </div>
-        ) : (
+        ) : loading ? (
           <div className="px-6 py-5">
-            <div className="mb-3 flex items-center gap-2 text-sm font-medium text-muted-foreground">
-              <Building2 className="size-4" />
-              <span>Shared sites</span>
+            <div className="space-y-2">
+              <Skeleton className="h-11 w-full rounded-md" />
+              <Skeleton className="h-11 w-full rounded-md" />
+              <Skeleton className="h-11 w-full rounded-md" />
             </div>
+          </div>
+        ) : profile ? (() => {
+          // Available tabs in priority order (also drives the default tab).
+          // Render a single section flush when only one is present; tabs
+          // appear once 2+ have content.
+          const bioContent = profile.bio ? (
+            <div className="px-6 py-5">
+              <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{profile.bio}</p>
+            </div>
+          ) : null;
 
-            {loading && (
-              <div className="space-y-2">
-                <Skeleton className="h-11 w-full rounded-md" />
-                <Skeleton className="h-11 w-full rounded-md" />
-                <Skeleton className="h-11 w-full rounded-md" />
+          const favouritesContent = profile.favouriteSites.length > 0 ? (
+            <div className="px-6 py-5">
+              <div className="flex flex-col gap-1">
+                {profile.favouriteSites.map(site => {
+                  const slug = site.vanitySlug ?? site.id;
+                  return (
+                    <button
+                      key={site.id}
+                      type="button"
+                      className="flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-muted/60"
+                      onClick={() => { setOpen(false); navigate(`/s/${slug}`); }}
+                    >
+                      {site.logoUpdatedAt ? (
+                        <img
+                          src={`/api/public/projects/${site.id}/logo?v=${encodeURIComponent(site.logoUpdatedAt)}`}
+                          alt=""
+                          className="size-6 shrink-0 rounded object-cover"
+                        />
+                      ) : (
+                        <Globe className="size-5 shrink-0 text-muted-foreground" />
+                      )}
+                      <span className="truncate text-sm font-medium">{site.name}</span>
+                    </button>
+                  );
+                })}
               </div>
-            )}
+            </div>
+          ) : null;
 
-            {!loading && profile && profile.sharedProjects.length > 0 && (
+          const sharedContent = profile.sharedProjects.length > 0 ? (
+            <div className="px-6 py-5">
               <div className="flex flex-col gap-1">
                 {profile.sharedProjects.map(proj => (
                   <button
@@ -333,13 +380,34 @@ export function UserProfileCard({ userId, name, children }: UserProfileCardProps
                   </button>
                 ))}
               </div>
-            )}
+            </div>
+          ) : null;
 
-            {!loading && profile && profile.sharedProjects.length === 0 && (
-              <p className="text-sm text-muted-foreground">No shared sites.</p>
-            )}
-          </div>
-        )}
+          const tabs: { value: string; label: string; content: React.ReactNode }[] = [];
+          if (bioContent) tabs.push({ value: "bio", label: "Bio", content: bioContent });
+          if (favouritesContent) tabs.push({ value: "favourites", label: "Favourites", content: favouritesContent });
+          if (sharedContent) tabs.push({ value: "shared", label: "Shared", content: sharedContent });
+
+          if (tabs.length === 0) return null;
+          if (tabs.length === 1) return tabs[0].content;
+
+          return (
+            <Tabs defaultValue={tabs[0].value} className="gap-0">
+              <TabsList className="mx-6 mt-4 self-start">
+                {tabs.map(t => (
+                  <TabsTrigger key={t.value} value={t.value}>{t.label}</TabsTrigger>
+                ))}
+              </TabsList>
+              {tabs.map(t => (
+                <TabsContent key={t.value} value={t.value} className="m-0">
+                  {t.content}
+                </TabsContent>
+              ))}
+            </Tabs>
+          );
+        })() : null}
+        </div>
+        </div>
       </DialogContent>
     </Dialog>
   );

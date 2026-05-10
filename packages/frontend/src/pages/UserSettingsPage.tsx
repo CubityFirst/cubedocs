@@ -27,7 +27,9 @@ import { getToken, clearToken } from "@/lib/auth";
 import { UserAvatar } from "@/components/UserAvatar";
 import { AvatarCropDialog } from "@/components/AvatarCropDialog";
 import { InlineSaveControls } from "@/components/InlineSaveControls";
-import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertCircle, Camera, Smartphone, Tablet, Laptop, Monitor, Upload, Sparkles, ChevronDown } from "lucide-react";
+import { InkSparkle } from "@/components/InkSparkle";
+import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertCircle, Camera, Smartphone, Tablet, Laptop, Monitor, Upload, Sparkles, ChevronDown, Globe, X, Search, Plus } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -184,6 +186,22 @@ export function UserSettingsPage() {
   const [cosmeticsOpen, setCosmeticsOpen] = useState(false);
   const [billingBusy, setBillingBusy] = useState(false);
 
+  // Supporter bio. `currentBio` is what's saved on the server; `bio` is the
+  // textarea draft. Diff drives the InlineSaveControls visibility.
+  const [bio, setBio] = useState("");
+  const [currentBio, setCurrentBio] = useState("");
+  const [bioSaving, setBioSaving] = useState(false);
+  const BIO_MAX = 280;
+
+  // Favourite published sites for the profile card.
+  const [favouriteSites, setFavouriteSites] = useState<Array<{ id: string; name: string; vanitySlug: string | null; logoUpdatedAt: string | null }>>([]);
+  const [favouritesLoading, setFavouritesLoading] = useState(true);
+  const [favouriteRemovingId, setFavouriteRemovingId] = useState<string | null>(null);
+  const [favouriteSearch, setFavouriteSearch] = useState("");
+  const [favouriteSearchResults, setFavouriteSearchResults] = useState<Array<{ id: string; name: string; vanitySlug: string | null; logoUpdatedAt: string | null }>>([]);
+  const [favouriteSearchLoading, setFavouriteSearchLoading] = useState(false);
+  const [favouriteAddingId, setFavouriteAddingId] = useState<string | null>(null);
+
   const { runWithTwoFA, twoFADialog, busy: twoFABusy } = use2FA({
     totp: totpEnabled,
     webauthn: webauthnCredentials.length > 0,
@@ -193,7 +211,7 @@ export function UserSettingsPage() {
     const token = getToken();
     if (!token) return;
     fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json() as Promise<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean; userId: string; timezone: string | null; personalPlan: "free" | "ink"; personalPlanSince: number | null; personalPlanStatus: string | null; personalPlanCancelAt: number | null; personalPlanStyle: string | null; personalPresenceColor: string | null } }>)
+      .then(r => r.json() as Promise<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean; userId: string; timezone: string | null; bio: string | null; personalPlan: "free" | "ink"; personalPlanSince: number | null; personalPlanStatus: string | null; personalPlanCancelAt: number | null; personalPlanStyle: string | null; personalPresenceColor: string | null } }>)
       .then(json => {
         if (json.ok && json.data) {
           setCurrentName(json.data.name);
@@ -204,6 +222,8 @@ export function UserSettingsPage() {
           setUserId(json.data.userId);
           setTimezone(json.data.timezone);
           setTimezonePrivate(json.data.timezone === null);
+          setBio(json.data.bio ?? "");
+          setCurrentBio(json.data.bio ?? "");
           setPersonalPlan(json.data.personalPlan);
           setPersonalPlanSince(json.data.personalPlanSince);
           setPersonalPlanStatus(json.data.personalPlanStatus);
@@ -213,6 +233,14 @@ export function UserSettingsPage() {
         }
       })
       .catch(() => {});
+
+    fetch("/api/me/favourite-sites", { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json() as Promise<{ ok: boolean; data?: Array<{ id: string; name: string; vanitySlug: string | null; logoUpdatedAt: string | null }> }>)
+      .then(json => {
+        if (json.ok && json.data) setFavouriteSites(json.data);
+      })
+      .catch(() => {})
+      .finally(() => setFavouritesLoading(false));
 
     fetch("/api/me/totp/status", {
       method: "POST",
@@ -766,6 +794,105 @@ export function UserSettingsPage() {
     }
   }
 
+  async function handleSaveBio(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = bio.trim();
+    if (trimmed === currentBio) return;
+    if (trimmed.length > BIO_MAX) return;
+    setBioSaving(true);
+    try {
+      const token = getToken();
+      const res = await fetch("/api/me/bio", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ bio: trimmed.length === 0 ? null : trimmed }),
+      });
+      const json = await res.json() as { ok: boolean; data?: { bio: string | null } };
+      if (json.ok) {
+        const next = json.data?.bio ?? "";
+        setCurrentBio(next);
+        setBio(next);
+        toast({ title: "Bio updated" });
+      } else {
+        toast({ title: "Failed to update bio", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Could not connect to the server", variant: "destructive" });
+    } finally {
+      setBioSaving(false);
+    }
+  }
+
+  // Debounced search for the favourites picker. Server already excludes
+  // sites the user has already favourited, so the result list is what's
+  // *addable*. Empty query clears results without a request.
+  useEffect(() => {
+    const q = favouriteSearch.trim();
+    if (q.length < 1) {
+      setFavouriteSearchResults([]);
+      setFavouriteSearchLoading(false);
+      return;
+    }
+    setFavouriteSearchLoading(true);
+    const handle = setTimeout(() => {
+      const token = getToken();
+      if (!token) return;
+      fetch(`/api/me/favourite-sites/search?q=${encodeURIComponent(q)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then(r => r.json() as Promise<{ ok: boolean; data?: Array<{ id: string; name: string; vanitySlug: string | null; logoUpdatedAt: string | null }> }>)
+        .then(json => {
+          if (json.ok && json.data) setFavouriteSearchResults(json.data);
+        })
+        .catch(() => {})
+        .finally(() => setFavouriteSearchLoading(false));
+    }, 200);
+    return () => clearTimeout(handle);
+  }, [favouriteSearch, favouriteSites]);
+
+  async function handleAddFavourite(site: { id: string; name: string; vanitySlug: string | null; logoUpdatedAt: string | null }) {
+    setFavouriteAddingId(site.id);
+    try {
+      const token = getToken();
+      const res = await fetch(`/api/me/favourite-sites/${site.id}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json() as { ok: boolean };
+      if (json.ok) {
+        setFavouriteSites(list => [site, ...list.filter(s => s.id !== site.id)]);
+        setFavouriteSearchResults(list => list.filter(s => s.id !== site.id));
+      } else {
+        toast({ title: "Couldn't add favourite", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Could not connect to the server", variant: "destructive" });
+    } finally {
+      setFavouriteAddingId(null);
+    }
+  }
+
+  async function handleRemoveFavourite(projectId: string) {
+    setFavouriteRemovingId(projectId);
+    try {
+      const token = getToken();
+      const res = await fetch(`/api/me/favourite-sites/${projectId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json() as { ok: boolean };
+      if (json.ok) {
+        setFavouriteSites(list => list.filter(s => s.id !== projectId));
+      } else {
+        toast({ title: "Couldn't remove favourite", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Could not connect to the server", variant: "destructive" });
+    } finally {
+      setFavouriteRemovingId(null);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-3xl px-6 py-10">
       <div className="flex gap-12">
@@ -774,6 +901,7 @@ export function UserSettingsPage() {
           <nav className="sticky top-10 flex flex-col">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">On this page</p>
             <a href="#account" className="py-1 text-sm text-muted-foreground transition-colors hover:text-foreground">Account</a>
+            <a href="#favourites" className="py-1 text-sm text-muted-foreground transition-colors hover:text-foreground">Favourites</a>
             <a href="#billing" className="py-1 text-sm text-muted-foreground transition-colors hover:text-foreground">Billing</a>
             <a href="#two-factor" className="py-1 text-sm text-muted-foreground transition-colors hover:text-foreground">Security</a>
             <a href="#danger" className="py-1 text-sm text-destructive/70 transition-colors hover:text-destructive">Danger Zone</a>
@@ -1013,6 +1141,134 @@ export function UserSettingsPage() {
 
           <Separator className="my-6" />
 
+          {/* Favourite sites — published projects the user has bookmarked.
+              Surfaces on their profile card; managed here. */}
+          <section id="favourites">
+            <h2 className="text-base font-semibold">Favourite sites</h2>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Up to 3 published sites you've added. They appear on your profile card.
+            </p>
+
+            {/* Picker: search any published site by name. Server excludes
+                already-favourited sites so the dropdown only shows additions.
+                Hidden once the user is at the 3-favourite cap. */}
+            {favouriteSites.length < 3 && (
+            <div className="mt-4">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+                <Input
+                  value={favouriteSearch}
+                  onChange={e => setFavouriteSearch(e.target.value)}
+                  placeholder="Search published sites to add…"
+                  className="pl-8 pr-8"
+                />
+                {favouriteSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setFavouriteSearch("")}
+                    aria-label="Clear search"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {favouriteSearch.trim().length > 0 && (
+                <div className="mt-2 rounded-md border bg-card">
+                  {favouriteSearchLoading ? (
+                    <div className="flex items-center justify-center py-3 text-xs text-muted-foreground">
+                      <Loader2 className="size-3.5 animate-spin" />
+                    </div>
+                  ) : favouriteSearchResults.length === 0 ? (
+                    <p className="px-3 py-3 text-center text-xs text-muted-foreground">No matching sites.</p>
+                  ) : (
+                    <ul className="flex flex-col">
+                      {favouriteSearchResults.map(site => {
+                        const adding = favouriteAddingId === site.id;
+                        return (
+                          <li
+                            key={site.id}
+                            className="flex items-center gap-3 px-3 py-2 border-b border-border/40 last:border-b-0"
+                          >
+                            {site.logoUpdatedAt ? (
+                              <img
+                                src={`/api/public/projects/${site.id}/logo?v=${encodeURIComponent(site.logoUpdatedAt)}`}
+                                alt=""
+                                className="size-6 shrink-0 rounded object-cover"
+                              />
+                            ) : (
+                              <Globe className="size-4 shrink-0 text-muted-foreground" />
+                            )}
+                            <span className="min-w-0 flex-1 truncate text-sm">{site.name}</span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              disabled={adding}
+                              onClick={() => handleAddFavourite(site)}
+                            >
+                              {adding ? <Loader2 className="size-3.5 animate-spin" /> : <><Plus className="size-3.5 mr-1" />Add</>}
+                            </Button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
+            )}
+
+            {favouritesLoading ? (
+              <div className="mt-4 space-y-2">
+                <div className="h-11 rounded-md bg-muted/40 animate-pulse" />
+                <div className="h-11 rounded-md bg-muted/40 animate-pulse" />
+              </div>
+            ) : favouriteSites.length === 0 ? null : (
+              <ul className="mt-4 flex flex-col gap-1">
+                {favouriteSites.map(site => {
+                  const slug = site.vanitySlug ?? site.id;
+                  const removing = favouriteRemovingId === site.id;
+                  return (
+                    <li
+                      key={site.id}
+                      className="flex items-center gap-3 rounded-md border bg-card px-3 py-2"
+                    >
+                      {site.logoUpdatedAt ? (
+                        <img
+                          src={`/api/public/projects/${site.id}/logo?v=${encodeURIComponent(site.logoUpdatedAt)}`}
+                          alt=""
+                          className="size-7 shrink-0 rounded object-cover"
+                        />
+                      ) : (
+                        <Globe className="size-5 shrink-0 text-muted-foreground" />
+                      )}
+                      <Link
+                        to={`/s/${slug}`}
+                        className="min-w-0 flex-1 truncate text-sm font-medium hover:underline"
+                      >
+                        {site.name}
+                      </Link>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        disabled={removing}
+                        onClick={() => handleRemoveFavourite(site.id)}
+                        aria-label={`Remove ${site.name} from favourites`}
+                      >
+                        {removing ? <Loader2 className="size-4 animate-spin" /> : <X className="size-4" />}
+                      </Button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+
+          <Separator className="my-6" />
+
           {/* Billing section — Annex Ink supporter tier */}
           <section id="billing">
             <h2 className="text-base font-semibold flex items-center gap-1.5">
@@ -1031,14 +1287,23 @@ export function UserSettingsPage() {
             {personalPlan === "free" ? (
               <div className="mt-4 rounded-lg border bg-card p-5">
                 <div className="flex items-start justify-between gap-4 flex-wrap">
-                  <div>
-                    <h3 className="text-sm font-semibold flex items-center gap-1.5">
-                      <Sparkles className="size-3.5 text-amber-500" />
-                      Annex Ink
-                    </h3>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      $5/mo. A shiny animated ring on your avatar wherever it shows, and a "supporter since" badge on your profile. Helps keep the lights on.
-                    </p>
+                  <div className="flex items-start gap-5">
+                    <div className="shrink-0 text-center">
+                      <div className="text-3xl font-bold tracking-tight leading-none">$5</div>
+                      <div className="mt-1 text-xs text-muted-foreground">/month</div>
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold flex items-center gap-1.5">
+                        <InkSparkle className="size-3.5 ink-icon" />
+                        Annex Ink
+                      </h3>
+                      <ul className="mt-2 text-sm text-muted-foreground list-disc pl-5 space-y-0.5">
+                        <li>A short supporter bio on your profile</li>
+                        <li>An animated coloured ring around your avatar</li>
+                        <li>A custom presence colour in realtime collaboration</li>
+                      </ul>
+                      <p className="mt-2 text-sm text-muted-foreground">Helps keep the lights on.</p>
+                    </div>
                   </div>
                   <Button onClick={() => startCheckoutOrPortal("/api/billing/checkout")} disabled={billingBusy}>
                     {billingBusy ? <Loader2 className="size-4 animate-spin" /> : <>Become a supporter</>}
@@ -1152,6 +1417,52 @@ export function UserSettingsPage() {
                           )}
                         </div>
                       </div>
+
+                      <form onSubmit={handleSaveBio}>
+                        <h4 className="text-sm font-semibold">Bio</h4>
+                        <p className="mt-0.5 text-xs text-muted-foreground">A short note shown on your profile card. Leave empty to fall back to favourites or shared sites.</p>
+                        <div className="mt-3 flex items-start gap-2">
+                          <div className="relative flex-1">
+                            <Textarea
+                              value={bio}
+                              onChange={e => setBio(e.target.value)}
+                              maxLength={BIO_MAX}
+                              rows={3}
+                              placeholder="Tell people a little about yourself"
+                              className="min-h-[80px]"
+                            />
+                            <span className="pointer-events-none absolute bottom-1.5 right-2 text-[11px] tabular-nums text-muted-foreground">{bio.trim().length}/{BIO_MAX}</span>
+                          </div>
+                          <div
+                            className={`flex flex-col gap-1 overflow-hidden transition-[width,opacity] duration-200 ease-out ${
+                              bio.trim() !== currentBio ? "w-11 opacity-100" : "w-0 opacity-0"
+                            }`}
+                            aria-hidden={bio.trim() === currentBio}
+                          >
+                            <Button
+                              type="submit"
+                              size="icon"
+                              variant="outline"
+                              disabled={bioSaving || bio.trim() === currentBio || bio.trim().length > BIO_MAX}
+                              tabIndex={bio.trim() !== currentBio ? 0 : -1}
+                              aria-label="Save bio"
+                            >
+                              {bioSaving ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="ghost"
+                              disabled={bioSaving}
+                              onClick={() => setBio(currentBio)}
+                              tabIndex={bio.trim() !== currentBio ? 0 : -1}
+                              aria-label="Reset bio"
+                            >
+                              <X className="size-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </form>
                     </div>
                   </CollapsibleContent>
                 </Collapsible>

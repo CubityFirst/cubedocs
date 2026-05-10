@@ -198,7 +198,7 @@ export default {
           body: JSON.stringify({ userId: session.userId }),
         });
         if (!lookupRes.ok) return addCorsHeaders(errorResponse(Errors.INTERNAL));
-        const data = await lookupRes.json<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean; timezone: string | null } }>();
+        const data = await lookupRes.json<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean; timezone: string | null; bio: string | null } }>();
         if (!data.ok || !data.data) return addCorsHeaders(errorResponse(Errors.INTERNAL));
         return addCorsHeaders(Response.json({
           ok: true,
@@ -209,6 +209,7 @@ export default {
             emailVerificationEnabled: data.data.emailVerificationEnabled,
             userId: session.userId,
             timezone: data.data.timezone,
+            bio: data.data.bio,
             personalPlan: session.personalPlan ?? "free",
             personalPlanSince: session.personalPlanSince ?? null,
             personalPlanStatus: session.personalPlanStatus ?? null,
@@ -267,6 +268,109 @@ export default {
           body: JSON.stringify(body),
         });
         return addCorsHeaders(updateRes);
+      }
+
+      // PATCH /me/bio — Ink-only supporter bio. Proxied so the auth worker
+      // can plan-gate against the live row (avoids JWT-staleness writes).
+      if (url.pathname === "/me/bio" && request.method === "PATCH") {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        const body = await request.json<unknown>();
+        const authHeader = request.headers.get("Authorization");
+        const updateRes = await env.AUTH.fetch("https://auth/update-bio", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
+          body: JSON.stringify(body),
+        });
+        return addCorsHeaders(updateRes);
+      }
+
+      // GET /me/favourite-sites/search?q= — find published sites by name for
+      // the picker in user settings. Excludes ones the user has already
+      // favourited so the list shows what's *addable*. Capped to 20 results.
+      if (url.pathname === "/me/favourite-sites/search" && request.method === "GET") {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        const q = (url.searchParams.get("q") ?? "").trim();
+        if (q.length < 1) return addCorsHeaders(Response.json({ ok: true, data: [] }));
+        const like = `%${q.replace(/[\\%_]/g, ch => "\\" + ch)}%`;
+        const rows = await env.DB.prepare(
+          `SELECT p.id, p.name, p.vanity_slug, p.logo_updated_at
+           FROM projects p
+           WHERE p.published_at IS NOT NULL
+             AND LOWER(p.name) LIKE LOWER(?) ESCAPE '\\'
+             AND NOT EXISTS (
+               SELECT 1 FROM user_favourite_projects ufp
+               WHERE ufp.user_id = ? AND ufp.project_id = p.id
+             )
+           ORDER BY p.name ASC
+           LIMIT 20`,
+        ).bind(like, session.userId).all<{ id: string; name: string; vanity_slug: string | null; logo_updated_at: string | null }>();
+        return addCorsHeaders(Response.json({
+          ok: true,
+          data: rows.results.map(r => ({
+            id: r.id,
+            name: r.name,
+            vanitySlug: r.vanity_slug,
+            logoUpdatedAt: r.logo_updated_at,
+          })),
+        }));
+      }
+
+      // GET /me/favourite-sites — list current user's favourited published projects
+      if (url.pathname === "/me/favourite-sites" && request.method === "GET") {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        const rows = await env.DB.prepare(
+          `SELECT p.id, p.name, p.vanity_slug, p.logo_updated_at, ufp.created_at
+           FROM user_favourite_projects ufp
+           JOIN projects p ON p.id = ufp.project_id
+           WHERE ufp.user_id = ? AND p.published_at IS NOT NULL
+           ORDER BY ufp.created_at DESC`,
+        ).bind(session.userId).all<{ id: string; name: string; vanity_slug: string | null; logo_updated_at: string | null; created_at: number }>();
+        return addCorsHeaders(Response.json({
+          ok: true,
+          data: rows.results.map(r => ({
+            id: r.id,
+            name: r.name,
+            vanitySlug: r.vanity_slug,
+            logoUpdatedAt: r.logo_updated_at,
+          })),
+        }));
+      }
+
+      // POST /me/favourite-sites/:projectId — add a favourite (idempotent)
+      // DELETE /me/favourite-sites/:projectId — remove
+      const favSiteMatch = url.pathname.match(/^\/me\/favourite-sites\/([^/]+)$/);
+      if (favSiteMatch) {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        const projectId = favSiteMatch[1];
+        if (request.method === "POST") {
+          const project = await env.DB.prepare(
+            "SELECT id FROM projects WHERE id = ? AND published_at IS NOT NULL",
+          ).bind(projectId).first<{ id: string }>();
+          if (!project) return addCorsHeaders(errorResponse(Errors.NOT_FOUND));
+          // Cap at 3. Count first; reject only if the user is at the cap AND
+          // this project isn't already in their list (so re-POST of an existing
+          // favourite stays idempotent).
+          const countRow = await env.DB.prepare(
+            "SELECT COUNT(*) as n, SUM(CASE WHEN project_id = ? THEN 1 ELSE 0 END) as has FROM user_favourite_projects WHERE user_id = ?",
+          ).bind(projectId, session.userId).first<{ n: number; has: number }>();
+          if (countRow && countRow.has === 0 && countRow.n >= 3) {
+            return addCorsHeaders(errorResponse(Errors.CONFLICT));
+          }
+          await env.DB.prepare(
+            "INSERT OR IGNORE INTO user_favourite_projects (user_id, project_id, created_at) VALUES (?, ?, ?)",
+          ).bind(session.userId, projectId, Date.now()).run();
+          return addCorsHeaders(Response.json({ ok: true, data: { favourited: true } }));
+        }
+        if (request.method === "DELETE") {
+          await env.DB.prepare(
+            "DELETE FROM user_favourite_projects WHERE user_id = ? AND project_id = ?",
+          ).bind(session.userId, projectId).run();
+          return addCorsHeaders(Response.json({ ok: true, data: { favourited: false } }));
+        }
       }
 
       // GET /avatar/:userId — public, serve avatar from R2
@@ -370,7 +474,7 @@ export default {
         if (!lookupRes.ok) {
           return addCorsHeaders(lookupRes.status === 404 ? errorResponse(Errors.NOT_FOUND) : errorResponse(Errors.INTERNAL));
         }
-        const lookupData = await lookupRes.json<{ ok: boolean; data?: { userId: string; name: string; email: string; createdAt: string; timezone: string | null; badges?: number } }>();
+        const lookupData = await lookupRes.json<{ ok: boolean; data?: { userId: string; name: string; email: string; createdAt: string; timezone: string | null; badges?: number; bio?: string | null } }>();
         if (!lookupData.ok || !lookupData.data) return addCorsHeaders(errorResponse(Errors.NOT_FOUND));
 
         const sharedRows = await env.DB.prepare(
@@ -380,6 +484,14 @@ export default {
            JOIN project_members target ON target.project_id = p.id AND target.user_id = ? AND target.accepted = 1
            ORDER BY p.name ASC`,
         ).bind(session.userId, targetUserId).all<{ id: string; name: string; their_role: string }>();
+
+        const favouriteRows = await env.DB.prepare(
+          `SELECT p.id, p.name, p.vanity_slug, p.logo_updated_at
+           FROM user_favourite_projects ufp
+           JOIN projects p ON p.id = ufp.project_id
+           WHERE ufp.user_id = ? AND p.published_at IS NOT NULL
+           ORDER BY ufp.created_at DESC`,
+        ).bind(targetUserId).all<{ id: string; name: string; vanity_slug: string | null; logo_updated_at: string | null }>();
 
         const planRow = await env.AUTH_DB.prepare(
           `SELECT personal_plan, personal_plan_status, personal_plan_started_at,
@@ -404,12 +516,22 @@ export default {
           name: lookupData.data.name,
           createdAt: lookupData.data.createdAt,
           sharedProjects: sharedRows.results.map(r => ({ id: r.id, name: r.name, theirRole: r.their_role })),
+          favouriteSites: favouriteRows.results.map(r => ({
+            id: r.id,
+            name: r.name,
+            vanitySlug: r.vanity_slug,
+            logoUpdatedAt: r.logo_updated_at,
+          })),
           personalPlan: resolvedPlan.plan,
           personalPlanSince: resolvedPlan.since,
           personalPlanStyle: resolvedPlan.style,
           badges: lookupData.data.badges ?? 0,
         };
         if (lookupData.data.timezone) profileData.timezone = lookupData.data.timezone;
+        // Bio is supporter-gated on display: only render if the target user
+        // currently holds Ink. The column persists across cancel/resub cycles
+        // so a user gets their bio back if they re-subscribe.
+        if (resolvedPlan.plan === "ink" && lookupData.data.bio) profileData.bio = lookupData.data.bio;
 
         return addCorsHeaders(Response.json({ ok: true, data: profileData }));
       }
