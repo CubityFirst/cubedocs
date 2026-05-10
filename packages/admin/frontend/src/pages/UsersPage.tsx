@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { format } from "date-fns";
-import { CalendarDays, ChevronDown, ChevronRight, Download, Search, Trash2, X } from "lucide-react";
+import { CalendarDays, ChevronDown, ChevronRight, Download, Search, Sparkles, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,6 +51,8 @@ import {
   exportUserData,
   forceUserPasswordChange,
   getUserDetails,
+  grantInk,
+  revokeGrantedInk,
   searchUsers,
   updateUserModeration,
 } from "@/lib/api";
@@ -171,7 +173,218 @@ function DetailsLoadingState() {
   );
 }
 
-function UserDetailsPanel({ details }: { details: AdminUserDetails }) {
+function formatPlanTimestamp(ms: number | null): string | null {
+  if (ms == null) return null;
+  return new Date(ms).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
+interface InkBillingCardProps {
+  userId: string;
+  userName: string;
+  details: AdminUserDetails;
+  onChanged: () => void;
+}
+
+function InkBillingCard({ userId, userName, details, onChanged }: InkBillingCardProps) {
+  const billing = details.billing;
+  const [grantOpen, setGrantOpen] = useState(false);
+  const [revokeOpen, setRevokeOpen] = useState(false);
+  const [grantReason, setGrantReason] = useState("");
+  const [grantExpiry, setGrantExpiry] = useState<"forever" | "30d" | "1y">("forever");
+  const [pending, setPending] = useState(false);
+
+  function planBadge() {
+    if (billing.resolved_plan === "ink") {
+      const label = billing.via === "granted" ? "Ink (granted)" : "Ink";
+      return (
+        <Badge className="border-amber-500/40 bg-amber-100/60 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+          <Sparkles className="size-3" />
+          {label}
+        </Badge>
+      );
+    }
+    return <Badge variant="outline">Free</Badge>;
+  }
+
+  async function handleGrant() {
+    const reason = grantReason.trim();
+    if (!reason) {
+      toast.error("Reason is required");
+      return;
+    }
+    let expiresAt: number | null = null;
+    if (grantExpiry === "30d") expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000;
+    else if (grantExpiry === "1y") expiresAt = Date.now() + 365 * 24 * 60 * 60 * 1000;
+
+    setPending(true);
+    try {
+      await grantInk(userId, { reason, expiresAt });
+      toast.success(`Granted Annex Ink to ${userName}`);
+      setGrantOpen(false);
+      setGrantReason("");
+      setGrantExpiry("forever");
+      onChanged();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to grant Ink");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function handleRevoke() {
+    setPending(true);
+    try {
+      await revokeGrantedInk(userId);
+      toast.success("Ink grant revoked");
+      setRevokeOpen(false);
+      onChanged();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to revoke Ink grant");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Billing</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <div className="grid gap-4 md:grid-cols-2">
+          <DetailField label="Current Plan" value={planBadge()} />
+          <DetailField
+            label="Source"
+            value={billing.via === "granted" ? "Manual grant" : billing.via === "paid" ? "Stripe subscription" : "—"}
+          />
+          {billing.status && <DetailField label="Status" value={billing.status} />}
+          {billing.started_at && (
+            <DetailField label="Supporter Since" value={formatPlanTimestamp(billing.started_at)} />
+          )}
+          {billing.cancel_at && (
+            <DetailField
+              label="Cancels On"
+              value={<span className="text-amber-700 dark:text-amber-400">{formatPlanTimestamp(billing.cancel_at)}</span>}
+            />
+          )}
+          {billing.stripe.customer_id && (
+            <DetailField
+              label="Stripe Customer"
+              value={<span className="font-mono text-xs">{billing.stripe.customer_id}</span>}
+            />
+          )}
+          {billing.stripe.subscription_id && (
+            <DetailField
+              label="Stripe Subscription"
+              value={<span className="font-mono text-xs">{billing.stripe.subscription_id}</span>}
+            />
+          )}
+        </div>
+
+        {billing.granted && (
+          <div className="rounded-md border bg-amber-50/50 dark:bg-amber-950/20 p-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Active grant</p>
+            <p className="mt-1 text-sm">
+              {billing.granted.reason ?? "—"}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {billing.granted.expires_at
+                ? `Expires ${formatPlanTimestamp(billing.granted.expires_at)}`
+                : "No expiry — granted forever"}
+            </p>
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-2">
+          {billing.granted ? (
+            <AlertDialog open={revokeOpen} onOpenChange={setRevokeOpen}>
+              <AlertDialogTrigger asChild>
+                <Button size="sm" variant="outline" disabled={pending}>
+                  Revoke grant
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Revoke Ink grant?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This clears the manual grant for <strong>{userName}</strong>. If they have a paid Stripe sub,
+                    they'll keep Ink via that. If not, they revert to free.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleRevoke}>Revoke</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          ) : (
+            <Dialog open={grantOpen} onOpenChange={setGrantOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" variant="default" disabled={pending}>
+                  <Sparkles className="size-3.5" />
+                  Grant Ink
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Grant Annex Ink</DialogTitle>
+                  <DialogDescription>
+                    Comp <strong>{userName}</strong> a supporter subscription. Takes precedence over any
+                    Stripe-managed plan in the resolver.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor={`grant-reason-${userId}`}>Reason</Label>
+                    <Textarea
+                      id={`grant-reason-${userId}`}
+                      value={grantReason}
+                      onChange={e => setGrantReason(e.target.value)}
+                      placeholder="e.g. Early supporter, contest winner, outage credit"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Stored on the user row for audit. Required.
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label>Duration</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {(["forever", "30d", "1y"] as const).map(opt => (
+                        <label
+                          key={opt}
+                          className={cn(
+                            "flex cursor-pointer items-center gap-2 rounded-md border px-3 py-1.5 text-sm",
+                            grantExpiry === opt && "border-primary bg-primary/5",
+                          )}
+                        >
+                          <Checkbox
+                            checked={grantExpiry === opt}
+                            onCheckedChange={() => setGrantExpiry(opt)}
+                          />
+                          {opt === "forever" ? "Forever" : opt === "30d" ? "30 days" : "1 year"}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setGrantOpen(false)} disabled={pending}>
+                    Cancel
+                  </Button>
+                  <Button type="button" onClick={handleGrant} disabled={pending || !grantReason.trim()}>
+                    Grant
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function UserDetailsPanel({ details, userId, userName, onChanged }: { details: AdminUserDetails; userId: string; userName: string; onChanged: () => void }) {
   return (
     <div className="flex flex-col gap-4">
       <div className="grid gap-4 md:grid-cols-2">
@@ -242,6 +455,8 @@ function UserDetailsPanel({ details }: { details: AdminUserDetails }) {
           )}
         </CardContent>
       </Card>
+
+      <InkBillingCard userId={userId} userName={userName} details={details} onChanged={onChanged} />
 
       <Card>
         <CardHeader>
@@ -567,7 +782,7 @@ function UserRow({ user, onUpdated }: UserRowProps) {
                       {detailsLoading && !details
                         ? <DetailsLoadingState />
                         : details
-                          ? <UserDetailsPanel details={details} />
+                          ? <UserDetailsPanel details={details} userId={user.id} userName={user.name} onChanged={() => loadDetails(true, false)} />
                           : <p className="text-sm text-muted-foreground">User details could not be loaded.</p>}
                     </SheetBody>
                     <SheetFooter className="flex flex-row justify-end gap-2">

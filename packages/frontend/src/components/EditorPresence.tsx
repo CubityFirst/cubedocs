@@ -14,11 +14,16 @@ interface Props {
 }
 
 function PresenceAvatar({ editor }: { editor: Editor }) {
+  // Ink supporters render with the animated conic-gradient ring from
+  // UserAvatar; suppress the deterministic per-user colour ring so the
+  // two don't stack visually. Free users keep the colour ring as the
+  // collab presence cue.
+  const isInk = editor.personalPlan === "ink";
   return (
     <div className="group relative flex items-center">
       <div
         className="relative rounded-full shrink-0"
-        style={{ boxShadow: `0 0 0 2px ${editor.color}` }}
+        style={isInk ? undefined : { boxShadow: `0 0 0 2px ${editor.color}` }}
       >
         <UserAvatar userId={editor.userId} name={editor.name} className="h-6 w-6 text-[10px]" personalPlan={editor.personalPlan} />
       </div>
@@ -61,19 +66,22 @@ export function EditorPresence({ editors }: Props) {
               Also editing
             </p>
             <div className="flex flex-col gap-2">
-              {overflow.map((editor) => (
-                <UserProfileCard key={editor.userId} userId={editor.userId} name={editor.name}>
-                  <button className="flex w-full cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-left hover:bg-accent">
-                    <div
-                      className="rounded-full shrink-0"
-                      style={{ boxShadow: `0 0 0 2px ${editor.color}` }}
-                    >
-                      <UserAvatar userId={editor.userId} name={editor.name} className="h-6 w-6 text-[10px]" personalPlan={editor.personalPlan} />
-                    </div>
-                    <span className="truncate text-sm">{editor.name}</span>
-                  </button>
-                </UserProfileCard>
-              ))}
+              {overflow.map((editor) => {
+                const isInk = editor.personalPlan === "ink";
+                return (
+                  <UserProfileCard key={editor.userId} userId={editor.userId} name={editor.name}>
+                    <button className="flex w-full cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-left hover:bg-accent">
+                      <div
+                        className="rounded-full shrink-0"
+                        style={isInk ? undefined : { boxShadow: `0 0 0 2px ${editor.color}` }}
+                      >
+                        <UserAvatar userId={editor.userId} name={editor.name} className="h-6 w-6 text-[10px]" personalPlan={editor.personalPlan} />
+                      </div>
+                      <span className="truncate text-sm">{editor.name}</span>
+                    </button>
+                  </UserProfileCard>
+                );
+              })}
             </div>
           </PopoverContent>
         </Popover>

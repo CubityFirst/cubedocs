@@ -61,6 +61,22 @@ export interface AdminUserDetails {
       joined_at: string;
     }>;
   };
+  billing: {
+    resolved_plan: "free" | "ink";
+    via: "free" | "paid" | "granted";
+    status: string | null;
+    started_at: number | null;
+    cancel_at: number | null;
+    granted: {
+      plan: string;
+      expires_at: number | null;
+      reason: string | null;
+    } | null;
+    stripe: {
+      customer_id: string | null;
+      subscription_id: string | null;
+    };
+  };
 }
 
 export interface AdminProject {
@@ -160,6 +176,22 @@ export async function reindexProjectFts(id: string): Promise<{ indexed: number }
   const json = (await res.json()) as { ok: boolean; data?: { indexed: number } };
   if (!json.ok || !json.data) throw new Error("Failed to reindex project");
   return json.data;
+}
+
+export async function grantInk(id: string, opts: { reason?: string; expiresAt?: number | null } = {}): Promise<void> {
+  const res = await authFetch(`/api/users/${id}/grant-ink`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason: opts.reason, expires_at: opts.expiresAt ?? null }),
+  });
+  const json = (await res.json()) as { ok: boolean; error?: string };
+  if (!json.ok) throw new Error(json.error ?? "Failed to grant Ink");
+}
+
+export async function revokeGrantedInk(id: string): Promise<void> {
+  const res = await authFetch(`/api/users/${id}/grant-ink`, { method: "DELETE" });
+  const json = (await res.json()) as { ok: boolean; error?: string };
+  if (!json.ok) throw new Error(json.error ?? "Failed to revoke Ink grant");
 }
 
 export async function deleteUserAvatar(id: string): Promise<void> {

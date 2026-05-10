@@ -16,6 +16,7 @@ import type { Env } from "../index";
 // during outages; this stops a duplicate from double-applying state.
 export async function handleStripeWebhook(request: Request, env: Env): Promise<Response> {
   if (!env.STRIPE_SECRET_KEY || !env.STRIPE_WEBHOOK_SECRET) {
+    console.error("Stripe webhook reached but STRIPE_SECRET_KEY or STRIPE_WEBHOOK_SECRET is unset");
     return errorResponse(Errors.INTERNAL);
   }
 
@@ -110,7 +111,6 @@ async function handleCheckoutCompleted(env: Env, sessionObj: Stripe.Checkout.Ses
 // (stamped during Checkout) so this works even if it arrives before
 // checkout.session.completed.
 async function handleSubscriptionUpsert(env: Env, sub: Stripe.Subscription): Promise<void> {
-  console.log("[WEBHOOK_DIAG_v2] subscription upsert entered", { subId: sub.id, hasMetadata: !!sub.metadata, metadataKeys: sub.metadata ? Object.keys(sub.metadata) : [], userId: sub.metadata?.userId });
   const userId = sub.metadata?.userId;
   if (!userId) {
     console.warn("subscription event missing metadata.userId", sub.id);

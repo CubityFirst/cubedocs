@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { zipSync, strToU8 } from "fflate";
 import { requireAdminSession } from "../auth";
+import { resolvePersonalPlan, type PersonalPlan } from "../../../auth/src/plan";
 import type { Env } from "../index";
 
 const usersRouter = new Hono<{ Bindings: Env }>();
@@ -31,6 +32,23 @@ interface ModerationEventRow {
 }
 
 type CurrentStatus = "active" | "disabled" | "suspended";
+
+interface BillingDetails {
+  resolved_plan: PersonalPlan;
+  via: "free" | "paid" | "granted";
+  status: string | null;
+  started_at: number | null;
+  cancel_at: number | null;
+  granted: {
+    plan: string;
+    expires_at: number | null;
+    reason: string | null;
+  } | null;
+  stripe: {
+    customer_id: string | null;
+    subscription_id: string | null;
+  };
+}
 
 interface UserDetails {
   profile: {
@@ -81,6 +99,7 @@ interface UserDetails {
       joined_at: string;
     }>;
   };
+  billing: BillingDetails;
 }
 
 function getModerationAction(moderation: number): ModerationAction {
@@ -104,6 +123,43 @@ function latestModerationFields(tableAlias = "u"): string {
   `;
 }
 
+interface BillingRow {
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
+  personal_plan: string | null;
+  personal_plan_status: string | null;
+  personal_plan_started_at: number | null;
+  personal_plan_cancel_at: number | null;
+  granted_plan: string | null;
+  granted_plan_expires_at: number | null;
+  granted_plan_reason: string | null;
+}
+
+function buildBillingDetails(row: BillingRow): BillingDetails {
+  const resolved = resolvePersonalPlan({
+    granted_plan: row.granted_plan,
+    granted_plan_expires_at: row.granted_plan_expires_at,
+    personal_plan: row.personal_plan,
+    personal_plan_status: row.personal_plan_status,
+    personal_plan_started_at: row.personal_plan_started_at,
+    personal_plan_cancel_at: row.personal_plan_cancel_at,
+  });
+  return {
+    resolved_plan: resolved.plan,
+    via: resolved.via,
+    status: resolved.status,
+    started_at: resolved.since,
+    cancel_at: resolved.cancelAt,
+    granted: row.granted_plan
+      ? { plan: row.granted_plan, expires_at: row.granted_plan_expires_at, reason: row.granted_plan_reason }
+      : null,
+    stripe: {
+      customer_id: row.stripe_customer_id,
+      subscription_id: row.stripe_subscription_id,
+    },
+  };
+}
+
 async function loadUserDetails(env: Env, id: string): Promise<UserDetails | null> {
   const profile = await env.AUTH_DB.prepare(
     `
@@ -121,6 +177,14 @@ async function loadUserDetails(env: Env, id: string): Promise<UserDetails | null
   ).bind(id).first<UserRow>();
 
   if (!profile) return null;
+
+  const billingRow = await env.AUTH_DB.prepare(
+    `SELECT stripe_customer_id, stripe_subscription_id,
+            personal_plan, personal_plan_status, personal_plan_started_at,
+            personal_plan_cancel_at,
+            granted_plan, granted_plan_expires_at, granted_plan_reason
+     FROM users WHERE id = ?`,
+  ).bind(id).first<BillingRow>();
 
   const [totpRow, webauthn, backupCodeSummary, moderationHistory, ownedProjects, memberships] = await Promise.all([
     env.AUTH_DB.prepare(
@@ -200,6 +264,11 @@ async function loadUserDetails(env: Env, id: string): Promise<UserDetails | null
       owned_projects: ownedProjects.results.map(p => ({ id: p.id, name: p.name, created_at: p.created_at })),
       project_memberships: memberships.results.map(m => ({ project_id: m.id, project_name: m.name, role: m.role, joined_at: m.created_at })),
     },
+    billing: buildBillingDetails(billingRow ?? {
+      stripe_customer_id: null, stripe_subscription_id: null,
+      personal_plan: null, personal_plan_status: null, personal_plan_started_at: null, personal_plan_cancel_at: null,
+      granted_plan: null, granted_plan_expires_at: null, granted_plan_reason: null,
+    }),
   };
 }
 
@@ -308,6 +377,52 @@ usersRouter.delete("/:id/avatar", async (c) => {
   return c.json({ ok: true });
 });
 
+// POST /api/users/:id/grant-ink — { reason?: string, expires_at?: number | null }
+// Manually grants an Annex Ink supporter subscription to the user. The
+// grant takes precedence over any Stripe-managed plan in the resolver.
+// expires_at is a Unix-ms timestamp; null = forever.
+usersRouter.post("/:id/grant-ink", async (c) => {
+  const session = await requireAdminSession(c.req.raw, c.env);
+  if (session instanceof Response) return session;
+
+  const id = c.req.param("id");
+  const body = await c.req.json<{ reason?: string; expires_at?: number | null }>().catch(() => ({} as { reason?: string; expires_at?: number | null }));
+  const reason = body.reason?.trim() || `granted by ${session.email}`;
+  const expiresAt = body.expires_at ?? null;
+
+  if (expiresAt !== null && (!Number.isFinite(expiresAt) || expiresAt <= Date.now())) {
+    return c.json({ ok: false, error: "expires_at must be a future Unix-ms timestamp or null" }, 400);
+  }
+
+  const result = await c.env.AUTH_DB.prepare(
+    `UPDATE users
+     SET granted_plan = 'ink',
+         granted_plan_expires_at = ?,
+         granted_plan_reason = ?
+     WHERE id = ?`,
+  ).bind(expiresAt, reason, id).run();
+  if (result.meta.changes === 0) return c.json({ ok: false, error: "User not found" }, 404);
+  return c.json({ ok: true });
+});
+
+// DELETE /api/users/:id/grant-ink — clears the manual grant. Doesn't
+// touch Stripe-managed columns (so a paid sub stays intact).
+usersRouter.delete("/:id/grant-ink", async (c) => {
+  const session = await requireAdminSession(c.req.raw, c.env);
+  if (session instanceof Response) return session;
+
+  const id = c.req.param("id");
+  const result = await c.env.AUTH_DB.prepare(
+    `UPDATE users
+     SET granted_plan = NULL,
+         granted_plan_expires_at = NULL,
+         granted_plan_reason = NULL
+     WHERE id = ?`,
+  ).bind(id).run();
+  if (result.meta.changes === 0) return c.json({ ok: false, error: "User not found" }, 404);
+  return c.json({ ok: true });
+});
+
 // GET /api/users/:id/export - GDPR-style data export as .zip
 usersRouter.get("/:id/export", async (c) => {
   const session = await requireAdminSession(c.req.raw, c.env);
@@ -323,6 +438,7 @@ usersRouter.get("/:id/export", async (c) => {
     "moderation.json": strToU8(JSON.stringify(details.moderation, null, 2)),
     "security.json": strToU8(JSON.stringify(details.security, null, 2)),
     "projects.json": strToU8(JSON.stringify(details.projects, null, 2)),
+    "billing.json": strToU8(JSON.stringify(details.billing, null, 2)),
   });
   const zipBuffer = Uint8Array.from(zip).buffer;
 
