@@ -993,10 +993,19 @@ export function UserSettingsPage() {
                       <p className="mt-1 text-sm text-muted-foreground">
                         {personalPlanStatus === "granted"
                           ? "You've been comped a supporter subscription. Thanks for being here."
-                          : personalPlanSince
-                            ? `Supporter since ${new Date(personalPlanSince).getFullYear()}.`
-                            : "Active supporter."}
+                          : (() => {
+                              const since = formatInkSince(personalPlanSince);
+                              return since ? `Supporter since ${since}.` : "Active supporter.";
+                            })()}
                       </p>
+                      {personalPlanCancelAt && personalPlanStatus !== "granted" && (() => {
+                        const expires = formatInkSince(personalPlanCancelAt);
+                        return expires ? (
+                          <p className="mt-1 text-sm text-amber-700 dark:text-amber-400">
+                            Your Annex Ink will expire on {expires}.
+                          </p>
+                        ) : null;
+                      })()}
                     </div>
                   </div>
                   {personalPlanStatus !== "granted" && (

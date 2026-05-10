@@ -179,9 +179,28 @@ describe("handleStripeWebhook — customer.subscription.created/updated", () => 
     expect(args[2]).toBe("ink"); // plan
     expect(args[3]).toBe("active"); // status
     expect(args[4]).toBe(1_700_000_000_000); // period end (ms)
-    // args[5] is now (Date.now()) — just check it's a number
-    expect(typeof args[5]).toBe("number");
-    expect(args[6]).toBe("user-1"); // user id
+    expect(args[5]).toBeNull(); // cancel_at (null when no cancellation pending)
+    // args[6] is now (Date.now()) — just check it's a number
+    expect(typeof args[6]).toBe("number");
+    expect(args[7]).toBe("user-1"); // user id
+  });
+
+  it("captures cancel_at when subscription is set to cancel at period end", () => {
+    mockConstructEvent({
+      ...event,
+      data: {
+        object: {
+          ...event.data.object,
+          cancel_at: 1_750_000_000,
+          cancel_at_period_end: true,
+        },
+      },
+    });
+    const db = makeDB();
+    return handleStripeWebhook(makeRequest("{}"), makeEnv(db)).then(() => {
+      const args = db._bindCalls[1];
+      expect(args[5]).toBe(1_750_000_000_000); // cancel_at in ms
+    });
   });
 
   it("ignores subscription events missing metadata.userId", async () => {

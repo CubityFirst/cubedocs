@@ -15,6 +15,7 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { getToken, clearToken } from "@/lib/auth";
 import { CalendarDays, Building2, Clock, Settings, KeyRound, LogOut, ChevronRight, Sparkles } from "lucide-react";
 import { formatTimeInZone, getTimezoneGroup } from "@/lib/timezone";
+import { formatInkSince } from "@/lib/inkDate";
 import { TimezoneMap } from "@/components/TimezoneMap";
 
 let currentUserIdCache: string | null = null;
@@ -150,9 +151,10 @@ export function UserProfileCard({ userId, name, children }: UserProfileCardProps
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="top" className="text-xs">
-                    {profile.personalPlanSince
-                      ? `Annex Ink supporter since ${new Date(profile.personalPlanSince).getFullYear()}`
-                      : "Annex Ink supporter"}
+                    {(() => {
+                      const since = formatInkSince(profile.personalPlanSince);
+                      return since ? `Annex Ink supporter since ${since}` : "Annex Ink supporter";
+                    })()}
                   </TooltipContent>
                 </Tooltip>
               )}
