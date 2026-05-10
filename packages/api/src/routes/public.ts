@@ -11,7 +11,8 @@ interface PublicProject {
   home_doc_id: string | null;
   graph_enabled: number;
   published_graph_enabled: number;
-  logo_updated_at: string | null;
+  logo_square_updated_at: string | null;
+  logo_wide_updated_at: string | null;
 }
 
 interface PublicDoc {
@@ -46,14 +47,18 @@ export async function handlePublic(
 
   const parts = url.pathname.replace(/^\/public\/?/, "").split("/");
 
-  // /public/projects/:id/logo — serve the site logo for a published project
-  if (parts[0] === "projects" && parts[1] && parts[2] === "logo") {
+  // /public/projects/:id/logo/:variant — serve the site logo for a published project.
+  // variant ∈ {"square","wide"}.
+  if (parts[0] === "projects" && parts[1] && parts[2] === "logo" && parts[3]) {
+    const variant = parts[3];
+    if (variant !== "square" && variant !== "wide") return errorResponse(Errors.NOT_FOUND);
     const projectIdOrSlug = parts[1];
+    const column = variant === "square" ? "logo_square_updated_at" : "logo_wide_updated_at";
     const project = await env.DB.prepare(
-      "SELECT id FROM projects WHERE (id = ? OR vanity_slug = ?) AND published_at IS NOT NULL AND logo_updated_at IS NOT NULL",
+      `SELECT id FROM projects WHERE (id = ? OR vanity_slug = ?) AND published_at IS NOT NULL AND ${column} IS NOT NULL`,
     ).bind(projectIdOrSlug, projectIdOrSlug).first<{ id: string }>();
     if (!project) return errorResponse(Errors.NOT_FOUND);
-    const obj = await env.ASSETS.get(`site-logos/${project.id}`);
+    const obj = await env.ASSETS.get(`site-logos/${project.id}-${variant}`);
     if (!obj) return errorResponse(Errors.NOT_FOUND);
     return new Response(await obj.arrayBuffer(), {
       status: 200,
@@ -68,7 +73,7 @@ export async function handlePublic(
   if (parts[0] === "projects" && parts[1]) {
     const projectId = parts[1];
     const project = await env.DB.prepare(
-      "SELECT id, name, description, published_at, vanity_slug, home_doc_id, graph_enabled, published_graph_enabled, logo_updated_at FROM projects WHERE (id = ? OR vanity_slug = ?) AND published_at IS NOT NULL",
+      "SELECT id, name, description, published_at, vanity_slug, home_doc_id, graph_enabled, published_graph_enabled, logo_square_updated_at, logo_wide_updated_at FROM projects WHERE (id = ? OR vanity_slug = ?) AND published_at IS NOT NULL",
     ).bind(projectId, projectId).first<PublicProject>();
     if (!project) return errorResponse(Errors.NOT_FOUND);
 
@@ -93,8 +98,8 @@ export async function handlePublic(
     const docId = parts[2];
 
     const project = await env.DB.prepare(
-      "SELECT id, name, published_at, vanity_slug, home_doc_id, graph_enabled, published_graph_enabled, logo_updated_at FROM projects WHERE id = ? OR vanity_slug = ?",
-    ).bind(projectIdOrSlug, projectIdOrSlug).first<Pick<PublicProject, "id" | "name" | "published_at" | "vanity_slug" | "home_doc_id" | "graph_enabled" | "published_graph_enabled" | "logo_updated_at">>();
+      "SELECT id, name, published_at, vanity_slug, home_doc_id, graph_enabled, published_graph_enabled, logo_square_updated_at, logo_wide_updated_at FROM projects WHERE id = ? OR vanity_slug = ?",
+    ).bind(projectIdOrSlug, projectIdOrSlug).first<Pick<PublicProject, "id" | "name" | "published_at" | "vanity_slug" | "home_doc_id" | "graph_enabled" | "published_graph_enabled" | "logo_square_updated_at" | "logo_wide_updated_at">>();
     if (!project) return errorResponse(Errors.NOT_FOUND);
     const projectId = project.id;
 
@@ -134,7 +139,7 @@ export async function handlePublic(
     return okResponse({
       doc: { id: doc.id, title: doc.title, display_title: fm.title ?? null, hide_title: fm.hide_title ?? null, description: fm.description ?? null, image: fm.image ?? null, content, showHeading: doc.show_heading !== 0, showLastUpdated: doc.show_last_updated !== 0, updatedAt: doc.updated_at },
       sitePublished,
-      project: { id: project.id, name: project.name, vanity_slug: project.vanity_slug ?? null, home_doc_id: project.home_doc_id ?? null, graph_enabled: project.graph_enabled, published_graph_enabled: project.published_graph_enabled, logo_updated_at: project.logo_updated_at ?? null },
+      project: { id: project.id, name: project.name, vanity_slug: project.vanity_slug ?? null, home_doc_id: project.home_doc_id ?? null, graph_enabled: project.graph_enabled, published_graph_enabled: project.published_graph_enabled, logo_square_updated_at: project.logo_square_updated_at ?? null, logo_wide_updated_at: project.logo_wide_updated_at ?? null },
       docs,
       folders,
       files,

@@ -41,6 +41,7 @@ import { useOutletContext } from "react-router-dom";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
 import { UserProfileCard } from "@/components/UserProfileCard";
 import { InlineSaveControls } from "@/components/InlineSaveControls";
+import { AvatarCropDialog } from "@/components/AvatarCropDialog";
 import { Globe, House, Link, Lock, Copy, Check, X, Network, Plus, ChevronDown, RefreshCw, Upload, ImageIcon } from "lucide-react";
 
 type Role = "limited" | "viewer" | "editor" | "admin" | "owner";
@@ -81,9 +82,12 @@ interface Project {
   graph_tag_colors: string | null;
   graph_reindex_available_at: string | null;
   home_doc_id: string | null;
-  logo_updated_at: string | null;
+  logo_square_updated_at: string | null;
+  logo_wide_updated_at: string | null;
   role: Role;
 }
+
+type LogoVariant = "square" | "wide";
 
 interface Member {
   id: string;
@@ -190,11 +194,16 @@ export function SiteSettingsPage() {
   const [savingSlug, setSavingSlug] = useState(false);
   const [slugError, setSlugError] = useState<string | null>(null);
 
-  const [uploadingLogo, setUploadingLogo] = useState(false);
-  const [removingLogo, setRemovingLogo] = useState(false);
-  const [logoError, setLogoError] = useState<string | null>(null);
-  const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null);
-  const logoInputRef = useRef<HTMLInputElement>(null);
+  // Per-variant logo state. Square is cropped client-side via AvatarCropDialog
+  // (1:1, 512×512); wide uploads native-aspect for the published-site header.
+  const [uploadingLogo, setUploadingLogo] = useState<{ square: boolean; wide: boolean }>({ square: false, wide: false });
+  const [removingLogo, setRemovingLogo] = useState<{ square: boolean; wide: boolean }>({ square: false, wide: false });
+  const [logoError, setLogoError] = useState<{ square: string | null; wide: string | null }>({ square: null, wide: null });
+  const [logoPreviewUrls, setLogoPreviewUrls] = useState<{ square: string | null; wide: string | null }>({ square: null, wide: null });
+  const squareLogoInputRef = useRef<HTMLInputElement>(null);
+  const wideLogoInputRef = useRef<HTMLInputElement>(null);
+  // Square slot routes the picked file through AvatarCropDialog before upload.
+  const [squareCropFile, setSquareCropFile] = useState<File | null>(null);
 
   interface TagColorRule { id: number; tag: string; color: string }
   const [tagColorRules, setTagColorRules] = useState<TagColorRule[]>([{ id: 0, tag: "", color: "#6366f1" }]);
@@ -259,37 +268,47 @@ export function SiteSettingsPage() {
 
   useEffect(() => {
     return () => {
-      setLogoPreviewUrl(prev => {
-        if (prev) URL.revokeObjectURL(prev);
-        return null;
+      setLogoPreviewUrls(prev => {
+        if (prev.square) URL.revokeObjectURL(prev.square);
+        if (prev.wide) URL.revokeObjectURL(prev.wide);
+        return { square: null, wide: null };
       });
     };
   }, []);
 
+  // Load both logo variants into blob URLs whenever the timestamps change.
+  // Auth fetch + ObjectURL because the GET endpoint requires a Bearer token.
+  const squareUpdatedAt = project?.logo_square_updated_at ?? null;
+  const wideUpdatedAt = project?.logo_wide_updated_at ?? null;
   useEffect(() => {
-    if (!token || !projectId || !project?.logo_updated_at) {
-      setLogoPreviewUrl(prev => {
-        if (prev) URL.revokeObjectURL(prev);
-        return null;
-      });
-      return;
-    }
+    if (!token || !projectId) return;
     let cancelled = false;
-    fetch(`/api/projects/${projectId}/logo?v=${encodeURIComponent(project.logo_updated_at)}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(r => r.ok ? r.blob() : null)
-      .then(blob => {
-        if (cancelled || !blob) return;
-        const newUrl = URL.createObjectURL(blob);
-        setLogoPreviewUrl(prev => {
-          if (prev) URL.revokeObjectURL(prev);
-          return newUrl;
+    function loadVariant(variant: LogoVariant, updatedAt: string | null) {
+      if (!updatedAt) {
+        setLogoPreviewUrls(prev => {
+          if (prev[variant]) URL.revokeObjectURL(prev[variant]!);
+          return { ...prev, [variant]: null };
         });
+        return;
+      }
+      fetch(`/api/projects/${projectId}/logo/${variant}?v=${encodeURIComponent(updatedAt)}`, {
+        headers: { Authorization: `Bearer ${token}` },
       })
-      .catch(() => {});
+        .then(r => r.ok ? r.blob() : null)
+        .then(blob => {
+          if (cancelled || !blob) return;
+          const newUrl = URL.createObjectURL(blob);
+          setLogoPreviewUrls(prev => {
+            if (prev[variant]) URL.revokeObjectURL(prev[variant]!);
+            return { ...prev, [variant]: newUrl };
+          });
+        })
+        .catch(() => {});
+    }
+    loadVariant("square", squareUpdatedAt);
+    loadVariant("wide", wideUpdatedAt);
     return () => { cancelled = true; };
-  }, [projectId, token, project?.logo_updated_at]);
+  }, [projectId, token, squareUpdatedAt, wideUpdatedAt]);
 
   useEffect(() => {
     if (!token || !projectId || !myRole) return;
@@ -713,28 +732,17 @@ export function SiteSettingsPage() {
     }
   }
 
-  async function handleLogoUpload(file: File) {
+  // Wide-slot upload: validate then upload the raw file.
+  // Square-slot upload arrives here pre-cropped from AvatarCropDialog as a
+  // 512×512 JPEG blob (no further validation needed beyond the server checks).
+  async function uploadLogoBlob(variant: LogoVariant, file: File | Blob, filename: string) {
     if (!projectId) return;
-    setLogoError(null);
-    const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"];
-    if (!allowed.includes(file.type)) {
-      setLogoError("Invalid file type. Allowed: JPEG, PNG, WebP, GIF.");
-      return;
-    }
-    if (file.size > 2 * 1024 * 1024) {
-      setLogoError("File too large. Maximum size is 2MB.");
-      return;
-    }
-    const optimisticUrl = URL.createObjectURL(file);
-    setLogoPreviewUrl(prev => {
-      if (prev) URL.revokeObjectURL(prev);
-      return optimisticUrl;
-    });
-    setUploadingLogo(true);
+    setLogoError(prev => ({ ...prev, [variant]: null }));
+    setUploadingLogo(prev => ({ ...prev, [variant]: true }));
     try {
       const form = new FormData();
-      form.append("file", file);
-      const res = await fetch(`/api/projects/${projectId}/logo`, {
+      form.append("file", file instanceof File ? file : new File([file], filename, { type: file.type }));
+      const res = await fetch(`/api/projects/${projectId}/logo/${variant}`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: form,
@@ -742,38 +750,58 @@ export function SiteSettingsPage() {
       const json = await res.json() as { ok: boolean; data?: Project; error?: string };
       if (json.ok && json.data) {
         setProject(json.data);
-        toast({ title: "Logo uploaded." });
+        toast({ title: variant === "square" ? "Square icon uploaded." : "Wordmark uploaded." });
       } else {
-        setLogoError(json.error ?? "Failed to upload logo.");
+        setLogoError(prev => ({ ...prev, [variant]: json.error ?? "Failed to upload logo." }));
       }
     } catch {
-      setLogoError("Could not connect to the server.");
+      setLogoError(prev => ({ ...prev, [variant]: "Could not connect to the server." }));
     } finally {
-      setUploadingLogo(false);
-      if (logoInputRef.current) logoInputRef.current.value = "";
+      setUploadingLogo(prev => ({ ...prev, [variant]: false }));
     }
   }
 
-  async function handleLogoRemove() {
+  async function handleWideLogoUpload(file: File) {
+    setLogoError(prev => ({ ...prev, wide: null }));
+    const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+    if (!allowed.includes(file.type)) {
+      setLogoError(prev => ({ ...prev, wide: "Invalid file type. Allowed: JPEG, PNG, WebP, GIF." }));
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setLogoError(prev => ({ ...prev, wide: "File too large. Maximum size is 2MB." }));
+      return;
+    }
+    await uploadLogoBlob("wide", file, file.name);
+    if (wideLogoInputRef.current) wideLogoInputRef.current.value = "";
+  }
+
+  async function handleSquareCropApply(blob: Blob) {
+    await uploadLogoBlob("square", blob, "logo-square.jpg");
+    setSquareCropFile(null);
+    if (squareLogoInputRef.current) squareLogoInputRef.current.value = "";
+  }
+
+  async function handleLogoRemove(variant: LogoVariant) {
     if (!projectId) return;
-    setRemovingLogo(true);
-    setLogoError(null);
+    setRemovingLogo(prev => ({ ...prev, [variant]: true }));
+    setLogoError(prev => ({ ...prev, [variant]: null }));
     try {
-      const res = await fetch(`/api/projects/${projectId}/logo`, {
+      const res = await fetch(`/api/projects/${projectId}/logo/${variant}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
       const json = await res.json() as { ok: boolean; data?: Project };
       if (json.ok && json.data) {
         setProject(json.data);
-        toast({ title: "Logo removed." });
+        toast({ title: variant === "square" ? "Square icon removed." : "Wordmark removed." });
       } else {
-        setLogoError("Failed to remove logo.");
+        setLogoError(prev => ({ ...prev, [variant]: "Failed to remove logo." }));
       }
     } catch {
-      setLogoError("Could not connect to the server.");
+      setLogoError(prev => ({ ...prev, [variant]: "Could not connect to the server." }));
     } finally {
-      setRemovingLogo(false);
+      setRemovingLogo(prev => ({ ...prev, [variant]: false }));
     }
   }
 
@@ -1054,27 +1082,30 @@ export function SiteSettingsPage() {
                 Customize how your published site looks and is shared.
               </p>
             </div>
+            {/* Square icon — used in the projects sidebar, favourites, profile cards.
+                Cropped client-side to 512×512 via AvatarCropDialog. */}
             <div className="flex items-center gap-4 rounded-md border border-border px-4 py-3">
-              <div className="flex h-16 w-32 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
-                {project.logo_updated_at && logoPreviewUrl ? (
-                  <img src={logoPreviewUrl} alt={project.name} className="max-h-full max-w-full object-contain" />
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
+                {project.logo_square_updated_at && logoPreviewUrls.square ? (
+                  <img src={logoPreviewUrls.square} alt={project.name} className="max-h-full max-w-full object-cover" />
                 ) : (
                   <ImageIcon className="h-6 w-6 text-muted-foreground" />
                 )}
               </div>
               <div className="flex min-w-0 flex-1 flex-col gap-2">
+                <p className="text-sm font-medium">Square icon</p>
                 <p className="text-xs text-muted-foreground">
-                  PNG, JPG, WebP, or GIF. Up to 2 MB. Wide/horizontal images work best.
+                  Shown in the projects sidebar, favourites, and profile cards. PNG, JPG, WebP, or GIF, up to 2 MB. You'll crop it to a square.
                 </p>
                 <div className="flex flex-wrap items-center gap-2">
                   <input
-                    ref={logoInputRef}
+                    ref={squareLogoInputRef}
                     type="file"
                     accept="image/png,image/jpeg,image/webp,image/gif"
                     className="hidden"
                     onChange={e => {
                       const file = e.target.files?.[0];
-                      if (file) handleLogoUpload(file);
+                      if (file) setSquareCropFile(file);
                     }}
                   />
                   <Button
@@ -1082,31 +1113,100 @@ export function SiteSettingsPage() {
                     variant="outline"
                     size="sm"
                     className="gap-1.5"
-                    disabled={uploadingLogo || removingLogo}
-                    onClick={() => logoInputRef.current?.click()}
+                    disabled={uploadingLogo.square || removingLogo.square}
+                    onClick={() => squareLogoInputRef.current?.click()}
                   >
                     <Upload className="h-3.5 w-3.5" />
-                    {uploadingLogo ? "Uploading…" : project.logo_updated_at ? "Change" : "Upload logo"}
+                    {uploadingLogo.square ? "Uploading…" : project.logo_square_updated_at ? "Change" : "Upload icon"}
                   </Button>
-                  {project.logo_updated_at && (
+                  {project.logo_square_updated_at && (
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
                       className="text-muted-foreground hover:text-destructive"
-                      disabled={uploadingLogo || removingLogo}
-                      onClick={handleLogoRemove}
+                      disabled={uploadingLogo.square || removingLogo.square}
+                      onClick={() => handleLogoRemove("square")}
                     >
-                      {removingLogo ? "Removing…" : "Remove"}
+                      {removingLogo.square ? "Removing…" : "Remove"}
                     </Button>
                   )}
                 </div>
               </div>
             </div>
-            {logoError && (
+            {logoError.square && (
               <Alert variant="destructive">
-                <AlertDescription>{logoError}</AlertDescription>
+                <AlertDescription>{logoError.square}</AlertDescription>
               </Alert>
+            )}
+
+            {/* Wide wordmark — used at the top-left of the published-site
+                header. Native aspect, no client-side crop. */}
+            <div className="flex items-center gap-4 rounded-md border border-border px-4 py-3">
+              <div className="flex h-16 w-32 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/40">
+                {project.logo_wide_updated_at && logoPreviewUrls.wide ? (
+                  <img src={logoPreviewUrls.wide} alt={project.name} className="max-h-full max-w-full object-contain" />
+                ) : (
+                  <ImageIcon className="h-6 w-6 text-muted-foreground" />
+                )}
+              </div>
+              <div className="flex min-w-0 flex-1 flex-col gap-2">
+                <p className="text-sm font-medium">Wordmark</p>
+                <p className="text-xs text-muted-foreground">
+                  Shown in the top-left of your published site. PNG, JPG, WebP, or GIF, up to 2 MB. A wide/horizontal image (around 4:1) on a transparent background works best.
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    ref={wideLogoInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif"
+                    className="hidden"
+                    onChange={e => {
+                      const file = e.target.files?.[0];
+                      if (file) handleWideLogoUpload(file);
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    disabled={uploadingLogo.wide || removingLogo.wide}
+                    onClick={() => wideLogoInputRef.current?.click()}
+                  >
+                    <Upload className="h-3.5 w-3.5" />
+                    {uploadingLogo.wide ? "Uploading…" : project.logo_wide_updated_at ? "Change" : "Upload wordmark"}
+                  </Button>
+                  {project.logo_wide_updated_at && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-muted-foreground hover:text-destructive"
+                      disabled={uploadingLogo.wide || removingLogo.wide}
+                      onClick={() => handleLogoRemove("wide")}
+                    >
+                      {removingLogo.wide ? "Removing…" : "Remove"}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+            {logoError.wide && (
+              <Alert variant="destructive">
+                <AlertDescription>{logoError.wide}</AlertDescription>
+              </Alert>
+            )}
+
+            {squareCropFile && (
+              <AvatarCropDialog
+                file={squareCropFile}
+                onApply={handleSquareCropApply}
+                onClose={() => {
+                  setSquareCropFile(null);
+                  if (squareLogoInputRef.current) squareLogoInputRef.current.value = "";
+                }}
+              />
             )}
             {/* Custom Link — requires CUSTOM_LINK_ENABLED flag */}
             {!!(project.features & 1) && (

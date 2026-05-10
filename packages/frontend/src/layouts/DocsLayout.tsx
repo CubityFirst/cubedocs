@@ -31,6 +31,7 @@ import {
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { UserAvatar } from "@/components/UserAvatar";
 import { UserProfileCard } from "@/components/UserProfileCard";
+import { ProjectSquareLogo } from "@/components/ProjectSquareLogo";
 
 interface Project {
   id: string;
@@ -43,6 +44,7 @@ interface Project {
   graph_enabled: number;
   is_favourite: number;
   features: number;
+  logo_square_updated_at: string | null;
 }
 
 interface Doc {
@@ -150,7 +152,7 @@ function ProjectSwitcher({
                 p.id === currentProject.id ? "font-medium" : "text-muted-foreground hover:text-foreground"
               )}
             >
-              <BookOpen className="h-3.5 w-3.5 shrink-0" />
+              <ProjectSquareLogo projectId={p.id} logoSquareUpdatedAt={p.logo_square_updated_at} className="h-3.5 w-3.5" />
               <span className="flex-1 truncate">{p.name}</span>
               {p.id === currentProject.id && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
             </button>
@@ -470,7 +472,7 @@ export function DocsLayout() {
                   className="w-full justify-start gap-2"
                   onClick={() => navigate(`/projects/${p.id}`)}
                 >
-                  <BookOpen className="h-4 w-4 shrink-0" />
+                  <ProjectSquareLogo projectId={p.id} logoSquareUpdatedAt={p.logo_square_updated_at} className="h-4 w-4" />
                   {p.name}
                 </Button>
               ))}

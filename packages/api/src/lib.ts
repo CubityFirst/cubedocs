@@ -51,7 +51,8 @@ export interface Project {
   graph_tag_colors: string | null;
   graph_reindex_available_at: string | null;
   home_doc_id: string | null;
-  logo_updated_at: string | null;
+  logo_square_updated_at: string | null;
+  logo_wide_updated_at: string | null;
 }
 
 export type Role = "limited" | "viewer" | "editor" | "admin" | "owner";

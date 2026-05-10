@@ -19,56 +19,66 @@ export async function handleProjects(
   const parts = url.pathname.replace(/^\/projects\/?/, "").split("/");
   const projectId = parts[0] || null;
 
-  // GET /projects/:id/logo — any member, serves the site logo from R2
-  if (projectId && parts[1] === "logo" && request.method === "GET") {
-    const role = await getCallerRole(env.DB, projectId, user.userId);
-    if (role === null) return errorResponse(Errors.NOT_FOUND);
-    const obj = await env.ASSETS.get(`site-logos/${projectId}`);
-    if (!obj) return errorResponse(Errors.NOT_FOUND);
-    return new Response(await obj.arrayBuffer(), {
-      status: 200,
-      headers: {
-        "Content-Type": obj.httpMetadata?.contentType ?? "application/octet-stream",
-        "Cache-Control": "private, max-age=300",
-      },
-    });
-  }
+  // /projects/:id/logo/:variant — variant ∈ {"square","wide"}.
+  // Square is the icon used in the projects sidebar / favourites; wide is the
+  // wordmark used at the top-left of published-site headers.
+  if (projectId && parts[1] === "logo" && parts[2]) {
+    const variant = parts[2];
+    if (variant !== "square" && variant !== "wide") return errorResponse(Errors.NOT_FOUND);
+    const r2Key = `site-logos/${projectId}-${variant}`;
+    const column = variant === "square" ? "logo_square_updated_at" : "logo_wide_updated_at";
 
-  // POST /projects/:id/logo — admin or owner, upload site logo
-  if (projectId && parts[1] === "logo" && request.method === "POST") {
-    const role = await getCallerRole(env.DB, projectId, user.userId);
-    if (role === null) return errorResponse(Errors.NOT_FOUND);
-    if (ROLE_RANK[role] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
-    const contentType = request.headers.get("Content-Type") ?? "";
-    if (!contentType.includes("multipart/form-data")) return errorResponse(Errors.BAD_REQUEST);
-    const form = await request.formData();
-    const file = form.get("file") as File | null;
-    if (!file) return errorResponse(Errors.BAD_REQUEST);
-    const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"];
-    if (!allowed.includes(file.type)) {
-      return Response.json({ ok: false, error: "Invalid file type. Allowed: JPEG, PNG, WebP, GIF." }, { status: 400 });
+    // GET — any member can fetch
+    if (request.method === "GET") {
+      const role = await getCallerRole(env.DB, projectId, user.userId);
+      if (role === null) return errorResponse(Errors.NOT_FOUND);
+      const obj = await env.ASSETS.get(r2Key);
+      if (!obj) return errorResponse(Errors.NOT_FOUND);
+      return new Response(await obj.arrayBuffer(), {
+        status: 200,
+        headers: {
+          "Content-Type": obj.httpMetadata?.contentType ?? "application/octet-stream",
+          "Cache-Control": "private, max-age=300",
+        },
+      });
     }
-    if (file.size > 2 * 1024 * 1024) {
-      return Response.json({ ok: false, error: "File too large. Maximum size is 2MB." }, { status: 400 });
-    }
-    await env.ASSETS.put(`site-logos/${projectId}`, await file.arrayBuffer(), {
-      httpMetadata: { contentType: file.type },
-    });
-    const now = new Date().toISOString();
-    await env.DB.prepare("UPDATE projects SET logo_updated_at = ? WHERE id = ?").bind(now, projectId).run();
-    const updated = await env.DB.prepare("SELECT * FROM projects WHERE id = ?").bind(projectId).first<Project>();
-    return okResponse(updated);
-  }
 
-  // DELETE /projects/:id/logo — admin or owner, remove site logo
-  if (projectId && parts[1] === "logo" && request.method === "DELETE") {
-    const role = await getCallerRole(env.DB, projectId, user.userId);
-    if (role === null) return errorResponse(Errors.NOT_FOUND);
-    if (ROLE_RANK[role] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
-    await env.ASSETS.delete(`site-logos/${projectId}`);
-    await env.DB.prepare("UPDATE projects SET logo_updated_at = NULL WHERE id = ?").bind(projectId).run();
-    const updated = await env.DB.prepare("SELECT * FROM projects WHERE id = ?").bind(projectId).first<Project>();
-    return okResponse(updated);
+    // POST — admin or owner uploads
+    if (request.method === "POST") {
+      const role = await getCallerRole(env.DB, projectId, user.userId);
+      if (role === null) return errorResponse(Errors.NOT_FOUND);
+      if (ROLE_RANK[role] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
+      const contentType = request.headers.get("Content-Type") ?? "";
+      if (!contentType.includes("multipart/form-data")) return errorResponse(Errors.BAD_REQUEST);
+      const form = await request.formData();
+      const file = form.get("file") as File | null;
+      if (!file) return errorResponse(Errors.BAD_REQUEST);
+      const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+      if (!allowed.includes(file.type)) {
+        return Response.json({ ok: false, error: "Invalid file type. Allowed: JPEG, PNG, WebP, GIF." }, { status: 400 });
+      }
+      if (file.size > 2 * 1024 * 1024) {
+        return Response.json({ ok: false, error: "File too large. Maximum size is 2MB." }, { status: 400 });
+      }
+      await env.ASSETS.put(r2Key, await file.arrayBuffer(), {
+        httpMetadata: { contentType: file.type },
+      });
+      const now = new Date().toISOString();
+      await env.DB.prepare(`UPDATE projects SET ${column} = ? WHERE id = ?`).bind(now, projectId).run();
+      const updated = await env.DB.prepare("SELECT * FROM projects WHERE id = ?").bind(projectId).first<Project>();
+      return okResponse(updated);
+    }
+
+    // DELETE — admin or owner clears
+    if (request.method === "DELETE") {
+      const role = await getCallerRole(env.DB, projectId, user.userId);
+      if (role === null) return errorResponse(Errors.NOT_FOUND);
+      if (ROLE_RANK[role] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
+      await env.ASSETS.delete(r2Key);
+      await env.DB.prepare(`UPDATE projects SET ${column} = NULL WHERE id = ?`).bind(projectId).run();
+      const updated = await env.DB.prepare("SELECT * FROM projects WHERE id = ?").bind(projectId).first<Project>();
+      return okResponse(updated);
+    }
   }
 
   // GET /projects — list projects where user is a member (includes owned)
@@ -377,7 +387,8 @@ export async function handleProjects(
       ...docIds.map(docId => env.ASSETS.delete(`${projectId}/${docId}`)),
       ...revisions.results.map(r => env.ASSETS.delete(`${projectId}/${r.asset_id}/v/${r.id}`)),
       ...files.results.map(f => env.ASSETS.delete(`files/${f.id}`)),
-      env.ASSETS.delete(`site-logos/${projectId}`),
+      env.ASSETS.delete(`site-logos/${projectId}-square`),
+      env.ASSETS.delete(`site-logos/${projectId}-wide`),
     ]);
 
     // Delete orphaned asset_revisions (no cascade on this table)

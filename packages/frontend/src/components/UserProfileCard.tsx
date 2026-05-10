@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Dialog,
@@ -68,7 +68,7 @@ interface FavouriteSite {
   id: string;
   name: string;
   vanitySlug: string | null;
-  logoUpdatedAt: string | null;
+  logoSquareUpdatedAt: string | null;
 }
 
 interface ProfileData {
@@ -100,29 +100,6 @@ export function UserProfileCard({ userId, name, children }: UserProfileCardProps
   const [loading, setLoading] = useState(false);
   const [isSelf, setIsSelf] = useState<boolean>(currentUserIdCache === userId);
   const navigate = useNavigate();
-
-  // Animate dialog body height when it changes (loading -> loaded, tab swap).
-  // Outer wrapper holds the explicit, transitioning height; inner div stays
-  // at natural height so the ResizeObserver always sees the true content
-  // size. First measurement comes in as "auto" -> px, which CSS won't
-  // animate, so the open animation is preserved; subsequent px -> px
-  // changes do animate.
-  const innerRef = useRef<HTMLDivElement>(null);
-  const [bodyHeight, setBodyHeight] = useState<number | "auto">("auto");
-  useEffect(() => {
-    if (!open) {
-      setBodyHeight("auto");
-      return;
-    }
-    const el = innerRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(entries => {
-      const h = entries[0].contentRect.height;
-      if (h > 0) setBodyHeight(h);
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [open]);
 
   useEffect(() => {
     if (!open || profile) return;
@@ -160,11 +137,6 @@ export function UserProfileCard({ userId, name, children }: UserProfileCardProps
         <DialogTitle className="sr-only">{name}'s profile</DialogTitle>
         <DialogDescription className="sr-only">Profile information for {name}</DialogDescription>
 
-        <div
-          style={{ height: bodyHeight === "auto" ? "auto" : `${bodyHeight}px` }}
-          className="overflow-hidden motion-safe:transition-[height] motion-safe:duration-200 motion-safe:ease-out"
-        >
-        <div ref={innerRef}>
         {/* Header */}
         <div className="relative overflow-hidden flex items-center gap-5 px-6 pt-6 pb-5">
           {/* Map background — only when timezone is known */}
@@ -343,9 +315,9 @@ export function UserProfileCard({ userId, name, children }: UserProfileCardProps
                       className="flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-muted/60"
                       onClick={() => { setOpen(false); navigate(`/s/${slug}`); }}
                     >
-                      {site.logoUpdatedAt ? (
+                      {site.logoSquareUpdatedAt ? (
                         <img
-                          src={`/api/public/projects/${site.id}/logo?v=${encodeURIComponent(site.logoUpdatedAt)}`}
+                          src={`/api/public/projects/${site.id}/logo/square?v=${encodeURIComponent(site.logoSquareUpdatedAt)}`}
                           alt=""
                           className="size-6 shrink-0 rounded object-cover"
                         />
@@ -406,8 +378,6 @@ export function UserProfileCard({ userId, name, children }: UserProfileCardProps
             </Tabs>
           );
         })() : null}
-        </div>
-        </div>
       </DialogContent>
     </Dialog>
   );

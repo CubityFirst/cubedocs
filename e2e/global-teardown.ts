@@ -44,10 +44,11 @@ export default async function globalTeardown() {
   );
 
   // API DB: delete e2e-suite projects by name prefix (cascades everything).
-  // Patterns track the names used in app.spec.ts and invites.spec.ts.
+  // Patterns track the names used in app.spec.ts, invites.spec.ts, and
+  // limited-permissions.spec.ts.
   run(
     apiDir,
     "cubedocs-main",
-    "DELETE FROM projects WHERE name LIKE 'E2E Project %' OR name LIKE 'Invite Test %';",
+    "DELETE FROM projects WHERE name LIKE 'E2E Project %' OR name LIKE 'Invite Test %' OR name LIKE 'Limited Perm Test %';",
   );
 }

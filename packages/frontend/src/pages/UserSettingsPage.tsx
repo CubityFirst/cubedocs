@@ -194,11 +194,11 @@ export function UserSettingsPage() {
   const BIO_MAX = 280;
 
   // Favourite published sites for the profile card.
-  const [favouriteSites, setFavouriteSites] = useState<Array<{ id: string; name: string; vanitySlug: string | null; logoUpdatedAt: string | null }>>([]);
+  const [favouriteSites, setFavouriteSites] = useState<Array<{ id: string; name: string; vanitySlug: string | null; logoSquareUpdatedAt: string | null }>>([]);
   const [favouritesLoading, setFavouritesLoading] = useState(true);
   const [favouriteRemovingId, setFavouriteRemovingId] = useState<string | null>(null);
   const [favouriteSearch, setFavouriteSearch] = useState("");
-  const [favouriteSearchResults, setFavouriteSearchResults] = useState<Array<{ id: string; name: string; vanitySlug: string | null; logoUpdatedAt: string | null }>>([]);
+  const [favouriteSearchResults, setFavouriteSearchResults] = useState<Array<{ id: string; name: string; vanitySlug: string | null; logoSquareUpdatedAt: string | null }>>([]);
   const [favouriteSearchLoading, setFavouriteSearchLoading] = useState(false);
   const [favouriteAddingId, setFavouriteAddingId] = useState<string | null>(null);
 
@@ -235,7 +235,7 @@ export function UserSettingsPage() {
       .catch(() => {});
 
     fetch("/api/me/favourite-sites", { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json() as Promise<{ ok: boolean; data?: Array<{ id: string; name: string; vanitySlug: string | null; logoUpdatedAt: string | null }> }>)
+      .then(r => r.json() as Promise<{ ok: boolean; data?: Array<{ id: string; name: string; vanitySlug: string | null; logoSquareUpdatedAt: string | null }> }>)
       .then(json => {
         if (json.ok && json.data) setFavouriteSites(json.data);
       })
@@ -840,7 +840,7 @@ export function UserSettingsPage() {
       fetch(`/api/me/favourite-sites/search?q=${encodeURIComponent(q)}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
-        .then(r => r.json() as Promise<{ ok: boolean; data?: Array<{ id: string; name: string; vanitySlug: string | null; logoUpdatedAt: string | null }> }>)
+        .then(r => r.json() as Promise<{ ok: boolean; data?: Array<{ id: string; name: string; vanitySlug: string | null; logoSquareUpdatedAt: string | null }> }>)
         .then(json => {
           if (json.ok && json.data) setFavouriteSearchResults(json.data);
         })
@@ -850,7 +850,7 @@ export function UserSettingsPage() {
     return () => clearTimeout(handle);
   }, [favouriteSearch, favouriteSites]);
 
-  async function handleAddFavourite(site: { id: string; name: string; vanitySlug: string | null; logoUpdatedAt: string | null }) {
+  async function handleAddFavourite(site: { id: string; name: string; vanitySlug: string | null; logoSquareUpdatedAt: string | null }) {
     setFavouriteAddingId(site.id);
     try {
       const token = getToken();
@@ -1191,9 +1191,9 @@ export function UserSettingsPage() {
                             key={site.id}
                             className="flex items-center gap-3 px-3 py-2 border-b border-border/40 last:border-b-0"
                           >
-                            {site.logoUpdatedAt ? (
+                            {site.logoSquareUpdatedAt ? (
                               <img
-                                src={`/api/public/projects/${site.id}/logo?v=${encodeURIComponent(site.logoUpdatedAt)}`}
+                                src={`/api/public/projects/${site.id}/logo/square?v=${encodeURIComponent(site.logoSquareUpdatedAt)}`}
                                 alt=""
                                 className="size-6 shrink-0 rounded object-cover"
                               />
@@ -1235,9 +1235,9 @@ export function UserSettingsPage() {
                       key={site.id}
                       className="flex items-center gap-3 rounded-md border bg-card px-3 py-2"
                     >
-                      {site.logoUpdatedAt ? (
+                      {site.logoSquareUpdatedAt ? (
                         <img
-                          src={`/api/public/projects/${site.id}/logo?v=${encodeURIComponent(site.logoUpdatedAt)}`}
+                          src={`/api/public/projects/${site.id}/logo/square?v=${encodeURIComponent(site.logoSquareUpdatedAt)}`}
                           alt=""
                           className="size-7 shrink-0 rounded object-cover"
                         />
