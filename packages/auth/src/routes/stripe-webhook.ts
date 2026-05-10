@@ -72,10 +72,12 @@ export async function handleStripeWebhook(request: Request, env: Env): Promise<R
         break;
     }
   } catch (err) {
+    // Always 200 on handler errors. A buggy handler won't be fixed by
+    // a Stripe retry, so 500'ing just creates noise. The idempotency
+    // row stays in place; to force a reprocess after a code fix,
+    // delete the row from webhook_events manually. Bad signatures
+    // still 400 above (caught earlier).
     console.error(`Stripe webhook handler for ${event.type} failed:`, err);
-    // Roll back the idempotency row so a retry can re-attempt this event.
-    await env.DB.prepare("DELETE FROM webhook_events WHERE event_id = ?").bind(event.id).run();
-    return errorResponse(Errors.INTERNAL);
   }
 
   return new Response("ok", { status: 200 });
