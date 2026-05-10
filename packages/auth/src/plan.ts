@@ -15,6 +15,7 @@ export type PersonalPlan = "free" | "ink";
 export type PlanRow = {
   granted_plan: string | null;
   granted_plan_expires_at: number | null;
+  granted_plan_started_at: number | null;
   personal_plan: string | null;
   personal_plan_status: string | null;
   personal_plan_started_at: number | null;
@@ -43,7 +44,7 @@ export function resolvePersonalPlan(row: PlanRow, now: number = Date.now()): Res
     return {
       plan: asPlan(row.granted_plan),
       via: "granted",
-      since: null,
+      since: row.granted_plan_started_at,
       status: "granted",
       cancelAt: null,
     };

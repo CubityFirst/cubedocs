@@ -4,6 +4,7 @@
   "version": "0.0.2",
   "scripts": {
     "dev": "concurrently \"pnpm --filter frontend dev\" \"pnpm --filter api dev\" \"pnpm --filter auth dev\" \"pnpm --filter @annex/admin dev\"",
+    "dev:stripe": "stripe listen --forward-to http://localhost:8788/stripe/webhook",
     "build": "concurrently \"pnpm --filter frontend build\" \"pnpm --filter api build\" \"pnpm --filter auth build\" \"pnpm --filter @annex/admin build\"",
     "deploy": "concurrently \"pnpm --filter frontend deploy\" \"pnpm --filter api deploy\" \"pnpm --filter auth deploy\" \"pnpm --filter @annex/admin deploy\"",
     "typecheck": "concurrently \"pnpm --filter frontend typecheck\" \"pnpm --filter api typecheck\" \"pnpm --filter auth typecheck\" \"pnpm --filter @annex/admin typecheck\"",

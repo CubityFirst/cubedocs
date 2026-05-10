@@ -18,6 +18,7 @@ interface AuthPlanRow {
   personal_plan_cancel_at: number | null;
   granted_plan: string | null;
   granted_plan_expires_at: number | null;
+  granted_plan_started_at: number | null;
 }
 
 // One D1 read against AUTH_DB returns the plan columns for every user
@@ -31,7 +32,8 @@ async function loadMemberPlans(env: Env, userIds: string[]): Promise<Map<string,
   const placeholders = userIds.map(() => "?").join(",");
   const rows = await env.AUTH_DB.prepare(
     `SELECT id, personal_plan, personal_plan_status, personal_plan_started_at,
-            personal_plan_cancel_at, granted_plan, granted_plan_expires_at
+            personal_plan_cancel_at, granted_plan, granted_plan_expires_at,
+            granted_plan_started_at
      FROM users WHERE id IN (${placeholders})`,
   ).bind(...userIds).all<AuthPlanRow>();
 
@@ -39,6 +41,7 @@ async function loadMemberPlans(env: Env, userIds: string[]): Promise<Map<string,
     const resolved = resolvePersonalPlan({
       granted_plan: r.granted_plan,
       granted_plan_expires_at: r.granted_plan_expires_at,
+      granted_plan_started_at: r.granted_plan_started_at,
       personal_plan: r.personal_plan,
       personal_plan_status: r.personal_plan_status,
       personal_plan_started_at: r.personal_plan_started_at,

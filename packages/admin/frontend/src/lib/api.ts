@@ -206,6 +206,16 @@ export async function revokeGrantedInk(id: string): Promise<void> {
   if (!json.ok) throw new Error(json.error ?? "Failed to revoke Ink grant");
 }
 
+export async function cancelUserSubscription(id: string, opts: { immediate?: boolean } = {}): Promise<void> {
+  const res = await authFetch(`/api/users/${id}/cancel-subscription`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ immediate: opts.immediate === true }),
+  });
+  const json = (await res.json()) as { ok: boolean; error?: string };
+  if (!json.ok) throw new Error(json.error ?? "Failed to cancel subscription");
+}
+
 export async function deleteUserAvatar(id: string): Promise<void> {
   const res = await authFetch(`/api/users/${id}/avatar`, { method: "DELETE" });
   const json = (await res.json()) as { ok: boolean };

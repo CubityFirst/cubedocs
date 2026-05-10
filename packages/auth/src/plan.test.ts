@@ -4,6 +4,7 @@ import { resolvePersonalPlan, type PlanRow } from "./plan";
 const FREE: PlanRow = {
   granted_plan: null,
   granted_plan_expires_at: null,
+  granted_plan_started_at: null,
   personal_plan: null,
   personal_plan_status: null,
   personal_plan_started_at: null,
@@ -161,5 +162,16 @@ describe("resolvePersonalPlan", () => {
       personal_plan_cancel_at: NOW + 86400_000,
     }, NOW);
     expect(r.cancelAt).toBeNull();
+  });
+
+  it("granted plans surface granted_plan_started_at as since", () => {
+    const r = resolvePersonalPlan({
+      ...FREE,
+      granted_plan: "ink",
+      granted_plan_expires_at: null,
+      granted_plan_started_at: 12345,
+    }, NOW);
+    expect(r.via).toBe("granted");
+    expect(r.since).toBe(12345);
   });
 });

@@ -114,6 +114,49 @@ Starts all packages concurrently. Once running:
 
 The frontend dev server automatically proxies `/api` requests to the local Workers — no separate configuration needed.
 
+## Stripe / Billing (optional)
+
+Required only if you're working on the Annex Ink subscription system — billing routes, the Stripe webhook handler, or the billing UI in user/admin settings. See `memories/Ink-Stripe.md` for the full architecture.
+
+**1. Install the Stripe CLI**
+
+Pick one:
+
+```bash
+winget install Stripe.StripeCLI    # Windows
+brew install stripe/stripe-cli/stripe  # macOS
+scoop install stripe                # Windows (Scoop)
+# or download from https://github.com/stripe/stripe-cli/releases
+```
+
+Then `stripe login` once to authorise the CLI against your Stripe account.
+
+**2. Add Stripe secrets to `.dev.vars`**
+
+```ini
+# packages/auth/.dev.vars
+STRIPE_SECRET_KEY=sk_test_...           # from Stripe Dashboard → API keys (test mode)
+STRIPE_WEBHOOK_SECRET=whsec_...         # filled in step 3
+STRIPE_INK_PRICE_ID=price_...           # the test-mode Annex Ink price id
+APP_ORIGIN=http://localhost:5173        # so Checkout redirects come back to local
+
+# packages/admin/.dev.vars
+STRIPE_SECRET_KEY=sk_test_...           # same value, for admin-driven cancels
+```
+
+**3. Forward Stripe webhooks to the local auth worker**
+
+In a separate terminal alongside `pnpm dev`:
+
+```bash
+pnpm dev:stripe
+# (equivalent to: stripe listen --forward-to http://localhost:8788/stripe/webhook)
+```
+
+The CLI prints a `whsec_...` at startup — paste it into `packages/auth/.dev.vars` as `STRIPE_WEBHOOK_SECRET`, then restart the auth worker dev so it picks up the new value. The `whsec_` printed by the CLI is only valid for events forwarded by that CLI session; it's separate from the live-mode webhook secret in the Stripe Dashboard.
+
+Without `pnpm dev:stripe` running, the local auth worker will accept webhook POSTs from the public internet but won't see any. Local checkouts will succeed at Stripe, but local DB state won't update until events are forwarded.
+
 ## Other Commands
 
 ```bash
@@ -121,6 +164,7 @@ pnpm build        # Production builds for all packages
 pnpm typecheck    # TypeScript type-check across all packages
 pnpm test         # Run all test suites
 pnpm deploy       # Deploy all packages to Cloudflare
+pnpm dev:stripe   # Forward Stripe webhooks to localhost (see above)
 ```
 
 ## Deploying to Cloudflare

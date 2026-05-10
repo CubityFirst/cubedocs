@@ -132,6 +132,7 @@ interface BillingRow {
   personal_plan_cancel_at: number | null;
   granted_plan: string | null;
   granted_plan_expires_at: number | null;
+  granted_plan_started_at: number | null;
   granted_plan_reason: string | null;
 }
 
@@ -139,6 +140,7 @@ function buildBillingDetails(row: BillingRow): BillingDetails {
   const resolved = resolvePersonalPlan({
     granted_plan: row.granted_plan,
     granted_plan_expires_at: row.granted_plan_expires_at,
+    granted_plan_started_at: row.granted_plan_started_at,
     personal_plan: row.personal_plan,
     personal_plan_status: row.personal_plan_status,
     personal_plan_started_at: row.personal_plan_started_at,
@@ -182,7 +184,8 @@ async function loadUserDetails(env: Env, id: string): Promise<UserDetails | null
     `SELECT stripe_customer_id, stripe_subscription_id,
             personal_plan, personal_plan_status, personal_plan_started_at,
             personal_plan_cancel_at,
-            granted_plan, granted_plan_expires_at, granted_plan_reason
+            granted_plan, granted_plan_expires_at, granted_plan_started_at,
+            granted_plan_reason
      FROM users WHERE id = ?`,
   ).bind(id).first<BillingRow>();
 
@@ -267,7 +270,7 @@ async function loadUserDetails(env: Env, id: string): Promise<UserDetails | null
     billing: buildBillingDetails(billingRow ?? {
       stripe_customer_id: null, stripe_subscription_id: null,
       personal_plan: null, personal_plan_status: null, personal_plan_started_at: null, personal_plan_cancel_at: null,
-      granted_plan: null, granted_plan_expires_at: null, granted_plan_reason: null,
+      granted_plan: null, granted_plan_expires_at: null, granted_plan_started_at: null, granted_plan_reason: null,
     }),
   };
 }
@@ -434,16 +437,72 @@ usersRouter.post("/:id/grant-ink", async (c) => {
     }
   }
 
+  // Preserve granted_plan_started_at across re-grants (admin re-grants
+  // the same user shouldn't reset their "supporter since" date).
   const result = await c.env.AUTH_DB.prepare(
     `UPDATE users
      SET granted_plan = 'ink',
          granted_plan_expires_at = ?,
-         granted_plan_reason = ?
+         granted_plan_reason = ?,
+         granted_plan_started_at = COALESCE(granted_plan_started_at, ?)
      WHERE id = ?`,
-  ).bind(expiresAt, reason, id).run();
+  ).bind(expiresAt, reason, Date.now(), id).run();
   if (result.meta.changes === 0) return c.json({ ok: false, error: "User not found" }, 404);
 
   return c.json({ ok: true, data: cancelStripeWarning ? { cancelStripeWarning } : undefined });
+});
+
+// POST /api/users/:id/cancel-subscription — { immediate?: boolean }
+//
+// Cancels the user's Stripe subscription directly. By default schedules
+// cancel-at-period-end so they keep access through the end of the
+// billing cycle they paid for. Pass immediate=true for chargebacks /
+// TOS violations where you want access cut off right now. The webhook
+// (subscription.deleted for immediate, subscription.updated for
+// scheduled) fires asynchronously and updates the user row via the
+// existing handler — no direct DB write here.
+usersRouter.post("/:id/cancel-subscription", async (c) => {
+  const session = await requireAdminSession(c.req.raw, c.env);
+  if (session instanceof Response) return session;
+
+  if (!c.env.STRIPE_SECRET_KEY) {
+    return c.json({ ok: false, error: "STRIPE_SECRET_KEY is unset on the admin worker" }, 500);
+  }
+
+  const id = c.req.param("id");
+  const body = await c.req.json<{ immediate?: boolean }>()
+    .catch(() => ({} as { immediate?: boolean }));
+  const immediate = body.immediate === true;
+
+  const subRow = await c.env.AUTH_DB.prepare(
+    "SELECT stripe_subscription_id FROM users WHERE id = ?",
+  ).bind(id).first<{ stripe_subscription_id: string | null }>();
+  const subId = subRow?.stripe_subscription_id;
+  if (!subId) return c.json({ ok: false, error: "User has no active Stripe subscription" }, 400);
+
+  const url = `https://api.stripe.com/v1/subscriptions/${subId}`;
+  const fetchOptions: RequestInit = immediate
+    ? {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${c.env.STRIPE_SECRET_KEY}` },
+      }
+    : {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${c.env.STRIPE_SECRET_KEY}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: "cancel_at_period_end=true",
+      };
+
+  const res = await fetch(url, fetchOptions);
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => "(unreadable)");
+    console.error(`admin cancel-subscription ${immediate ? "immediate" : "period-end"} failed:`, res.status, errBody);
+    return c.json({ ok: false, error: `Stripe returned ${res.status}` }, 502);
+  }
+
+  return c.json({ ok: true, data: { immediate } });
 });
 
 // DELETE /api/users/:id/grant-ink — clears the manual grant. Doesn't
@@ -453,10 +512,14 @@ usersRouter.delete("/:id/grant-ink", async (c) => {
   if (session instanceof Response) return session;
 
   const id = c.req.param("id");
+  // We clear granted_plan_started_at too, so the next grant gets a
+  // fresh "supporter since" date — revoke is a hard reset of the
+  // grant relationship, not just a pause.
   const result = await c.env.AUTH_DB.prepare(
     `UPDATE users
      SET granted_plan = NULL,
          granted_plan_expires_at = NULL,
+         granted_plan_started_at = NULL,
          granted_plan_reason = NULL
      WHERE id = ?`,
   ).bind(id).run();

@@ -47,6 +47,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   type AdminUser,
   type AdminUserDetails,
+  cancelUserSubscription,
   deleteUserAvatar,
   exportUserData,
   forceUserPasswordChange,
@@ -189,9 +190,11 @@ function InkBillingCard({ userId, userName, details, onChanged }: InkBillingCard
   const billing = details.billing;
   const [grantOpen, setGrantOpen] = useState(false);
   const [revokeOpen, setRevokeOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
   const [grantReason, setGrantReason] = useState("");
   const [grantExpiry, setGrantExpiry] = useState<"forever" | "30d" | "1y">("forever");
   const [cancelPaidSub, setCancelPaidSub] = useState(false);
+  const [cancelMode, setCancelMode] = useState<"period_end" | "immediate">("period_end");
   const [pending, setPending] = useState(false);
 
   const hasPaidSub = !!billing.stripe.subscription_id;
@@ -255,6 +258,26 @@ function InkBillingCard({ userId, userName, details, onChanged }: InkBillingCard
     }
   }
 
+  async function handleCancelSubscription() {
+    setPending(true);
+    try {
+      await cancelUserSubscription(userId, { immediate: cancelMode === "immediate" });
+      toast.success(
+        cancelMode === "immediate"
+          ? `${userName}'s subscription has been cancelled immediately`
+          : `${userName}'s subscription will cancel at the end of the current period`,
+      );
+      setCancelOpen(false);
+      setCancelMode("period_end");
+      // Webhook fires asynchronously; give it a moment to land before refetching.
+      setTimeout(() => onChanged(), 1500);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to cancel subscription");
+    } finally {
+      setPending(false);
+    }
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -306,6 +329,59 @@ function InkBillingCard({ userId, userName, details, onChanged }: InkBillingCard
         )}
 
         <div className="flex flex-wrap gap-2">
+          {hasPaidSub && !billing.cancel_at && (
+            <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" variant="destructive" disabled={pending}>
+                  Cancel paid subscription
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Cancel paid subscription</DialogTitle>
+                  <DialogDescription>
+                    Stops Stripe from billing <strong>{userName}</strong>. Plan flips to free when the corresponding
+                    webhook arrives. If they have an active Ink grant, that overrides regardless and they keep Ink.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="flex flex-col gap-3">
+                  <label className="flex cursor-pointer items-start gap-3 rounded-md border p-3">
+                    <Checkbox
+                      checked={cancelMode === "period_end"}
+                      onCheckedChange={() => setCancelMode("period_end")}
+                    />
+                    <div className="flex flex-col gap-1">
+                      <span className="text-sm font-medium">At period end <span className="text-muted-foreground">(recommended)</span></span>
+                      <span className="text-sm text-muted-foreground">
+                        They keep access through the cycle they already paid for. Stripe stops billing after.
+                      </span>
+                    </div>
+                  </label>
+                  <label className="flex cursor-pointer items-start gap-3 rounded-md border p-3">
+                    <Checkbox
+                      checked={cancelMode === "immediate"}
+                      onCheckedChange={() => setCancelMode("immediate")}
+                    />
+                    <div className="flex flex-col gap-1">
+                      <span className="text-sm font-medium">Immediately</span>
+                      <span className="text-sm text-muted-foreground">
+                        Access cuts off now. Useful for chargebacks / TOS violations. Stripe doesn't auto-refund the partial period.
+                      </span>
+                    </div>
+                  </label>
+                </div>
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setCancelOpen(false)} disabled={pending}>
+                    Keep subscription
+                  </Button>
+                  <Button type="button" variant="destructive" onClick={handleCancelSubscription} disabled={pending}>
+                    Cancel subscription
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
+
           {billing.granted ? (
             <AlertDialog open={revokeOpen} onOpenChange={setRevokeOpen}>
               <AlertDialogTrigger asChild>

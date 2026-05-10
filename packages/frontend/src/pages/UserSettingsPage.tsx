@@ -991,12 +991,14 @@ export function UserSettingsPage() {
                         {personalPlanStatus === "granted" && <span className="text-xs font-normal text-muted-foreground">(gifted)</span>}
                       </h3>
                       <p className="mt-1 text-sm text-muted-foreground">
-                        {personalPlanStatus === "granted"
-                          ? "You've been comped a supporter subscription. Thanks for being here."
-                          : (() => {
-                              const since = formatInkSince(personalPlanSince);
-                              return since ? `Supporter since ${since}.` : "Active supporter.";
-                            })()}
+                        {(() => {
+                          const since = formatInkSince(personalPlanSince);
+                          const sinceLine = since ? `Supporter since ${since}.` : "Active supporter.";
+                          if (personalPlanStatus === "granted") {
+                            return <>{sinceLine}<br />Annex Ink is on us. Thank you for being here.</>;
+                          }
+                          return sinceLine;
+                        })()}
                       </p>
                       {personalPlanCancelAt && personalPlanStatus !== "granted" && (() => {
                         const expires = formatInkSince(personalPlanCancelAt);

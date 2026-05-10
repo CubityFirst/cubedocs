@@ -37,6 +37,10 @@ Authentication uses `Authorization: Bearer <JWT>` headers. JWTs are issued by th
 
 **Supported notation:** see `memories/Dice-Notation.md` — read that file when you need details on dice notation syntax (table of examples, reroll/keep/explode/success-count behavior, operator precedence).
 
+## Annex Ink + Stripe
+
+Personal supporter subscription ($5/mo) with Stripe billing, comp-grant override, animated avatar ring, admin grant/revoke/cancel controls, and a webhook proxy through the frontend worker. **Anything touching `personal_plan_*` / `granted_plan_*` columns, `billing.ts`, `stripe-webhook.ts`, the billing UI in user settings or the admin user-details sheet, or the `InkBillingCard` belongs to this system** — see `memories/Ink-Stripe.md` for schema, plan resolution rules, webhook flow, deploy/dev setup, and ops cheatsheet.
+
 ## Realtime Collaboration
 
 Enabled per-project via `projects.features & 4` (`ProjectFeatures.REALTIME`). Toggle in the admin panel.
