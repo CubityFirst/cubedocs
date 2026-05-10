@@ -7,6 +7,7 @@ const FREE: PlanRow = {
   personal_plan: null,
   personal_plan_status: null,
   personal_plan_started_at: null,
+  personal_plan_cancel_at: null,
 };
 
 const NOW = 1_000_000;
@@ -138,5 +139,27 @@ describe("resolvePersonalPlan", () => {
       personal_plan_status: "active",
     }, NOW);
     expect(r.plan).toBe("free");
+  });
+
+  it("surfaces cancelAt for paid plans pending cancellation", () => {
+    const r = resolvePersonalPlan({
+      ...FREE,
+      personal_plan: "ink",
+      personal_plan_status: "active",
+      personal_plan_started_at: 100,
+      personal_plan_cancel_at: NOW + 86400_000,
+    }, NOW);
+    expect(r.plan).toBe("ink");
+    expect(r.cancelAt).toBe(NOW + 86400_000);
+  });
+
+  it("granted plans never carry a cancelAt", () => {
+    const r = resolvePersonalPlan({
+      ...FREE,
+      granted_plan: "ink",
+      granted_plan_expires_at: null,
+      personal_plan_cancel_at: NOW + 86400_000,
+    }, NOW);
+    expect(r.cancelAt).toBeNull();
   });
 });

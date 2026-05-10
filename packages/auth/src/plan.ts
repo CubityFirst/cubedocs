@@ -18,6 +18,7 @@ export type PlanRow = {
   personal_plan: string | null;
   personal_plan_status: string | null;
   personal_plan_started_at: number | null;
+  personal_plan_cancel_at: number | null;
 };
 
 export type ResolvedPlan = {
@@ -25,6 +26,10 @@ export type ResolvedPlan = {
   via: "granted" | "paid" | "free";
   since: number | null;
   status: string | null;
+  // When non-null, the active sub has been set to cancel and access
+  // ends at this Unix-ms timestamp. Stays in 'active' status until
+  // then; UI uses this to show "expires on X".
+  cancelAt: number | null;
 };
 
 const ACTIVE_STATUSES = new Set(["active", "trialing", "past_due"]);
@@ -40,6 +45,7 @@ export function resolvePersonalPlan(row: PlanRow, now: number = Date.now()): Res
       via: "granted",
       since: null,
       status: "granted",
+      cancelAt: null,
     };
   }
 
@@ -49,8 +55,9 @@ export function resolvePersonalPlan(row: PlanRow, now: number = Date.now()): Res
       via: "paid",
       since: row.personal_plan_started_at,
       status: row.personal_plan_status,
+      cancelAt: row.personal_plan_cancel_at,
     };
   }
 
-  return { plan: "free", via: "free", since: null, status: null };
+  return { plan: "free", via: "free", since: null, status: null, cancelAt: null };
 }

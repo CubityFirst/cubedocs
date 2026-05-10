@@ -11,6 +11,7 @@ interface SessionUserRow {
   personal_plan: string | null;
   personal_plan_status: string | null;
   personal_plan_started_at: number | null;
+  personal_plan_cancel_at: number | null;
   granted_plan: string | null;
   granted_plan_expires_at: number | null;
 }
@@ -60,6 +61,7 @@ export async function loadCurrentSession(
     db.prepare(
       `SELECT id, email, moderation, force_password_change, is_admin,
               personal_plan, personal_plan_status, personal_plan_started_at,
+              personal_plan_cancel_at,
               granted_plan, granted_plan_expires_at
        FROM users WHERE id = ?`,
     ).bind(tokenSession.userId),
@@ -104,6 +106,7 @@ export async function loadCurrentSession(
     personal_plan: user.personal_plan,
     personal_plan_status: user.personal_plan_status,
     personal_plan_started_at: user.personal_plan_started_at,
+    personal_plan_cancel_at: user.personal_plan_cancel_at,
   }, now);
 
   return {
@@ -117,6 +120,7 @@ export async function loadCurrentSession(
       personalPlan: resolved.plan,
       personalPlanSince: resolved.since,
       personalPlanStatus: resolved.status,
+      personalPlanCancelAt: resolved.cancelAt,
     },
   };
 }

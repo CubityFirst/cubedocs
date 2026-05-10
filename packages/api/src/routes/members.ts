@@ -15,6 +15,7 @@ interface AuthPlanRow {
   personal_plan: string | null;
   personal_plan_status: string | null;
   personal_plan_started_at: number | null;
+  personal_plan_cancel_at: number | null;
   granted_plan: string | null;
   granted_plan_expires_at: number | null;
 }
@@ -30,7 +31,7 @@ async function loadMemberPlans(env: Env, userIds: string[]): Promise<Map<string,
   const placeholders = userIds.map(() => "?").join(",");
   const rows = await env.AUTH_DB.prepare(
     `SELECT id, personal_plan, personal_plan_status, personal_plan_started_at,
-            granted_plan, granted_plan_expires_at
+            personal_plan_cancel_at, granted_plan, granted_plan_expires_at
      FROM users WHERE id IN (${placeholders})`,
   ).bind(...userIds).all<AuthPlanRow>();
 
@@ -41,6 +42,7 @@ async function loadMemberPlans(env: Env, userIds: string[]): Promise<Map<string,
       personal_plan: r.personal_plan,
       personal_plan_status: r.personal_plan_status,
       personal_plan_started_at: r.personal_plan_started_at,
+      personal_plan_cancel_at: r.personal_plan_cancel_at,
     });
     plans.set(r.id, resolved.plan);
   }

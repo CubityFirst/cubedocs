@@ -30,6 +30,7 @@ import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertC
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { TIMEZONE_GROUPS, detectTimezoneGroup, getTimezoneGroup, formatTimezoneLabel, formatTimeInZone } from "@/lib/timezone";
+import { formatInkSince } from "@/lib/inkDate";
 
 const STRENGTH_LABELS = ["Very weak", "Weak", "Fair", "Strong", "Very strong"];
 const STRENGTH_COLORS = [
@@ -157,9 +158,12 @@ export function UserSettingsPage() {
 
   // Annex Ink billing state. personalPlanStatus === "granted" means a comp
   // grant (no Stripe linkage); we hide the Manage button in that case.
+  // personalPlanCancelAt is non-null when the user has scheduled a
+  // cancel-at-period-end via Customer Portal — UI shows the expiry date.
   const [personalPlan, setPersonalPlan] = useState<"free" | "ink">("free");
   const [personalPlanSince, setPersonalPlanSince] = useState<number | null>(null);
   const [personalPlanStatus, setPersonalPlanStatus] = useState<string | null>(null);
+  const [personalPlanCancelAt, setPersonalPlanCancelAt] = useState<number | null>(null);
   const [billingBusy, setBillingBusy] = useState(false);
 
   const { runWithTwoFA, twoFADialog, busy: twoFABusy } = use2FA({
@@ -171,7 +175,7 @@ export function UserSettingsPage() {
     const token = getToken();
     if (!token) return;
     fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json() as Promise<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean; userId: string; timezone: string | null; personalPlan: "free" | "ink"; personalPlanSince: number | null; personalPlanStatus: string | null } }>)
+      .then(r => r.json() as Promise<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean; userId: string; timezone: string | null; personalPlan: "free" | "ink"; personalPlanSince: number | null; personalPlanStatus: string | null; personalPlanCancelAt: number | null } }>)
       .then(json => {
         if (json.ok && json.data) {
           setCurrentName(json.data.name);
@@ -185,6 +189,7 @@ export function UserSettingsPage() {
           setPersonalPlan(json.data.personalPlan);
           setPersonalPlanSince(json.data.personalPlanSince);
           setPersonalPlanStatus(json.data.personalPlanStatus);
+          setPersonalPlanCancelAt(json.data.personalPlanCancelAt);
         }
       })
       .catch(() => {});

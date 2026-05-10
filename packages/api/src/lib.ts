@@ -5,6 +5,7 @@ export interface Session {
   personalPlan?: "free" | "ink";
   personalPlanSince?: number | null;
   personalPlanStatus?: string | null;
+  personalPlanCancelAt?: number | null;
 }
 
 export interface Folder {

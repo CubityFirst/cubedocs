@@ -128,6 +128,12 @@ async function handleSubscriptionUpsert(env: Env, sub: Stripe.Subscription): Pro
   const plan = "ink";
   const now = Date.now();
 
+  // sub.cancel_at is populated when the user has scheduled a
+  // cancel-at-period-end via Customer Portal; null when not pending or
+  // when they've resumed. Status remains 'active' until Stripe actually
+  // transitions to canceled (which fires subscription.deleted).
+  const cancelAt = sub.cancel_at ? sub.cancel_at * 1000 : null;
+
   // Only set personal_plan_started_at if it's not already populated —
   // preserves the original supporter date across cancel/resub cycles.
   await env.DB.prepare(
@@ -137,6 +143,7 @@ async function handleSubscriptionUpsert(env: Env, sub: Stripe.Subscription): Pro
          personal_plan = ?,
          personal_plan_status = ?,
          personal_period_end = ?,
+         personal_plan_cancel_at = ?,
          personal_plan_started_at = COALESCE(personal_plan_started_at, ?)
      WHERE id = ?`,
   ).bind(
@@ -145,6 +152,7 @@ async function handleSubscriptionUpsert(env: Env, sub: Stripe.Subscription): Pro
     plan,
     status,
     periodEnd ? periodEnd * 1000 : null,
+    cancelAt,
     now,
     userId,
   ).run();
@@ -162,6 +170,7 @@ async function handleSubscriptionDeleted(env: Env, sub: Stripe.Subscription): Pr
      SET personal_plan = NULL,
          personal_plan_status = 'canceled',
          personal_period_end = NULL,
+         personal_plan_cancel_at = NULL,
          stripe_subscription_id = NULL
      WHERE id = ?`,
   ).bind(userId).run();
