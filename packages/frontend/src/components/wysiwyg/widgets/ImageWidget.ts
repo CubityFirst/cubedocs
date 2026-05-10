@@ -32,6 +32,9 @@ function parseStyle(s: string): React.CSSProperties {
     if (!k || !v) continue;
     if (k === "width") out.width = v;
     else if (k === "height") out.height = v;
+    else if (k === "display") out.display = v;
+    else if (k === "margin-left") out.marginLeft = v;
+    else if (k === "margin-right") out.marginRight = v;
   }
   return out;
 }

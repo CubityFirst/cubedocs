@@ -49,6 +49,7 @@
     "remark-frontmatter": "^5.0.0",
     "remark-gfm": "^4.0.1",
     "shiki": "^1.0.0",
+    "sonner": "^1.7.4",
     "tailwind-merge": "^2.5.0",
     "topojson-client": "^3.1.0",
     "world-atlas": "^2.0.2",

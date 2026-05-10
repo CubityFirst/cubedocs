@@ -288,6 +288,9 @@ importers:
       shiki:
         specifier: ^1.0.0
         version: 1.29.2
+      sonner:
+        specifier: ^1.7.4
+        version: 1.7.4(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       tailwind-merge:
         specifier: ^2.5.0
         version: 2.6.1

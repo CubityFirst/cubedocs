@@ -513,7 +513,7 @@ function InkBillingCard({ userId, userName, details, onChanged }: InkBillingCard
 
 const KNOWN_BADGES: Array<{ bit: number; label: string; description: string }> = [
   { bit: BADGE_DEVELOPER, label: "Annex Developer", description: "Green code-xml badge on the profile card." },
-  { bit: BADGE_BETA_TESTER, label: "Beta Tester", description: "Amber flask badge for users in the beta program." },
+  { bit: BADGE_BETA_TESTER, label: "Beta Tester", description: "Purple flask badge for users in the beta program." },
 ];
 const ALL_KNOWN_BADGE_BITS = KNOWN_BADGES.reduce((acc, b) => acc | b.bit, 0);
 

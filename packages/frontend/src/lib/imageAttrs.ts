@@ -1,7 +1,8 @@
 // Shared Pandoc-style image attribute parser:
-//   ![alt](url){width=50% height=200px}
+//   ![alt](url){width=50% height=200px align=center}
 //
-// Supported attributes: width, height (quoted or unquoted values).
+// Supported attributes: width, height, align (quoted or unquoted values).
+// align accepts left | center | mid | right ("mid" is an alias for center).
 
 // Matches a Pandoc attribute block at the start of a string: {key=val …}.
 // `[^}\n]` (not `[^}]`) so an unfinished `{…` on one line doesn't greedily
@@ -36,10 +37,29 @@ export function parseImageAttrs(block: string): Record<string, string> {
 }
 
 export function styleFromAttrs(attrs: Record<string, string>): string | undefined {
-  const { width, height } = attrs;
-  if (!width && !height) return undefined;
+  const { width, height, align } = attrs;
   const parts: string[] = [];
   if (width) parts.push(`width: ${width}`);
   if (height) parts.push(`height: ${height}`);
-  return parts.join("; ");
+  const alignCss = alignToCss(align);
+  if (alignCss) parts.push(alignCss);
+  return parts.length ? parts.join("; ") : undefined;
+}
+
+// Centering an <img> works the same in the main document frame and inside a
+// table cell: make it a block and use auto margins. left/right anchor the
+// margin on the opposite side so the image hugs that edge.
+function alignToCss(align: string | undefined): string | undefined {
+  if (!align) return undefined;
+  switch (align.toLowerCase()) {
+    case "left":
+      return "display: block; margin-left: 0; margin-right: auto";
+    case "right":
+      return "display: block; margin-left: auto; margin-right: 0";
+    case "center":
+    case "mid":
+      return "display: block; margin-left: auto; margin-right: auto";
+    default:
+      return undefined;
+  }
 }

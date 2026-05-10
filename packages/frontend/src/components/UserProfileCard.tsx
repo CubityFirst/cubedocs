@@ -13,7 +13,7 @@ import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { UserAvatar } from "@/components/UserAvatar";
 import { getToken, clearToken } from "@/lib/auth";
-import { CalendarDays, Building2, Clock, Settings, KeyRound, LogOut, ChevronRight, Sparkles, CodeXml, FlaskConical } from "lucide-react";
+import { CalendarDays, Building2, Clock, Settings, KeyRound, LogOut, ChevronRight, CodeXml, FlaskConical } from "lucide-react";
 import { formatTimeInZone, getTimezoneGroup } from "@/lib/timezone";
 import { formatInkSince } from "@/lib/inkDate";
 import { TimezoneMap } from "@/components/TimezoneMap";
@@ -75,6 +75,39 @@ interface ProfileData {
 
 const BADGE_DEVELOPER = 1 << 0;
 const BADGE_BETA_TESTER = 1 << 1;
+
+// Sparkles icon (lucide path data) with a gradient stroke matching the
+// Ink avatar ring's three hues. The `ink-icon` class hue-rotates the whole
+// SVG so the gradient cycles through the spectrum like the export PNG
+// does, statically.
+function InkSparkle({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      <defs>
+        <linearGradient id="ink-sparkle-stroke" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="hsl(45 100% 60%)" />
+          <stop offset="50%" stopColor="hsl(320 80% 60%)" />
+          <stop offset="100%" stopColor="hsl(200 80% 55%)" />
+        </linearGradient>
+      </defs>
+      <g stroke="url(#ink-sparkle-stroke)">
+        <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />
+        <path d="M20 3v4" />
+        <path d="M22 5h-4" />
+        <path d="M4 17v2" />
+        <path d="M5 18H3" />
+      </g>
+    </svg>
+  );
+}
 
 interface UserProfileCardProps {
   userId: string;
@@ -170,7 +203,7 @@ export function UserProfileCard({ userId, name, children }: UserProfileCardProps
                         <button
                           type="button"
                           aria-label="Beta Tester"
-                          className="inline-flex size-6 items-center justify-center rounded-full text-amber-600 transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-amber-400"
+                          className="inline-flex size-6 items-center justify-center rounded-full text-purple-600 transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-purple-400"
                         >
                           <FlaskConical className="size-4" />
                         </button>
@@ -186,7 +219,7 @@ export function UserProfileCard({ userId, name, children }: UserProfileCardProps
                           aria-label="Annex Ink"
                           className="inline-flex size-6 items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
-                          <Sparkles className="size-4 ink-icon" />
+                          <InkSparkle className="size-4 ink-icon" />
                         </button>
                       </TooltipTrigger>
                       <TooltipContent side="top" className="text-xs">

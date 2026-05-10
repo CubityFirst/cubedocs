@@ -82,4 +82,40 @@ describe("remarkImageAttrs", () => {
     run(tree);
     expect(imageStyle(tree)).toBe("width: 200px; height: 50px");
   });
+
+  it("centers via align=center", () => {
+    const tree = makePara("img.png", "{align=center}");
+    run(tree);
+    expect(imageStyle(tree)).toBe("display: block; margin-left: auto; margin-right: auto");
+  });
+
+  it("treats align=mid as a center alias", () => {
+    const tree = makePara("img.png", "{align=mid}");
+    run(tree);
+    expect(imageStyle(tree)).toBe("display: block; margin-left: auto; margin-right: auto");
+  });
+
+  it("left-aligns via align=left", () => {
+    const tree = makePara("img.png", "{align=left}");
+    run(tree);
+    expect(imageStyle(tree)).toBe("display: block; margin-left: 0; margin-right: auto");
+  });
+
+  it("right-aligns via align=right", () => {
+    const tree = makePara("img.png", "{align=right}");
+    run(tree);
+    expect(imageStyle(tree)).toBe("display: block; margin-left: auto; margin-right: 0");
+  });
+
+  it("combines width with align", () => {
+    const tree = makePara("img.png", "{width=50% align=center}");
+    run(tree);
+    expect(imageStyle(tree)).toBe("width: 50%; display: block; margin-left: auto; margin-right: auto");
+  });
+
+  it("ignores unknown align values", () => {
+    const tree = makePara("img.png", "{align=bogus}");
+    run(tree);
+    expect(imageStyle(tree)).toBeUndefined();
+  });
 });
