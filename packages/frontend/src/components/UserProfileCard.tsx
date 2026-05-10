@@ -13,7 +13,7 @@ import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { UserAvatar } from "@/components/UserAvatar";
 import { getToken, clearToken } from "@/lib/auth";
-import { CalendarDays, Building2, Clock, Settings, KeyRound, LogOut, ChevronRight, Sparkles } from "lucide-react";
+import { CalendarDays, Building2, Clock, Settings, KeyRound, LogOut, ChevronRight, Sparkles, CodeXml, FlaskConical } from "lucide-react";
 import { formatTimeInZone, getTimezoneGroup } from "@/lib/timezone";
 import { formatInkSince } from "@/lib/inkDate";
 import { TimezoneMap } from "@/components/TimezoneMap";
@@ -70,7 +70,11 @@ interface ProfileData {
   sharedProjects: SharedProject[];
   personalPlan?: "free" | "ink";
   personalPlanSince?: number | null;
+  badges?: number;
 }
+
+const BADGE_DEVELOPER = 1 << 0;
+const BADGE_BETA_TESTER = 1 << 1;
 
 interface UserProfileCardProps {
   userId: string;
@@ -134,31 +138,65 @@ export function UserProfileCard({ userId, name, children }: UserProfileCardProps
 
           <UserAvatar userId={userId} name={name} className="relative z-10 size-20 shrink-0 text-2xl" personalPlan={profile?.personalPlan} />
           <div className="relative z-10 min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <h2 className="truncate text-lg font-semibold">{name}</h2>
-              {profile?.personalPlan === "ink" && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      // Tap on mobile focuses the button, which opens the
-                      // tooltip via radix's focus behavior. Desktop hover
-                      // still works the same way.
-                      className="shrink-0 inline-flex items-center justify-center rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      aria-label="Annex Ink"
-                    >
-                      <Sparkles className="size-4 ink-icon" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="text-xs">
-                    {(() => {
-                      const since = formatInkSince(profile.personalPlanSince);
-                      return since ? `Annex Ink since ${since}` : "Annex Ink";
-                    })()}
-                  </TooltipContent>
-                </Tooltip>
-              )}
-            </div>
+            <h2 className="truncate text-lg font-semibold">{name}</h2>
+            {profile && (() => {
+              const badgeBits = profile.badges ?? 0;
+              const isInk = profile.personalPlan === "ink";
+              const isDeveloper = (badgeBits & BADGE_DEVELOPER) !== 0;
+              const isBetaTester = (badgeBits & BADGE_BETA_TESTER) !== 0;
+              if (!isInk && !isDeveloper && !isBetaTester) return null;
+              const inkSince = isInk ? formatInkSince(profile.personalPlanSince) : null;
+              return (
+                <div className="mt-1 flex flex-wrap items-center">
+                  {isDeveloper && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <a
+                          href="https://docs.cubityfir.st/s/help/872895fc-3990-451e-a3a5-1dedc7405c42"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          aria-label="Annex Developer"
+                          className="inline-flex size-6 items-center justify-center rounded-full text-green-600 transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-green-400"
+                        >
+                          <CodeXml className="size-4" />
+                        </a>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">Annex Developer</TooltipContent>
+                    </Tooltip>
+                  )}
+                  {isBetaTester && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          aria-label="Beta Tester"
+                          className="inline-flex size-6 items-center justify-center rounded-full text-amber-600 transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-amber-400"
+                        >
+                          <FlaskConical className="size-4" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">Beta Tester</TooltipContent>
+                    </Tooltip>
+                  )}
+                  {isInk && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          aria-label="Annex Ink"
+                          className="inline-flex size-6 items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          <Sparkles className="size-4 ink-icon" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">
+                        {inkSince ? `Annex Ink since ${inkSince}` : "Annex Ink"}
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
+                </div>
+              );
+            })()}
             {loading ? (
               <Skeleton className="mt-2 h-4 w-40" />
             ) : profile ? (

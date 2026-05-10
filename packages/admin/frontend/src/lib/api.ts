@@ -21,6 +21,7 @@ export interface AdminUserDetails {
     account_status: "active" | "disabled" | "suspended";
     account_suspended_until?: number;
     force_password_change: boolean;
+    badges: number;
   };
   moderation: {
     current_status: "active" | "disabled" | "suspended";
@@ -130,6 +131,16 @@ export async function getUserDetails(id: string): Promise<AdminUserDetails> {
   const json = (await res.json()) as { ok: boolean; data?: AdminUserDetails };
   if (!json.ok || !json.data) throw new Error("Failed to load user details");
   return json.data;
+}
+
+export async function updateUserBadges(id: string, badges: number): Promise<void> {
+  const res = await authFetch(`/api/users/${id}/badges`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ badges }),
+  });
+  const json = (await res.json()) as { ok: boolean; error?: string };
+  if (!json.ok) throw new Error(json.error ?? "Failed to update badges");
 }
 
 export async function forceUserPasswordChange(id: string): Promise<void> {

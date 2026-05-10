@@ -354,7 +354,7 @@ export default {
         if (!lookupRes.ok) {
           return addCorsHeaders(lookupRes.status === 404 ? errorResponse(Errors.NOT_FOUND) : errorResponse(Errors.INTERNAL));
         }
-        const lookupData = await lookupRes.json<{ ok: boolean; data?: { userId: string; name: string; email: string; createdAt: string; timezone: string | null } }>();
+        const lookupData = await lookupRes.json<{ ok: boolean; data?: { userId: string; name: string; email: string; createdAt: string; timezone: string | null; badges?: number } }>();
         if (!lookupData.ok || !lookupData.data) return addCorsHeaders(errorResponse(Errors.NOT_FOUND));
 
         const sharedRows = await env.DB.prepare(
@@ -388,6 +388,7 @@ export default {
           sharedProjects: sharedRows.results.map(r => ({ id: r.id, name: r.name, theirRole: r.their_role })),
           personalPlan: resolvedPlan.plan,
           personalPlanSince: resolvedPlan.since,
+          badges: lookupData.data.badges ?? 0,
         };
         if (lookupData.data.timezone) profileData.timezone = lookupData.data.timezone;
 

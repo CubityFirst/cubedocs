@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { zipSync, strToU8 } from "fflate";
 import { requireAdminSession } from "../auth";
 import { resolvePersonalPlan, type PersonalPlan } from "../../../auth/src/plan";
+import { ALL_BADGE_BITS } from "../../../auth/src/badges";
 import type { Env } from "../index";
 
 const usersRouter = new Hono<{ Bindings: Env }>();
@@ -15,6 +16,7 @@ interface UserRow {
   created_at: string;
   moderation: number;
   force_password_change: number;
+  badges?: number | null;
   latest_moderation_action: ModerationAction | null;
   latest_moderation_reason: string | null;
   latest_moderation_created_at: string | null;
@@ -59,6 +61,7 @@ interface UserDetails {
     account_status: CurrentStatus;
     account_suspended_until?: number;
     force_password_change: boolean;
+    badges: number;
   };
   moderation: {
     current_status: CurrentStatus;
@@ -172,6 +175,7 @@ async function loadUserDetails(env: Env, id: string): Promise<UserDetails | null
         u.created_at,
         u.moderation,
         u.force_password_change,
+        u.badges,
         ${latestModerationFields("u")}
       FROM users u
       WHERE u.id = ?
@@ -240,6 +244,7 @@ async function loadUserDetails(env: Env, id: string): Promise<UserDetails | null
       account_status: currentStatus,
       ...(currentStatus === "suspended" ? { account_suspended_until: profile.moderation } : {}),
       force_password_change: Boolean(profile.force_password_change),
+      badges: profile.badges ?? 0,
     },
     moderation: {
       current_status: currentStatus,
@@ -342,6 +347,25 @@ usersRouter.patch("/:id", async (c) => {
     ).bind(crypto.randomUUID(), id, action, moderation, reason || null, session.userId, session.email),
   ]);
 
+  return c.json({ ok: true });
+});
+
+// PATCH /api/users/:id/badges - { badges: number } (bitmask)
+usersRouter.patch("/:id/badges", async (c) => {
+  const session = await requireAdminSession(c.req.raw, c.env);
+  if (session instanceof Response) return session;
+
+  const id = c.req.param("id");
+  const body = await c.req.json<{ badges: number }>().catch(() => ({} as { badges?: number }));
+  const badges = body.badges;
+  if (!Number.isInteger(badges) || badges! < 0 || (badges! & ~ALL_BADGE_BITS) !== 0) {
+    return c.json({ ok: false, error: "Invalid badges value" }, 400);
+  }
+
+  const result = await c.env.AUTH_DB.prepare("UPDATE users SET badges = ? WHERE id = ?")
+    .bind(badges, id)
+    .run();
+  if (result.meta.changes === 0) return c.json({ ok: false, error: "User not found" }, 404);
   return c.json({ ok: true });
 });
 

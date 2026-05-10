@@ -1,6 +1,9 @@
 import { createElement, type ReactElement, type ReactNode } from "react";
 import { WidgetType, type EditorView } from "@codemirror/view";
 import { ReactWidget } from "./ReactWidget";
+import { AuthenticatedImage } from "@/components/AuthenticatedImage";
+import { useRendererCtx } from "../context/RendererContext";
+import { parseImageAttrs, styleFromAttrs } from "@/lib/imageAttrs";
 
 type Align = "left" | "center" | "right" | null;
 
@@ -85,6 +88,14 @@ function renderInline(text: string): ReactNode {
       out.push(createElement("code", { key: key++, className: "cm-inline-code" }, m[1]));
       i += m[0].length; continue;
     }
+    if ((m = rest.match(/^!\[([^\]]*)\]\(\s*([^)\s]+?)\s*\)(?:\{([^}\n]*)\})?/))) {
+      flush();
+      const alt = m[1] ?? "";
+      const url = m[2] ?? "";
+      const style = m[3] != null ? styleFromAttrs(parseImageAttrs(m[3])) : undefined;
+      out.push(createElement(TableImage, { key: key++, src: url, alt, style }));
+      i += m[0].length; continue;
+    }
     if ((m = rest.match(/^\[([^\]]+?)\]\(([^)\s]+?)\)/))) {
       flush();
       out.push(createElement(
@@ -100,6 +111,29 @@ function renderInline(text: string): ReactNode {
   }
   flush();
   return out;
+}
+
+function parseStyle(s: string): React.CSSProperties {
+  const out: React.CSSProperties = {};
+  for (const decl of s.split(";")) {
+    const [k, v] = decl.split(":").map(p => p.trim());
+    if (!k || !v) continue;
+    if (k === "width") out.width = v;
+    else if (k === "height") out.height = v;
+  }
+  return out;
+}
+
+function TableImage({ src, alt, style }: { src: string; alt: string; style?: string }) {
+  const ctx = useRendererCtx();
+  return createElement(AuthenticatedImage, {
+    src,
+    alt,
+    projectId: ctx.projectId,
+    isPublic: ctx.isPublic,
+    style: style ? parseStyle(style) : undefined,
+    className: "cm-wysiwyg-image cm-wysiwyg-image--inline",
+  });
 }
 
 function TableInner({ source }: { source: string }) {

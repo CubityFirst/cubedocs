@@ -70,6 +70,7 @@ interface Props {
   // stops reconnecting; the parent should drop out of collab mode.
   onCollabFatal?: (reason: string) => void;
   rendererCtx?: RendererCtx;
+  onPasteImage?: (file: File) => Promise<{ url: string; alt: string }>;
 }
 
 function applyMarkerCm(view: EditorView, marker: string) {
@@ -178,6 +179,7 @@ export function WysiwygEditor({
   onAwarenessChange,
   onCollabFatal,
   rendererCtx,
+  onPasteImage,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -191,6 +193,8 @@ export function WysiwygEditor({
   onAwarenessChangeRef.current = onAwarenessChange;
   const onCollabFatalRef = useRef(onCollabFatal);
   onCollabFatalRef.current = onCollabFatal;
+  const onPasteImageRef = useRef(onPasteImage);
+  onPasteImageRef.current = onPasteImage;
 
   const initialValueRef = useRef(value);
   const collabRef = useRef(collab);
@@ -300,6 +304,41 @@ export function WysiwygEditor({
         ...defaultKeymap,
       ]),
       ...yjsExtensions,
+      EditorView.domEventHandlers({
+        paste(event, view) {
+          if (view.state.readOnly) return false;
+          const handler = onPasteImageRef.current;
+          if (!handler) return false;
+          const items = event.clipboardData?.items;
+          if (!items) return false;
+          const imageFiles: File[] = [];
+          for (const item of items) {
+            if (item.kind === "file" && item.type.startsWith("image/")) {
+              const f = item.getAsFile();
+              if (f) imageFiles.push(f);
+            }
+          }
+          if (imageFiles.length === 0) return false;
+          event.preventDefault();
+          const pasteSel = view.state.selection.main;
+          (async () => {
+            const inserts: string[] = [];
+            for (const file of imageFiles) {
+              try {
+                const { url, alt } = await handler(file);
+                inserts.push(`![${alt}](${url})`);
+              } catch { /* parent surfaces error toast */ }
+            }
+            if (inserts.length === 0) return;
+            const text = inserts.join("\n");
+            view.dispatch({
+              changes: { from: pasteSel.from, to: pasteSel.to, insert: text },
+              selection: { anchor: pasteSel.from + text.length },
+            });
+          })();
+          return true;
+        },
+      }),
       ctxCompartment.of(ctxExtension(initialCtx)),
       modeCompartment.of(modeExtension(initialMode)),
       EditorView.updateListener.of((update) => {

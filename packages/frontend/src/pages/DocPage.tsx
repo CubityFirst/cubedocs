@@ -34,6 +34,18 @@ import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
 import { apiFetchJson } from "@/lib/apiFetch";
 import { useToast } from "@/hooks/use-toast";
 
+const PASTED_IMAGE_EXT: Record<string, string> = {
+  "image/png": "png", "image/jpeg": "jpg", "image/jpg": "jpg",
+  "image/gif": "gif", "image/webp": "webp", "image/svg+xml": "svg",
+};
+
+function formatPastedFilename(blob: { type: string }): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+  return `pasted-${stamp}.${PASTED_IMAGE_EXT[blob.type] ?? "bin"}`;
+}
+
 function toId(text: string): string {
   return text.toLowerCase().replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-");
 }
@@ -228,6 +240,46 @@ export function DocPage() {
     buildUrl: (id: string, anchor?: string) =>
       `/projects/${projectId}/docs/${id}${anchor ? "#" + anchor : ""}`,
   }), [projectId, docId, allDocs, allFolders]);
+
+  const assetsFolderCacheRef = useRef<Map<string | null, string>>(new Map());
+
+  async function handlePasteImage(file: File): Promise<{ url: string; alt: string }> {
+    if (!projectId) throw new Error("no project");
+    const parent: string | null = doc?.folder_id ?? null;
+
+    let folderId = assetsFolderCacheRef.current.get(parent);
+    if (!folderId) {
+      const existing = allFolders.find(f => f.name === "doc_assets" && f.parent_id === parent);
+      if (existing) {
+        folderId = existing.id;
+      } else {
+        const created = await apiFetchJson<{ id: string }>("/api/folders", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "doc_assets", projectId, parentId: parent, type: "docs" }),
+        });
+        if (!created.ok || !created.data) {
+          toast({ title: "Image upload failed", description: "Could not create assets folder.", variant: "destructive" });
+          throw new Error("folder create failed");
+        }
+        folderId = created.data.id;
+      }
+      assetsFolderCacheRef.current.set(parent, folderId);
+    }
+
+    const filename = formatPastedFilename(file);
+    const named = new File([file], filename, { type: file.type });
+    const form = new FormData();
+    form.append("file", named);
+    form.append("projectId", projectId);
+    form.append("folderId", folderId);
+    const upload = await apiFetchJson<{ id: string }>("/api/files", { method: "POST", body: form });
+    if (!upload.ok || !upload.data) {
+      toast({ title: "Image upload failed", description: upload.error ?? "Upload rejected.", variant: "destructive" });
+      throw new Error("upload failed");
+    }
+    return { url: `/api/files/${upload.data.id}/content`, alt: filename };
+  }
 
   const [doc, setDoc] = useState<Doc | null>(null);
   const [myRole, setMyRole] = useState<string | null>(null);
@@ -692,6 +744,7 @@ export function DocPage() {
                 setRemoteEditors([]);
               }}
               rendererCtx={wysiwygCtx}
+              onPasteImage={handlePasteImage}
             />
           </div>
         </div>

@@ -3,5 +3,5 @@
   "compilerOptions": {
     "types": ["@cloudflare/workers-types"]
   },
-  "include": ["src", "../auth/src/plan.ts"]
+  "include": ["src", "../auth/src/plan.ts", "../auth/src/badges.ts"]
 }
