@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 @import "./styles/ink-border.css";
+@import "./styles/color-picker.css";
 
 @custom-variant dark (&:is(.dark *));
 

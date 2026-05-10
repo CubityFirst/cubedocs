@@ -1,0 +1,25 @@
+/* Trim react-colorful's defaults so the canvas + hue slider feel native to
+   shadcn. Scoped under `.color-picker` so the picker stays self-contained. */
+
+.color-picker .react-colorful {
+  width: 220px;
+  height: 180px;
+  gap: 8px;
+}
+
+.color-picker .react-colorful__saturation {
+  border-radius: 6px;
+  border-bottom: none;
+}
+
+.color-picker .react-colorful__hue {
+  height: 12px;
+  border-radius: 6px;
+}
+
+.color-picker .react-colorful__pointer {
+  width: 16px;
+  height: 16px;
+  border: 2px solid hsl(var(--background, 0 0% 100%));
+  box-shadow: 0 0 0 1px hsl(var(--border, 0 0% 80%));
+}
