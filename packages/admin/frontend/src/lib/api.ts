@@ -178,14 +178,26 @@ export async function reindexProjectFts(id: string): Promise<{ indexed: number }
   return json.data;
 }
 
-export async function grantInk(id: string, opts: { reason?: string; expiresAt?: number | null } = {}): Promise<void> {
+export interface GrantInkResult {
+  cancelStripeWarning?: string;
+}
+
+export async function grantInk(
+  id: string,
+  opts: { reason?: string; expiresAt?: number | null; cancelExistingPaidSub?: boolean } = {},
+): Promise<GrantInkResult> {
   const res = await authFetch(`/api/users/${id}/grant-ink`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ reason: opts.reason, expires_at: opts.expiresAt ?? null }),
+    body: JSON.stringify({
+      reason: opts.reason,
+      expires_at: opts.expiresAt ?? null,
+      cancel_existing_paid_sub: opts.cancelExistingPaidSub === true,
+    }),
   });
-  const json = (await res.json()) as { ok: boolean; error?: string };
+  const json = (await res.json()) as { ok: boolean; error?: string; data?: GrantInkResult };
   if (!json.ok) throw new Error(json.error ?? "Failed to grant Ink");
+  return json.data ?? {};
 }
 
 export async function revokeGrantedInk(id: string): Promise<void> {

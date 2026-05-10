@@ -377,21 +377,61 @@ usersRouter.delete("/:id/avatar", async (c) => {
   return c.json({ ok: true });
 });
 
-// POST /api/users/:id/grant-ink — { reason?: string, expires_at?: number | null }
+// POST /api/users/:id/grant-ink — {
+//   reason?: string,
+//   expires_at?: number | null,
+//   cancel_existing_paid_sub?: boolean,
+// }
+//
 // Manually grants an Annex Ink supporter subscription to the user. The
 // grant takes precedence over any Stripe-managed plan in the resolver.
-// expires_at is a Unix-ms timestamp; null = forever.
+// expires_at is a Unix-ms timestamp; null = forever. When
+// cancel_existing_paid_sub is true and the user has a Stripe sub, we
+// also flip Stripe's cancel_at_period_end so they stop being billed
+// after the current cycle. The grant keeps them on Ink either way.
 usersRouter.post("/:id/grant-ink", async (c) => {
   const session = await requireAdminSession(c.req.raw, c.env);
   if (session instanceof Response) return session;
 
   const id = c.req.param("id");
-  const body = await c.req.json<{ reason?: string; expires_at?: number | null }>().catch(() => ({} as { reason?: string; expires_at?: number | null }));
+  const body = await c.req.json<{ reason?: string; expires_at?: number | null; cancel_existing_paid_sub?: boolean }>()
+    .catch(() => ({} as { reason?: string; expires_at?: number | null; cancel_existing_paid_sub?: boolean }));
   const reason = body.reason?.trim() || `granted by ${session.email}`;
   const expiresAt = body.expires_at ?? null;
+  const cancelExisting = body.cancel_existing_paid_sub === true;
 
   if (expiresAt !== null && (!Number.isFinite(expiresAt) || expiresAt <= Date.now())) {
     return c.json({ ok: false, error: "expires_at must be a future Unix-ms timestamp or null" }, 400);
+  }
+
+  // If admin asked to cancel the existing paid sub, look it up and call
+  // Stripe before writing the grant. Failing to cancel is non-fatal —
+  // log it and still apply the grant; admin can retry the cancel later.
+  let cancelStripeWarning: string | null = null;
+  if (cancelExisting) {
+    if (!c.env.STRIPE_SECRET_KEY) {
+      cancelStripeWarning = "STRIPE_SECRET_KEY is unset on the admin worker; paid sub was not cancelled";
+    } else {
+      const subRow = await c.env.AUTH_DB.prepare(
+        "SELECT stripe_subscription_id FROM users WHERE id = ?",
+      ).bind(id).first<{ stripe_subscription_id: string | null }>();
+      const subId = subRow?.stripe_subscription_id;
+      if (subId) {
+        const res = await fetch(`https://api.stripe.com/v1/subscriptions/${subId}`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${c.env.STRIPE_SECRET_KEY}`,
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: "cancel_at_period_end=true",
+        });
+        if (!res.ok) {
+          const errBody = await res.text().catch(() => "(unreadable)");
+          cancelStripeWarning = `Stripe cancel returned ${res.status}: ${errBody}`;
+          console.error("admin cancel-on-grant failed:", cancelStripeWarning);
+        }
+      }
+    }
   }
 
   const result = await c.env.AUTH_DB.prepare(
@@ -402,7 +442,8 @@ usersRouter.post("/:id/grant-ink", async (c) => {
      WHERE id = ?`,
   ).bind(expiresAt, reason, id).run();
   if (result.meta.changes === 0) return c.json({ ok: false, error: "User not found" }, 404);
-  return c.json({ ok: true });
+
+  return c.json({ ok: true, data: cancelStripeWarning ? { cancelStripeWarning } : undefined });
 });
 
 // DELETE /api/users/:id/grant-ink — clears the manual grant. Doesn't

@@ -9,6 +9,11 @@ export interface Env {
   ASSETS: R2Bucket;
   SITE_ASSETS: Fetcher;
   AUTH: Fetcher;
+  // Used only for admin-driven Stripe operations (cancel-on-grant). The
+  // auth worker still owns the rest of the Stripe lifecycle (Checkout,
+  // Customer Portal, webhook); admin reaches the Stripe API directly
+  // here to keep the cancel-on-grant path on a single worker.
+  STRIPE_SECRET_KEY: string;
 }
 
 const app = new Hono<{ Bindings: Env }>();

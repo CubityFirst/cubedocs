@@ -29,3 +29,8 @@ service = "annex-auth"
 [[routes]]
 pattern = "admin.cubityfir.st"
 custom_domain = true
+
+# Secrets (set via `wrangler secret put`):
+#   STRIPE_SECRET_KEY  (sk_test_... or sk_live_... — same value as auth
+#                       worker; only used for admin-driven cancellations
+#                       triggered from the user details panel)

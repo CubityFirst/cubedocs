@@ -191,7 +191,10 @@ function InkBillingCard({ userId, userName, details, onChanged }: InkBillingCard
   const [revokeOpen, setRevokeOpen] = useState(false);
   const [grantReason, setGrantReason] = useState("");
   const [grantExpiry, setGrantExpiry] = useState<"forever" | "30d" | "1y">("forever");
+  const [cancelPaidSub, setCancelPaidSub] = useState(false);
   const [pending, setPending] = useState(false);
+
+  const hasPaidSub = !!billing.stripe.subscription_id;
 
   function planBadge() {
     if (billing.resolved_plan === "ink") {
@@ -218,11 +221,18 @@ function InkBillingCard({ userId, userName, details, onChanged }: InkBillingCard
 
     setPending(true);
     try {
-      await grantInk(userId, { reason, expiresAt });
-      toast.success(`Granted Annex Ink to ${userName}`);
+      const result = await grantInk(userId, { reason, expiresAt, cancelExistingPaidSub: cancelPaidSub && hasPaidSub });
+      if (result.cancelStripeWarning) {
+        toast.warning(`Granted Ink, but Stripe cancel didn't apply: ${result.cancelStripeWarning}`);
+      } else if (cancelPaidSub && hasPaidSub) {
+        toast.success(`Granted Ink to ${userName} and cancelled their paid sub at period end`);
+      } else {
+        toast.success(`Granted Annex Ink to ${userName}`);
+      }
       setGrantOpen(false);
       setGrantReason("");
       setGrantExpiry("forever");
+      setCancelPaidSub(false);
       onChanged();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to grant Ink");
@@ -366,6 +376,22 @@ function InkBillingCard({ userId, userName, details, onChanged }: InkBillingCard
                       ))}
                     </div>
                   </div>
+
+                  {hasPaidSub && (
+                    <label className="flex cursor-pointer items-start gap-3 rounded-md border p-3">
+                      <Checkbox
+                        checked={cancelPaidSub}
+                        onCheckedChange={(v) => setCancelPaidSub(v === true)}
+                      />
+                      <div className="flex flex-col gap-1">
+                        <span className="text-sm font-medium">Also cancel their paid Stripe subscription</span>
+                        <span className="text-sm text-muted-foreground">
+                          Sets cancel_at_period_end on the existing sub so they stop being billed at the end of the current cycle.
+                          The grant keeps them on Ink either way.
+                        </span>
+                      </div>
+                    </label>
+                  )}
                 </div>
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => setGrantOpen(false)} disabled={pending}>
