@@ -206,6 +206,13 @@ export async function revokeGrantedInk(id: string): Promise<void> {
   if (!json.ok) throw new Error(json.error ?? "Failed to revoke Ink grant");
 }
 
+export async function giftFreeMonth(id: string): Promise<{ amount: number; currency: string }> {
+  const res = await authFetch(`/api/users/${id}/gift-month`, { method: "POST" });
+  const json = (await res.json()) as { ok: boolean; data?: { amount: number; currency: string }; error?: string };
+  if (!json.ok || !json.data) throw new Error(json.error ?? "Failed to gift free month");
+  return json.data;
+}
+
 export async function cancelUserSubscription(id: string, opts: { immediate?: boolean } = {}): Promise<void> {
   const res = await authFetch(`/api/users/${id}/cancel-subscription`, {
     method: "POST",

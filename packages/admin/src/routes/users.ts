@@ -452,6 +452,79 @@ usersRouter.post("/:id/grant-ink", async (c) => {
   return c.json({ ok: true, data: cancelStripeWarning ? { cancelStripeWarning } : undefined });
 });
 
+// POST /api/users/:id/gift-month — credits the user's Stripe customer
+// balance with one month of their current sub price. Stripe applies the
+// credit to the next invoice automatically; sub status stays `active`,
+// user sees a "$X.00 credit applied" line on their invoice. Skip
+// granting Ink — they're already paying, this just gifts them a month
+// off the bill.
+//
+// Doesn't work for cancel-at-period-end subs (no future invoice to
+// apply credit to) or for users without a paid sub.
+usersRouter.post("/:id/gift-month", async (c) => {
+  const session = await requireAdminSession(c.req.raw, c.env);
+  if (session instanceof Response) return session;
+
+  if (!c.env.STRIPE_SECRET_KEY) {
+    return c.json({ ok: false, error: "STRIPE_SECRET_KEY is unset on the admin worker" }, 500);
+  }
+
+  const id = c.req.param("id");
+  const row = await c.env.AUTH_DB.prepare(
+    "SELECT stripe_customer_id, stripe_subscription_id FROM users WHERE id = ?",
+  ).bind(id).first<{ stripe_customer_id: string | null; stripe_subscription_id: string | null }>();
+  if (!row?.stripe_customer_id || !row.stripe_subscription_id) {
+    return c.json({ ok: false, error: "User has no Stripe customer or subscription" }, 400);
+  }
+
+  // Fetch the sub to get its current per-cycle price. Avoids hardcoding
+  // $5 — works correctly if Ink ever moves to a different price tier.
+  const subRes = await fetch(`https://api.stripe.com/v1/subscriptions/${row.stripe_subscription_id}`, {
+    headers: { Authorization: `Bearer ${c.env.STRIPE_SECRET_KEY}` },
+  });
+  if (!subRes.ok) {
+    const errText = await subRes.text().catch(() => "(unreadable)");
+    console.error("admin gift-month: sub fetch failed:", subRes.status, errText);
+    return c.json({ ok: false, error: `Stripe returned ${subRes.status} fetching sub` }, 502);
+  }
+  const sub = await subRes.json<{
+    cancel_at_period_end?: boolean;
+    items: { data: Array<{ price: { unit_amount: number | null; currency: string } }> };
+  }>();
+  if (sub.cancel_at_period_end) {
+    return c.json({ ok: false, error: "Subscription is already pending cancellation" }, 400);
+  }
+  const item = sub.items.data[0];
+  const amount = item?.price?.unit_amount;
+  const currency = item?.price?.currency;
+  if (!amount || !currency) {
+    return c.json({ ok: false, error: "Could not determine subscription price" }, 502);
+  }
+
+  const balanceRes = await fetch(
+    `https://api.stripe.com/v1/customers/${row.stripe_customer_id}/balance_transactions`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${c.env.STRIPE_SECRET_KEY}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        amount: String(-amount),
+        currency,
+        description: `Free month gifted by ${session.email}`,
+      }).toString(),
+    },
+  );
+  if (!balanceRes.ok) {
+    const errText = await balanceRes.text().catch(() => "(unreadable)");
+    console.error("admin gift-month: balance transaction failed:", balanceRes.status, errText);
+    return c.json({ ok: false, error: `Stripe returned ${balanceRes.status} creating credit` }, 502);
+  }
+
+  return c.json({ ok: true, data: { amount, currency } });
+});
+
 // POST /api/users/:id/cancel-subscription — { immediate?: boolean }
 //
 // Cancels the user's Stripe subscription directly. By default schedules

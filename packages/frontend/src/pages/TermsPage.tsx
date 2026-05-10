@@ -25,7 +25,7 @@ export function TermsPage() {
           <div className="l-legal-inner">
             <div className="l-legal-label">Legal</div>
             <h1 className="l-legal-title">Terms of Service</h1>
-            <p className="l-legal-meta">Effective date: May 6, 2025</p>
+            <p className="l-legal-meta">Effective date: May 10, 2026</p>
 
             <div className="l-legal-body">
               <h2>1. Acceptance</h2>
@@ -80,11 +80,36 @@ export function TermsPage() {
                 possible.
               </p>
 
-              <h2>6. Payments and Refunds</h2>
+              <h2>6. Payments, Subscriptions, and Refunds</h2>
               <p>
-                Paid plans are billed in advance on a monthly or annual basis. All fees are
-                non-refundable except where required by law. You may cancel your subscription at
-                any time; access continues until the end of the current billing period.
+                Paid plans (such as Annex Ink) are billed in advance on a recurring basis at the
+                price shown when you subscribe. By starting a subscription you authorise us, through
+                our payment processor Stripe, to charge your selected payment method on each
+                renewal date until the subscription is cancelled. Subscriptions auto-renew at the
+                end of each billing period unless cancelled.
+              </p>
+              <p>
+                You can cancel at any time from your account settings, which opens Stripe's
+                Customer Portal. Cancellation takes effect at the end of the current billing
+                period; you keep access through the period you have already paid for, and your
+                payment method will not be charged again.
+              </p>
+              <p>
+                All fees are non-refundable except where required by law. We do not issue partial
+                refunds for unused portions of a billing period, including when you cancel mid-cycle
+                or when your account is deleted (whether by you or by us). We will display a
+                reminder of this before you confirm account deletion.
+              </p>
+              <p>
+                If a renewal payment fails, we may suspend or downgrade access after a short grace
+                period during which Stripe retries the charge. We may change subscription prices
+                from time to time; if we do, we will give at least 30 days' notice by email or
+                in-app notice before the new price takes effect, and you can cancel before that
+                date if you do not wish to continue.
+              </p>
+              <p>
+                Free accounts and any complimentary supporter access (gifted Ink) we may grant are
+                provided at our discretion and may be revoked at any time without refund or notice.
               </p>
 
               <h2>7. Termination</h2>

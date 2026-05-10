@@ -25,14 +25,21 @@ export function PrivacyPage() {
           <div className="l-legal-inner">
             <div className="l-legal-label">Legal</div>
             <h1 className="l-legal-title">Privacy Policy</h1>
-            <p className="l-legal-meta">Effective date: May 8, 2026</p>
+            <p className="l-legal-meta">Effective date: May 10, 2026</p>
 
             <div className="l-legal-body">
               <h2>1. What We Collect</h2>
               <p>
                 When you create an account, we collect your email address and a hashed password.
-                If you add a display name or avatar, we store those too. We do not collect payment
-                information directly; billing is handled by our payment processor.
+                If you add a display name or avatar, we store those too.
+              </p>
+              <p>
+                If you subscribe to a paid plan (such as Annex Ink), we store identifiers that link
+                your account to our payment processor — specifically a Stripe customer ID, a Stripe
+                subscription ID, your current plan status, the end of your current billing period,
+                any pending cancellation date, and the date your supporter status began. Card
+                numbers and other payment details are collected directly by Stripe at checkout and
+                never reach our servers.
               </p>
               <p>
                 We log standard server-side request data (IP address, user-agent, timestamps) for
@@ -51,12 +58,29 @@ export function PrivacyPage() {
               <h2>2. Content You Create</h2>
               <p>
                 Documents, files, and workspaces you create are stored on our servers and belong to
-                you. We do not read, sell, or share your content with third parties except as
-                required to operate the service (e.g., backups, CDN delivery).
+                you. We do not sell your content or share it with third parties except as required
+                to operate the service (e.g., backups, CDN delivery, the optional features
+                described below).
               </p>
               <p>
                 Published public sites are accessible to anyone with the link. Private workspaces
-                are only accessible to you and members you explicitly invite.
+                are not reachable by other users; only you and members you explicitly invite can
+                access them through the application.
+              </p>
+              <p>
+                Although other users cannot reach your private workspaces, Annex's operators
+                retain technical access to stored content for the platform to function (storage,
+                backups, search indexing). We will only read your private workspace content when:
+              </p>
+              <ul>
+                <li>You explicitly ask us to (for example, a support request about a specific document)</li>
+                <li>We are responding to a credible report that the content violates our Terms</li>
+                <li>We are required to comply with law or a valid legal process</li>
+                <li>It is necessary to investigate or resolve a security incident</li>
+              </ul>
+              <p>
+                We do not access private content for advertising, profiling, or to train
+                machine-learning models.
               </p>
 
               <h2>3. How We Use Your Data</h2>
@@ -75,10 +99,46 @@ export function PrivacyPage() {
               <h2>4. Data Sharing</h2>
               <p>
                 We do not sell your personal data. We share data only with service providers that
-                help us operate Annex (cloud infrastructure, email delivery, error monitoring), and
-                only to the extent necessary. Infrastructure is hosted on Cloudflare, whose handling
-                of your data is governed by their own terms of service rather than a direct
-                contractual obligation to us.
+                help us operate Annex (cloud infrastructure, email delivery, error monitoring,
+                payment processing), and only to the extent necessary. Infrastructure is hosted on
+                Cloudflare, whose handling of your data is governed by their own terms of service
+                rather than a direct contractual obligation to us.
+              </p>
+              <p>
+                Payments are processed by Stripe, Inc. When you start a checkout, we send Stripe
+                your email address and a userId reference so the resulting subscription can be tied
+                back to your account. Stripe collects payment details (card number, expiry, billing
+                address) directly. Stripe's handling of that data is governed by their own privacy
+                policy, available at{" "}
+                <a href="https://stripe.com/privacy" target="_blank" rel="noopener noreferrer">
+                  stripe.com/privacy
+                </a>
+                . Stripe is based in the United States and may transfer data outside your country
+                of residence under their own contractual safeguards.
+              </p>
+              <p>
+                AI features (such as document summarisation) are <strong>off by default</strong>{" "}
+                for every project. They only operate after a project admin explicitly turns them
+                on in project settings. By default, even with the feature enabled, AI actions are
+                manual — summaries are only generated when a user clicks the "summarise" button on
+                a document. A project admin can additionally opt the project in to automatic
+                summarisation; in that mode content is sent to the AI provider when a document is
+                created or updated. Automatic summarisation is a separate, deliberate setting and
+                is not enabled by default.
+              </p>
+              <p>
+                When an AI action runs (manual or automatic), the relevant document content is
+                sent to a third-party AI provider (currently OpenAI) to generate the response. We
+                do not retain a copy of the content sent for this purpose beyond the request
+                itself; the provider may process and briefly store it under their own terms.
+              </p>
+              <p>
+                Where AI providers offer settings to opt out of training-data collection or
+                extended retention of inputs and outputs, we use them. OpenAI's API does not use
+                API request data to train its models by default, and we have not enabled any
+                feature that would change that. If we add other providers in future (for example,
+                OpenRouter or a self-hosted model), we will configure them to the strictest
+                privacy setting they support.
               </p>
               <p>
                 We may disclose data if required by law or to protect the rights and safety of our
@@ -92,6 +152,12 @@ export function PrivacyPage() {
                 (page loads, feature usage counts) may be collected without any personally
                 identifying information.
               </p>
+              <p>
+                When you complete a checkout or open the subscription management portal, you are
+                briefly redirected to a Stripe-hosted page. Those pages set their own cookies for
+                fraud detection and session management, governed by Stripe's privacy policy rather
+                than ours.
+              </p>
 
               <h2>6. Data Retention and Deletion</h2>
               <p>
@@ -99,6 +165,13 @@ export function PrivacyPage() {
                 account. You can request account deletion at any time from your account settings.
                 We will delete your data within 30 days of the request, except where retention is
                 required by law.
+              </p>
+              <p>
+                When you delete your account, any active subscription is cancelled immediately and
+                we ask Stripe to delete the corresponding customer record, which removes the email,
+                payment methods, and billing history Stripe held about you. Stripe may retain a
+                record of past transactions for tax, accounting, or fraud-prevention purposes as
+                required by their own legal obligations.
               </p>
 
               <h2>7. Security</h2>

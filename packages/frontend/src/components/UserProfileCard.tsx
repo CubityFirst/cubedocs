@@ -145,7 +145,7 @@ export function UserProfileCard({ userId, name, children }: UserProfileCardProps
                       // tooltip via radix's focus behavior. Desktop hover
                       // still works the same way.
                       className="shrink-0 inline-flex items-center justify-center rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      aria-label="Annex Ink supporter"
+                      aria-label="Annex Ink"
                     >
                       <Sparkles className="size-4 ink-icon" />
                     </button>
@@ -153,7 +153,7 @@ export function UserProfileCard({ userId, name, children }: UserProfileCardProps
                   <TooltipContent side="top" className="text-xs">
                     {(() => {
                       const since = formatInkSince(profile.personalPlanSince);
-                      return since ? `Annex Ink supporter since ${since}` : "Annex Ink supporter";
+                      return since ? `Annex Ink since ${since}` : "Annex Ink";
                     })()}
                   </TooltipContent>
                 </Tooltip>

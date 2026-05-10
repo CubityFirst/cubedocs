@@ -1379,6 +1379,17 @@ export function UserSettingsPage() {
                   This will permanently delete your account and all associated data. This action cannot be undone.
                 </AlertDialogDescription>
               </AlertDialogHeader>
+
+              {personalPlan === "ink" && personalPlanStatus !== "granted" && (
+                <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive flex items-start gap-2">
+                  <AlertCircle className="size-4 mt-0.5 shrink-0" />
+                  <span>
+                    You have an active Annex Ink subscription. It will be cancelled immediately when your account is deleted.{" "}
+                    <strong>You will not be refunded for the remainder of the current billing period.</strong>
+                  </span>
+                </div>
+              )}
+
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction

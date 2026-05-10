@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { format } from "date-fns";
-import { CalendarDays, ChevronDown, ChevronRight, Download, Search, Sparkles, Trash2, X } from "lucide-react";
+import { CalendarDays, ChevronDown, ChevronRight, Download, Gift, Search, Sparkles, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,6 +52,7 @@ import {
   exportUserData,
   forceUserPasswordChange,
   getUserDetails,
+  giftFreeMonth,
   grantInk,
   revokeGrantedInk,
   searchUsers,
@@ -258,6 +259,19 @@ function InkBillingCard({ userId, userName, details, onChanged }: InkBillingCard
     }
   }
 
+  async function handleGiftMonth() {
+    setPending(true);
+    try {
+      const result = await giftFreeMonth(userId);
+      const amountStr = (result.amount / 100).toFixed(2);
+      toast.success(`Credited ${userName} ${result.currency.toUpperCase()} ${amountStr} — applied to their next invoice`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to gift free month");
+    } finally {
+      setPending(false);
+    }
+  }
+
   async function handleCancelSubscription() {
     setPending(true);
     try {
@@ -329,6 +343,13 @@ function InkBillingCard({ userId, userName, details, onChanged }: InkBillingCard
         )}
 
         <div className="flex flex-wrap gap-2">
+          {hasPaidSub && !billing.cancel_at && (
+            <Button size="sm" variant="outline" onClick={handleGiftMonth} disabled={pending}>
+              <Gift className="size-3.5" />
+              Gift free month
+            </Button>
+          )}
+
           {hasPaidSub && !billing.cancel_at && (
             <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
               <DialogTrigger asChild>
