@@ -110,6 +110,7 @@ async function handleCheckoutCompleted(env: Env, sessionObj: Stripe.Checkout.Ses
 // (stamped during Checkout) so this works even if it arrives before
 // checkout.session.completed.
 async function handleSubscriptionUpsert(env: Env, sub: Stripe.Subscription): Promise<void> {
+  console.log("[WEBHOOK_DIAG_v2] subscription upsert entered", { subId: sub.id, hasMetadata: !!sub.metadata, metadataKeys: sub.metadata ? Object.keys(sub.metadata) : [], userId: sub.metadata?.userId });
   const userId = sub.metadata?.userId;
   if (!userId) {
     console.warn("subscription event missing metadata.userId", sub.id);
