@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { useNavigate, useLocation, Link } from "react-router-dom";
+import { useNavigate, useLocation, useOutletContext, Link } from "react-router-dom";
+import type { DocsLayoutContext } from "@/layouts/DocsLayout";
 import zxcvbn from "zxcvbn";
 import QRCode from "react-qr-code";
 import { startRegistration } from "@simplewebauthn/browser";
@@ -26,7 +27,9 @@ import { getToken, clearToken } from "@/lib/auth";
 import { UserAvatar } from "@/components/UserAvatar";
 import { AvatarCropDialog } from "@/components/AvatarCropDialog";
 import { InlineSaveControls } from "@/components/InlineSaveControls";
-import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertCircle, Camera, Smartphone, Tablet, Laptop, Monitor, Upload, Sparkles } from "lucide-react";
+import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertCircle, Camera, Smartphone, Tablet, Laptop, Monitor, Upload, Sparkles, ChevronDown } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { ColorPicker } from "@/components/ui/color-picker";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { TIMEZONE_GROUPS, detectTimezoneGroup, getTimezoneGroup, formatTimezoneLabel, formatTimeInZone } from "@/lib/timezone";
@@ -94,6 +97,7 @@ function formatRelative(timestampMs: number): string {
 export function UserSettingsPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { updateInkAppearance } = useOutletContext<DocsLayoutContext>();
   useEffect(() => {
     if (!location.hash) return;
     const id = location.hash.slice(1);
@@ -177,6 +181,7 @@ export function UserSettingsPage() {
   const [personalPlanStyle, setPersonalPlanStyle] = useState<string | null>(null);
   const [personalPresenceColor, setPersonalPresenceColor] = useState<string | null>(null);
   const [inkPrefsBusy, setInkPrefsBusy] = useState(false);
+  const [cosmeticsOpen, setCosmeticsOpen] = useState(false);
   const [billingBusy, setBillingBusy] = useState(false);
 
   const { runWithTwoFA, twoFADialog, busy: twoFABusy } = use2FA({
@@ -722,8 +727,19 @@ export function UserSettingsPage() {
     setInkPrefsBusy(true);
     const prevStyle = personalPlanStyle;
     const prevColor = personalPresenceColor;
-    if ("style" in patch) setPersonalPlanStyle(patch.style ?? null);
-    if ("presenceColor" in patch) setPersonalPresenceColor(patch.presenceColor ?? null);
+    // Optimistic — update both this page and the layout so the sidebar
+    // avatar reflects the change immediately. If the save fails we roll
+    // both back together.
+    const layoutPatch: { personalPlanStyle?: string | null; personalPresenceColor?: string | null } = {};
+    if ("style" in patch) {
+      setPersonalPlanStyle(patch.style ?? null);
+      layoutPatch.personalPlanStyle = patch.style ?? null;
+    }
+    if ("presenceColor" in patch) {
+      setPersonalPresenceColor(patch.presenceColor ?? null);
+      layoutPatch.personalPresenceColor = patch.presenceColor ?? null;
+    }
+    updateInkAppearance(layoutPatch);
     try {
       const token = getToken();
       if (!token) return;
@@ -733,13 +749,17 @@ export function UserSettingsPage() {
         body: JSON.stringify(patch),
       });
       if (!res.ok) {
-        if ("style" in patch) setPersonalPlanStyle(prevStyle);
-        if ("presenceColor" in patch) setPersonalPresenceColor(prevColor);
+        const rollback: { personalPlanStyle?: string | null; personalPresenceColor?: string | null } = {};
+        if ("style" in patch) { setPersonalPlanStyle(prevStyle); rollback.personalPlanStyle = prevStyle; }
+        if ("presenceColor" in patch) { setPersonalPresenceColor(prevColor); rollback.personalPresenceColor = prevColor; }
+        updateInkAppearance(rollback);
         toast({ title: "Couldn't save", description: "Please try again in a moment.", variant: "destructive" });
       }
     } catch {
-      if ("style" in patch) setPersonalPlanStyle(prevStyle);
-      if ("presenceColor" in patch) setPersonalPresenceColor(prevColor);
+      const rollback: { personalPlanStyle?: string | null; personalPresenceColor?: string | null } = {};
+      if ("style" in patch) { setPersonalPlanStyle(prevStyle); rollback.personalPlanStyle = prevStyle; }
+      if ("presenceColor" in patch) { setPersonalPresenceColor(prevColor); rollback.personalPresenceColor = prevColor; }
+      updateInkAppearance(rollback);
       toast({ title: "Couldn't save", description: "Please try again in a moment.", variant: "destructive" });
     } finally {
       setInkPrefsBusy(false);
@@ -1065,67 +1085,76 @@ export function UserSettingsPage() {
                   )}
                 </div>
 
-                {/* Cosmetic prefs — Ink-only. Ring style swaps the conic
+                {/* Cosmetic prefs — Ink-only. Hidden by default; expanded
+                    via the Customise toggle. Ring style swaps the conic
                     gradient on the avatar; presence colour overrides the
                     deterministic per-user collab cursor colour. */}
                 <Separator className="my-5" />
-                <div className="space-y-5">
-                  <div>
-                    <h4 className="text-sm font-semibold">Ring style</h4>
-                    <p className="mt-0.5 text-xs text-muted-foreground">Pick the animated ring around your avatar.</p>
-                    <div className="mt-3 flex flex-wrap gap-3">
-                      {INK_RING_STYLE_OPTIONS.map(opt => {
-                        const active = (personalPlanStyle ?? "shimmer") === opt.id;
-                        return (
-                          <button
-                            key={opt.id}
-                            type="button"
-                            disabled={inkPrefsBusy}
-                            onClick={() => saveInkPrefs({ style: opt.id === "shimmer" ? null : opt.id })}
-                            className={`flex flex-col items-center gap-1.5 rounded-md border px-3 py-2 transition-colors disabled:opacity-50 ${active ? "border-foreground bg-accent" : "border-border hover:bg-accent"}`}
-                            aria-pressed={active}
-                          >
-                            <span className={opt.id === "shimmer" ? "ink-border inline-block" : `ink-border ink-style-${opt.id} inline-block`}>
-                              <span className="block size-8 rounded-full bg-muted" />
-                            </span>
-                            <span className="text-xs">{opt.label}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
+                <Collapsible open={cosmeticsOpen} onOpenChange={setCosmeticsOpen}>
+                  <CollapsibleTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between rounded-md px-1 py-1 text-sm font-medium transition-colors hover:bg-accent"
+                      aria-expanded={cosmeticsOpen}
+                    >
+                      <span>Customise appearance</span>
+                      <ChevronDown className={`size-4 text-muted-foreground transition-transform ${cosmeticsOpen ? "rotate-180" : ""}`} />
+                    </button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="space-y-5 pt-4">
+                      <div>
+                        <h4 className="text-sm font-semibold">Ring style</h4>
+                        <p className="mt-0.5 text-xs text-muted-foreground">Pick the animated ring around your avatar.</p>
+                        <div className="mt-3 flex flex-wrap gap-3">
+                          {INK_RING_STYLE_OPTIONS.map(opt => {
+                            const active = (personalPlanStyle ?? "shimmer") === opt.id;
+                            return (
+                              <button
+                                key={opt.id}
+                                type="button"
+                                disabled={inkPrefsBusy}
+                                onClick={() => saveInkPrefs({ style: opt.id === "shimmer" ? null : opt.id })}
+                                className={`flex flex-col items-center gap-1.5 rounded-md border px-3 py-2 transition-colors disabled:opacity-50 ${active ? "border-foreground bg-accent" : "border-border hover:bg-accent"}`}
+                                aria-pressed={active}
+                              >
+                                <span className={opt.id === "shimmer" ? "ink-border inline-block" : `ink-border ink-style-${opt.id} inline-block`}>
+                                  <span className="block size-8 rounded-full bg-muted" />
+                                </span>
+                                <span className="text-xs">{opt.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
 
-                  <div>
-                    <h4 className="text-sm font-semibold">Presence colour</h4>
-                    <p className="mt-0.5 text-xs text-muted-foreground">The colour your cursor appears in to others when collaborating in realtime. Leave default for an auto-picked colour.</p>
-                    <div className="mt-3 flex items-center gap-3">
-                      <input
-                        type="color"
-                        value={personalPresenceColor ?? "#888888"}
-                        disabled={inkPrefsBusy}
-                        onChange={e => setPersonalPresenceColor(e.target.value)}
-                        onBlur={e => {
-                          const v = e.target.value.toLowerCase();
-                          if (v !== (personalPresenceColor ?? "").toLowerCase()) saveInkPrefs({ presenceColor: v });
-                        }}
-                        className="h-9 w-12 cursor-pointer rounded border border-border bg-transparent disabled:opacity-50"
-                        aria-label="Presence colour"
-                      />
-                      <span className="text-xs text-muted-foreground tabular-nums">{personalPresenceColor ?? "default"}</span>
-                      {personalPresenceColor && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          disabled={inkPrefsBusy}
-                          onClick={() => saveInkPrefs({ presenceColor: null })}
-                        >
-                          Reset
-                        </Button>
-                      )}
+                      <div>
+                        <h4 className="text-sm font-semibold">Presence colour</h4>
+                        <p className="mt-0.5 text-xs text-muted-foreground">The colour your cursor appears in to others when collaborating in realtime. Leave default for an auto-picked colour.</p>
+                        <div className="mt-3 flex items-center gap-3">
+                          <ColorPicker
+                            value={personalPresenceColor ?? "#888888"}
+                            disabled={inkPrefsBusy}
+                            onChange={(next) => setPersonalPresenceColor(next)}
+                            onCommit={(next) => saveInkPrefs({ presenceColor: next })}
+                          />
+                          <span className="text-xs text-muted-foreground tabular-nums">{personalPresenceColor ?? "default"}</span>
+                          {personalPresenceColor && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              disabled={inkPrefsBusy}
+                              onClick={() => saveInkPrefs({ presenceColor: null })}
+                            >
+                              Reset
+                            </Button>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
+                  </CollapsibleContent>
+                </Collapsible>
               </div>
             )}
           </section>

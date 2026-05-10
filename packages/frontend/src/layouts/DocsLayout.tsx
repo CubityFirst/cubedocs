@@ -84,6 +84,9 @@ export interface DocsLayoutContext {
   aiSummarizationType: string;
   projectFeatures: number;
   currentUser: { id: string; name: string; personalPlan: "free" | "ink"; personalPlanStyle: string | null; personalPresenceColor: string | null } | null;
+  // Lets nested routes (e.g. UserSettingsPage) push Ink cosmetic changes
+  // back into the layout so the sidebar avatar updates without a reload.
+  updateInkAppearance: (patch: { personalPlanStyle?: string | null; personalPresenceColor?: string | null }) => void;
   docs: { id: string; title: string; display_title?: string | null; folder_id?: string | null; tags?: string | null }[];
   folders: { id: string; name: string; parent_id: string | null }[];
   addDoc: (doc: { id: string; title: string; display_title?: string | null; folder_id?: string | null; tags?: string | null }) => void;
@@ -345,6 +348,10 @@ export function DocsLayout() {
     aiSummarizationType: currentProject?.ai_summarization_type ?? "manual",
     projectFeatures: currentProject?.features ?? 0,
     currentUser: userId && userName ? { id: userId, name: userName, personalPlan, personalPlanStyle, personalPresenceColor } : null,
+    updateInkAppearance: (patch) => {
+      if ("personalPlanStyle" in patch) setPersonalPlanStyle(patch.personalPlanStyle ?? null);
+      if ("personalPresenceColor" in patch) setPersonalPresenceColor(patch.personalPresenceColor ?? null);
+    },
     docs,
     folders,
     addDoc,
