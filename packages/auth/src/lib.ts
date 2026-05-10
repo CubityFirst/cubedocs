@@ -18,6 +18,8 @@ export interface Session {
   personalPlanSince?: number | null;
   personalPlanStatus?: string | null;
   personalPlanCancelAt?: number | null;
+  personalPlanStyle?: string | null;
+  personalPresenceColor?: string | null;
 }
 
 export const Errors = {

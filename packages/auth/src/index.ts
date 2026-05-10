@@ -6,6 +6,7 @@ import { handleLookup } from "./routes/lookup";
 import { handleLookupById } from "./routes/lookup-by-id";
 import { handleUpdateName } from "./routes/update-name";
 import { handleUpdateTimezone } from "./routes/update-timezone";
+import { handleUpdateInkPrefs } from "./routes/update-ink-prefs";
 import { handleTotpSetup } from "./routes/totp-setup";
 import { handleTotpEnable } from "./routes/totp-enable";
 import { handleTotpDisable } from "./routes/totp-disable";
@@ -92,6 +93,8 @@ export default {
         response = await handleUpdateName(request, env);
       } else if (url.pathname === "/update-timezone" && request.method === "POST") {
         response = await handleUpdateTimezone(request, env);
+      } else if (url.pathname === "/update-ink-prefs" && request.method === "POST") {
+        response = await handleUpdateInkPrefs(request, env);
       } else if (url.pathname === "/totp/setup" && request.method === "POST") {
         response = await handleTotpSetup(request, env);
       } else if (url.pathname === "/totp/enable" && request.method === "POST") {

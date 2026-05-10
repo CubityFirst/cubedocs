@@ -29,7 +29,8 @@ import { HistorySheet, type RevisionMeta } from "@/components/HistorySheet";
 import { HistoryBanner } from "@/components/HistoryBanner";
 import { UserAvatar } from "@/components/UserAvatar";
 import { UserProfileCard } from "@/components/UserProfileCard";
-import { Pencil, X, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight, Sparkles, Users, UserPlus, Trash2, HelpCircle, Code2, AlertCircle } from "lucide-react";
+import { Pencil, X, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight, Sparkles, Users, UserPlus, Trash2, HelpCircle, Code2, AlertCircle, FileDown } from "lucide-react";
+import { ExportPdfDialog } from "@/components/ExportPdfDialog";
 import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
 import { apiFetchJson } from "@/lib/apiFetch";
 import { useToast } from "@/hooks/use-toast";
@@ -274,7 +275,7 @@ export function DocPage() {
   const [folderShareLoading, setFolderShareLoading] = useState(false);
   const [pendingAddPermission, setPendingAddPermission] = useState<Record<string, SharePermission>>({});
 
-  const [remoteEditors, setRemoteEditors] = useState<{ userId: string; name: string; color: string }[]>([]);
+  const [remoteEditors, setRemoteEditors] = useState<{ userId: string; name: string; color: string; personalPlan?: "free" | "ink"; personalPlanStyle?: string | null }[]>([]);
 
   // Realtime collab fatal state — set when the server rejects further sync because the
   // doc has exceeded the size cap. The editor remounts in non-collab mode while this is true.
@@ -908,6 +909,13 @@ export function DocPage() {
                 <Sparkles className="h-4 w-4 text-violet-500" />
               </Button>
             )}
+            <ExportPdfDialog
+              trigger={
+                <Button variant="ghost" size="icon" title="Export as PDF">
+                  <FileDown className="h-4 w-4" />
+                </Button>
+              }
+            />
           {isEditor && (
             <>
               <Button variant="ghost" size="icon" onClick={startEditing} title="Edit document">
@@ -1194,7 +1202,7 @@ export function DocPage() {
               className={`mb-6${isEditor ? " mr-32" : ""}`}
             />
           )}
-          <article className="prose prose-neutral dark:prose-invert max-w-none">
+          <article data-pdf-print-target className="prose prose-neutral dark:prose-invert max-w-none">
             {(() => {
               const fm = parseFrontmatter(viewingRevision ? viewingRevision.content : doc.content);
               const showHeading = fm.hide_title !== undefined ? !fm.hide_title : doc.show_heading !== 0;
@@ -1228,13 +1236,25 @@ export function DocPage() {
               </div>
             )}
             {(viewingRevision ? viewingRevision.content : doc.content).trim() ? (
-              <div className="not-prose">
-                <WysiwygEditor
-                  mode="reading"
-                  value={viewingRevision ? viewingRevision.content : doc.content}
-                  rendererCtx={wysiwygCtx}
-                />
-              </div>
+              <>
+                <div className="not-prose pdf-print-hide">
+                  <WysiwygEditor
+                    mode="reading"
+                    value={viewingRevision ? viewingRevision.content : doc.content}
+                    rendererCtx={wysiwygCtx}
+                  />
+                </div>
+                {/* Print-only static render: CodeMirror's reading view virtualizes
+                    line rendering, so the on-screen DOM doesn't contain off-screen
+                    content for the print engine to paginate. We render the same
+                    markdown via react-markdown into a sibling that's hidden on
+                    screen and shown during print. */}
+                <div className="pdf-print-mirror">
+                  <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents} urlTransform={wikilinkUrlTransform}>
+                    {viewingRevision ? viewingRevision.content : doc.content}
+                  </ReactMarkdown>
+                </div>
+              </>
             ) : (
               <p className="not-prose text-sm italic text-muted-foreground/60">
                 This page has no content yet.

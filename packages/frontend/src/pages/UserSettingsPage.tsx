@@ -32,6 +32,16 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { TIMEZONE_GROUPS, detectTimezoneGroup, getTimezoneGroup, formatTimezoneLabel, formatTimeInZone } from "@/lib/timezone";
 import { formatInkSince } from "@/lib/inkDate";
 
+// Mirrors INK_RING_STYLES in packages/auth/src/plan.ts. Order is the
+// display order in the picker. 'shimmer' is the default — selecting it
+// stores NULL on the row.
+const INK_RING_STYLE_OPTIONS: { id: "shimmer" | "aurora" | "ember" | "mono"; label: string }[] = [
+  { id: "shimmer", label: "Shimmer" },
+  { id: "aurora", label: "Aurora" },
+  { id: "ember", label: "Ember" },
+  { id: "mono", label: "Mono" },
+];
+
 const STRENGTH_LABELS = ["Very weak", "Weak", "Fair", "Strong", "Very strong"];
 const STRENGTH_COLORS = [
   "bg-red-500",
@@ -164,6 +174,9 @@ export function UserSettingsPage() {
   const [personalPlanSince, setPersonalPlanSince] = useState<number | null>(null);
   const [personalPlanStatus, setPersonalPlanStatus] = useState<string | null>(null);
   const [personalPlanCancelAt, setPersonalPlanCancelAt] = useState<number | null>(null);
+  const [personalPlanStyle, setPersonalPlanStyle] = useState<string | null>(null);
+  const [personalPresenceColor, setPersonalPresenceColor] = useState<string | null>(null);
+  const [inkPrefsBusy, setInkPrefsBusy] = useState(false);
   const [billingBusy, setBillingBusy] = useState(false);
 
   const { runWithTwoFA, twoFADialog, busy: twoFABusy } = use2FA({
@@ -175,7 +188,7 @@ export function UserSettingsPage() {
     const token = getToken();
     if (!token) return;
     fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json() as Promise<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean; userId: string; timezone: string | null; personalPlan: "free" | "ink"; personalPlanSince: number | null; personalPlanStatus: string | null; personalPlanCancelAt: number | null } }>)
+      .then(r => r.json() as Promise<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean; userId: string; timezone: string | null; personalPlan: "free" | "ink"; personalPlanSince: number | null; personalPlanStatus: string | null; personalPlanCancelAt: number | null; personalPlanStyle: string | null; personalPresenceColor: string | null } }>)
       .then(json => {
         if (json.ok && json.data) {
           setCurrentName(json.data.name);
@@ -190,6 +203,8 @@ export function UserSettingsPage() {
           setPersonalPlanSince(json.data.personalPlanSince);
           setPersonalPlanStatus(json.data.personalPlanStatus);
           setPersonalPlanCancelAt(json.data.personalPlanCancelAt);
+          setPersonalPlanStyle(json.data.personalPlanStyle);
+          setPersonalPresenceColor(json.data.personalPresenceColor);
         }
       })
       .catch(() => {});
@@ -698,6 +713,39 @@ export function UserSettingsPage() {
     }
   }
 
+  // Persists Ink cosmetic prefs through the api worker, which proxies to
+  // the auth worker. Optimistic local state — we mirror the value into
+  // the picker before the request returns so the avatar updates instantly,
+  // and roll it back on failure.
+  async function saveInkPrefs(patch: { style?: string | null; presenceColor?: string | null }) {
+    if (inkPrefsBusy) return;
+    setInkPrefsBusy(true);
+    const prevStyle = personalPlanStyle;
+    const prevColor = personalPresenceColor;
+    if ("style" in patch) setPersonalPlanStyle(patch.style ?? null);
+    if ("presenceColor" in patch) setPersonalPresenceColor(patch.presenceColor ?? null);
+    try {
+      const token = getToken();
+      if (!token) return;
+      const res = await fetch("/api/me/ink-prefs", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) {
+        if ("style" in patch) setPersonalPlanStyle(prevStyle);
+        if ("presenceColor" in patch) setPersonalPresenceColor(prevColor);
+        toast({ title: "Couldn't save", description: "Please try again in a moment.", variant: "destructive" });
+      }
+    } catch {
+      if ("style" in patch) setPersonalPlanStyle(prevStyle);
+      if ("presenceColor" in patch) setPersonalPresenceColor(prevColor);
+      toast({ title: "Couldn't save", description: "Please try again in a moment.", variant: "destructive" });
+    } finally {
+      setInkPrefsBusy(false);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-3xl px-6 py-10">
       <div className="flex gap-12">
@@ -738,7 +786,7 @@ export function UserSettingsPage() {
                     <Popover open={avatarPopoverOpen} onOpenChange={setAvatarPopoverOpen}>
                       <PopoverTrigger asChild>
                         <button type="button" className="relative group rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0">
-                          <UserAvatar userId={userId} name={name || "?"} className="size-32 text-3xl" cacheBust={avatarKey} personalPlan={personalPlan} />
+                          <UserAvatar userId={userId} name={name || "?"} className="size-32 text-3xl" cacheBust={avatarKey} personalPlan={personalPlan} personalPlanStyle={personalPlanStyle} />
                           <div className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
                             {avatarUploading
                               ? <Loader2 className="size-6 text-white animate-spin" />
@@ -982,7 +1030,7 @@ export function UserSettingsPage() {
                 <div className="flex items-start justify-between gap-4 flex-wrap">
                   <div className="flex items-center gap-4">
                     {userId && (
-                      <UserAvatar userId={userId} name={name || "?"} className="size-12" cacheBust={avatarKey} personalPlan="ink" />
+                      <UserAvatar userId={userId} name={name || "?"} className="size-12" cacheBust={avatarKey} personalPlan="ink" personalPlanStyle={personalPlanStyle} />
                     )}
                     <div>
                       <h3 className="text-sm font-semibold flex items-center gap-1.5">
@@ -1015,6 +1063,68 @@ export function UserSettingsPage() {
                       {billingBusy ? <Loader2 className="size-4 animate-spin" /> : <>Manage subscription</>}
                     </Button>
                   )}
+                </div>
+
+                {/* Cosmetic prefs — Ink-only. Ring style swaps the conic
+                    gradient on the avatar; presence colour overrides the
+                    deterministic per-user collab cursor colour. */}
+                <Separator className="my-5" />
+                <div className="space-y-5">
+                  <div>
+                    <h4 className="text-sm font-semibold">Ring style</h4>
+                    <p className="mt-0.5 text-xs text-muted-foreground">Pick the animated ring around your avatar.</p>
+                    <div className="mt-3 flex flex-wrap gap-3">
+                      {INK_RING_STYLE_OPTIONS.map(opt => {
+                        const active = (personalPlanStyle ?? "shimmer") === opt.id;
+                        return (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            disabled={inkPrefsBusy}
+                            onClick={() => saveInkPrefs({ style: opt.id === "shimmer" ? null : opt.id })}
+                            className={`flex flex-col items-center gap-1.5 rounded-md border px-3 py-2 transition-colors disabled:opacity-50 ${active ? "border-foreground bg-accent" : "border-border hover:bg-accent"}`}
+                            aria-pressed={active}
+                          >
+                            <span className={opt.id === "shimmer" ? "ink-border inline-block" : `ink-border ink-style-${opt.id} inline-block`}>
+                              <span className="block size-8 rounded-full bg-muted" />
+                            </span>
+                            <span className="text-xs">{opt.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="text-sm font-semibold">Presence colour</h4>
+                    <p className="mt-0.5 text-xs text-muted-foreground">The colour your cursor appears in to others when collaborating in realtime. Leave default for an auto-picked colour.</p>
+                    <div className="mt-3 flex items-center gap-3">
+                      <input
+                        type="color"
+                        value={personalPresenceColor ?? "#888888"}
+                        disabled={inkPrefsBusy}
+                        onChange={e => setPersonalPresenceColor(e.target.value)}
+                        onBlur={e => {
+                          const v = e.target.value.toLowerCase();
+                          if (v !== (personalPresenceColor ?? "").toLowerCase()) saveInkPrefs({ presenceColor: v });
+                        }}
+                        className="h-9 w-12 cursor-pointer rounded border border-border bg-transparent disabled:opacity-50"
+                        aria-label="Presence colour"
+                      />
+                      <span className="text-xs text-muted-foreground tabular-nums">{personalPresenceColor ?? "default"}</span>
+                      {personalPresenceColor && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          disabled={inkPrefsBusy}
+                          onClick={() => saveInkPrefs({ presenceColor: null })}
+                        >
+                          Reset
+                        </Button>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

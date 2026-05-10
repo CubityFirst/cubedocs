@@ -135,3 +135,63 @@ body {
   color: var(--foreground);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
+
+/* Print mirror: a static react-markdown render of the doc body that exists
+   only for printing. CodeMirror's reading view virtualizes off-screen lines,
+   so we can't paginate the live editor — we paginate this mirror instead.
+   Hidden in the React tree on screen; pdf-export.ts clones the article into
+   a standalone print container under <body> and force-shows the mirror in
+   the clone. */
+.pdf-print-mirror {
+  display: none;
+}
+
+/* The print container. Lives under <body>, hidden on screen and only
+   revealed during the print pass. */
+#pdf-print-root {
+  display: none;
+}
+
+@media print {
+  /* The global `html, body { height: 100% }` rule constrains the body box
+     to one page in print, so the body's bg-color only propagates to page 1
+     and pages 2+ render the dark theme variable bleeding through. Relax
+     the height constraint and pin a known backdrop on both html and body
+     so all pages share the same propagated background. */
+  html, body {
+    height: auto !important;
+    min-height: 0 !important;
+  }
+  body.pdf-printing,
+  html:has(body.pdf-printing) {
+    background: var(--background) !important;
+  }
+  /* Hide everything at the body level except our print container. This
+     covers #app AND any Radix Portal overlays (dialog backdrops, popovers,
+     tooltips) that may still be in the DOM during their exit animation
+     when window.print() is called — those overlays are rendered as
+     siblings of #app, not inside it, and a lingering black dialog overlay
+     would otherwise paint on every printed page. */
+  body.pdf-printing > *:not(#pdf-print-root) {
+    display: none !important;
+  }
+  body.pdf-printing #pdf-print-root {
+    display: block;
+  }
+  /* The dev-mode bar/badge pseudo-elements live on <html>, so the body
+     selector above doesn't suppress them. */
+  [data-dev="true"]::before,
+  [data-dev="true"]::after {
+    content: none !important;
+  }
+  /* Avoid awkward breaks inside structural blocks. Callouts render as a
+     <div>/<details> with data-callout, not as a blockquote, so target both. */
+  body.pdf-printing pre,
+  body.pdf-printing table,
+  body.pdf-printing blockquote,
+  body.pdf-printing figure,
+  body.pdf-printing img,
+  body.pdf-printing [data-callout] {
+    break-inside: avoid;
+  }
+}

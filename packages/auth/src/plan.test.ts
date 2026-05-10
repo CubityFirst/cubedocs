@@ -9,6 +9,8 @@ const FREE: PlanRow = {
   personal_plan_status: null,
   personal_plan_started_at: null,
   personal_plan_cancel_at: null,
+  personal_plan_style: null,
+  personal_presence_color: null,
 };
 
 const NOW = 1_000_000;

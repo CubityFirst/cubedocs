@@ -6,9 +6,10 @@ The Annex Ink personal supporter subscription, its Stripe billing integration, a
 
 **Annex Ink** is a per-user $5/mo supporter tier (separate from any per-workspace plan). Cosmetic-only perks for v1:
 
-- Animated conic-gradient "shiny" ring around the user's avatar (`packages/frontend/src/styles/ink-border.css`, applied via `UserAvatar`'s `personalPlan` prop)
+- Animated conic-gradient "shiny" ring around the user's avatar (`packages/frontend/src/styles/ink-border.css`, applied via `UserAvatar`'s `personalPlan` prop). Supporters can pick between four ring variants via `personalPlanStyle` (`shimmer` default | `aurora` | `ember` | `mono`).
 - "Supporter since {Xth of Month, Year}" tenure flag in `UserSettingsPage` billing card and `UserProfileCard` tooltip
 - Animated rainbow Sparkles icon next to the user's name on the profile card
+- Custom presence colour for collab cursors. Free users get a deterministic per-user HSL from `userColor()`; supporters can override it via `personalPresenceColor` and the picked colour is broadcast through Yjs awareness to other clients.
 
 Free users render with a deterministic per-user color ring in collab presence (`EditorPresence.tsx`); Ink supporters render with the animated ring **instead** (the two are mutually exclusive — see `EditorPresence.PresenceAvatar`).
 
@@ -24,6 +25,8 @@ Columns:
 - `personal_plan_started_at` — Unix ms; **preserved across cancel/resub cycles** so "supporter since" reflects the original date (uses `COALESCE` in the upsert)
 - `personal_plan_cancel_at` — Unix ms; non-null when `cancel_at_period_end=true` is set on the Stripe sub. UI surfaces this as "Cancels on X."
 - `granted_plan`, `granted_plan_expires_at`, `granted_plan_reason` — manual override (admin grants). Takes precedence over Stripe-managed plan.
+- `personal_plan_style` — chosen ring variant (`shimmer` default | `aurora` | `ember` | `mono`). NULL = default. Allowed list lives in `INK_RING_STYLES` in `plan.ts`.
+- `personal_presence_color` — supporter override for the deterministic per-user collab cursor colour. Strict `#rrggbb`. NULL = use `userColor()`. Validated server-side; the colour is rendered into a CSS box-shadow / caret-color so the format is locked down.
 
 Plus `webhook_events (event_id PRIMARY KEY, type, processed_at)` for idempotency.
 

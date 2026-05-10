@@ -85,5 +85,10 @@ export function AuthenticatedImage({ src, alt, projectId, isPublic, ...props }: 
   }
 
   if (!resolvedSrc) return null;
-  return <img src={resolvedSrc} alt={alt} onError={() => setFailed(true)} {...props} />;
+  // data-original-src lets the PDF export inliner refetch via apiFetch even
+  // after the blob URL is revoked; harmless for normal rendering.
+  const originalSrc = (typeof src === "string" && (src.startsWith("/api/files/") || src.startsWith("/api/public/files/")))
+    ? src
+    : undefined;
+  return <img src={resolvedSrc} alt={alt} data-original-src={originalSrc} onError={() => setFailed(true)} {...props} />;
 }

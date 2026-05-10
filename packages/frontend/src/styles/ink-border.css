@@ -1,7 +1,12 @@
-/* Annex Ink supporter cosmetic — animated conic-gradient ring around the
-   avatar. Applied via the .ink-border class. The element should already
-   be (or contain) a circular shape; the pseudo-element sits behind it
-   and rotates. */
+/* Annex Ink supporter cosmetic — animated ring around the avatar.
+   Applied via the .ink-border class. The element should already be
+   (or contain) a circular shape; the pseudo-element sits behind it
+   and rotates.
+
+   Default style is .ink-border with no extra modifier (= shimmer).
+   Other styles add a sibling class — .ink-border.ink-style-aurora etc.
+   Allowed ids are kept in sync with INK_RING_STYLES in
+   packages/auth/src/plan.ts. */
 
 @keyframes ink-shimmer {
   to { transform: rotate(360deg); }
@@ -30,8 +35,53 @@
   filter: blur(0.5px);
 }
 
+/* Aurora — slower, cooler greens/blues sweep. */
+.ink-border.ink-style-aurora::before {
+  background: conic-gradient(
+    from 0deg,
+    hsl(160 80% 55%),
+    hsl(200 90% 60%),
+    hsl(260 70% 65%),
+    hsl(160 80% 55%)
+  );
+  animation-duration: 8s;
+}
+
+/* Ember — warm reds/oranges, faster. */
+.ink-border.ink-style-ember::before {
+  background: conic-gradient(
+    from 0deg,
+    hsl(15 90% 55%),
+    hsl(35 100% 60%),
+    hsl(0 80% 50%),
+    hsl(15 90% 55%)
+  );
+  animation-duration: 3s;
+}
+
+/* Mono — subtle monochrome pulse instead of a hue rotation.
+   Keeps the spinning conic-gradient but in greys, with a
+   gentle scale pulse so it still feels alive. */
+@keyframes ink-mono-pulse {
+  0%, 100% { opacity: 0.6; }
+  50%      { opacity: 1; }
+}
+
+.ink-border.ink-style-mono::before {
+  background: conic-gradient(
+    from 0deg,
+    hsl(0 0% 80%),
+    hsl(0 0% 40%),
+    hsl(0 0% 80%)
+  );
+  animation: ink-shimmer 6s linear infinite, ink-mono-pulse 3s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .ink-border::before { animation: none; }
+  .ink-border::before,
+  .ink-border.ink-style-aurora::before,
+  .ink-border.ink-style-ember::before,
+  .ink-border.ink-style-mono::before { animation: none; }
 }
 
 /* Used on lucide <Sparkles /> next to ink-supporter names. The SVG is

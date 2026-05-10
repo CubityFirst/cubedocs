@@ -55,6 +55,8 @@ interface CollabUser {
   id: string;
   name: string;
   personalPlan?: "free" | "ink";
+  personalPlanStyle?: string | null;
+  personalPresenceColor?: string | null;
 }
 
 interface Props {
@@ -64,7 +66,7 @@ interface Props {
   onSave?: () => void;
   autoFocus?: boolean;
   collab?: { docId: string; user: CollabUser };
-  onAwarenessChange?: (editors: { userId: string; name: string; color: string; personalPlan?: "free" | "ink" }[]) => void;
+  onAwarenessChange?: (editors: { userId: string; name: string; color: string; personalPlan?: "free" | "ink"; personalPlanStyle?: string | null }[]) => void;
   // Terminal signal from collab server — reconnecting won't help (doc size cap exceeded
   // server-side, or our last frame was too big and local state has diverged). The provider
   // stops reconnecting; the parent should drop out of collab mode.
@@ -227,7 +229,13 @@ export function WysiwygEditor({
       }
 
       awareness = new Awareness(ydoc);
-      const color = userColor(collabOpts.user.id);
+      // Ink supporters can override the deterministic per-user colour. We
+      // only apply it for the foreground colour — the soft "background"
+      // colour used for selection highlights stays derived so it always
+      // pairs cleanly with the foreground regardless of what hex they
+      // picked.
+      const overrideColor = collabOpts.user.personalPlan === "ink" ? collabOpts.user.personalPresenceColor ?? null : null;
+      const color = overrideColor ?? userColor(collabOpts.user.id);
       const colorLight = userColorLight(collabOpts.user.id);
       awareness.setLocalStateField("user", {
         id: collabOpts.user.id,
@@ -235,6 +243,7 @@ export function WysiwygEditor({
         color,
         colorLight,
         personalPlan: collabOpts.user.personalPlan ?? "free",
+        personalPlanStyle: collabOpts.user.personalPlanStyle ?? null,
       });
 
       yText.observe(() => {
@@ -246,7 +255,7 @@ export function WysiwygEditor({
       awareness.on("change", () => {
         if (!onAwarenessChangeRef.current) return;
         const states = awareness!.getStates();
-        const editors: { userId: string; name: string; color: string; personalPlan?: "free" | "ink" }[] = [];
+        const editors: { userId: string; name: string; color: string; personalPlan?: "free" | "ink"; personalPlanStyle?: string | null }[] = [];
         states.forEach((state, clientId) => {
           if (clientId === ydoc!.clientID) return;
           if (state?.user) {
@@ -255,6 +264,7 @@ export function WysiwygEditor({
               name: state.user.name ?? "Unknown",
               color: state.user.color ?? "#888",
               personalPlan: state.user.personalPlan === "ink" ? "ink" : "free",
+              personalPlanStyle: typeof state.user.personalPlanStyle === "string" ? state.user.personalPlanStyle : null,
             });
           }
         });

@@ -213,6 +213,8 @@ export default {
             personalPlanSince: session.personalPlanSince ?? null,
             personalPlanStatus: session.personalPlanStatus ?? null,
             personalPlanCancelAt: session.personalPlanCancelAt ?? null,
+            personalPlanStyle: session.personalPlanStyle ?? null,
+            personalPresenceColor: session.personalPresenceColor ?? null,
           },
         }));
       }
@@ -251,6 +253,20 @@ export default {
 
         if (!responseData.name && !("timezone" in body)) return addCorsHeaders(errorResponse(Errors.BAD_REQUEST));
         return addCorsHeaders(Response.json({ ok: true, data: responseData }));
+      }
+
+      // PATCH /me/ink-prefs — update Ink supporter cosmetic prefs (ring style + presence colour)
+      if (url.pathname === "/me/ink-prefs" && request.method === "PATCH") {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        const body = await request.json<unknown>();
+        const authHeader = request.headers.get("Authorization");
+        const updateRes = await env.AUTH.fetch("https://auth/update-ink-prefs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
+          body: JSON.stringify(body),
+        });
+        return addCorsHeaders(updateRes);
       }
 
       // GET /avatar/:userId — public, serve avatar from R2
@@ -367,7 +383,7 @@ export default {
 
         const planRow = await env.AUTH_DB.prepare(
           `SELECT personal_plan, personal_plan_status, personal_plan_started_at,
-                  personal_plan_cancel_at,
+                  personal_plan_cancel_at, personal_plan_style, personal_presence_color,
                   granted_plan, granted_plan_expires_at, granted_plan_started_at
            FROM users WHERE id = ?`,
         ).bind(targetUserId).first<{
@@ -375,11 +391,13 @@ export default {
           personal_plan_status: string | null;
           personal_plan_started_at: number | null;
           personal_plan_cancel_at: number | null;
+          personal_plan_style: string | null;
+          personal_presence_color: string | null;
           granted_plan: string | null;
           granted_plan_expires_at: number | null;
           granted_plan_started_at: number | null;
         }>();
-        const resolvedPlan = planRow ? resolvePersonalPlan(planRow) : { plan: "free" as const, since: null };
+        const resolvedPlan = planRow ? resolvePersonalPlan(planRow) : { plan: "free" as const, since: null, style: null, presenceColor: null };
 
         const profileData: Record<string, unknown> = {
           userId: lookupData.data.userId,
@@ -388,6 +406,7 @@ export default {
           sharedProjects: sharedRows.results.map(r => ({ id: r.id, name: r.name, theirRole: r.their_role })),
           personalPlan: resolvedPlan.plan,
           personalPlanSince: resolvedPlan.since,
+          personalPlanStyle: resolvedPlan.style,
           badges: lookupData.data.badges ?? 0,
         };
         if (lookupData.data.timezone) profileData.timezone = lookupData.data.timezone;

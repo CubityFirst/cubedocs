@@ -171,6 +171,7 @@ export function Callout({ type, title, fold, children }: CalloutProps) {
     return (
       <details
         className={containerClass}
+        data-callout={type}
         open={open}
         onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
       >
@@ -181,7 +182,7 @@ export function Callout({ type, title, fold, children }: CalloutProps) {
   }
 
   return (
-    <div className={containerClass}>
+    <div className={containerClass} data-callout={type}>
       {header}
       {body}
     </div>

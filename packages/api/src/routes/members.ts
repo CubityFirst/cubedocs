@@ -16,24 +16,32 @@ interface AuthPlanRow {
   personal_plan_status: string | null;
   personal_plan_started_at: number | null;
   personal_plan_cancel_at: number | null;
+  personal_plan_style: string | null;
+  personal_presence_color: string | null;
   granted_plan: string | null;
   granted_plan_expires_at: number | null;
   granted_plan_started_at: number | null;
 }
 
+interface MemberPlanInfo {
+  plan: PersonalPlan;
+  style: string | null;
+}
+
 // One D1 read against AUTH_DB returns the plan columns for every user
 // id in the list. Empty list short-circuits — D1 doesn't accept zero
-// placeholders in IN(). Map keys are user ids, values are the resolved
-// PersonalPlan ('free' | 'ink').
-async function loadMemberPlans(env: Env, userIds: string[]): Promise<Map<string, PersonalPlan>> {
-  const plans = new Map<string, PersonalPlan>();
+// placeholders in IN(). Map keys are user ids; values include the
+// resolved plan plus the chosen ring style so the members list can
+// render each supporter's customised avatar.
+async function loadMemberPlans(env: Env, userIds: string[]): Promise<Map<string, MemberPlanInfo>> {
+  const plans = new Map<string, MemberPlanInfo>();
   if (userIds.length === 0) return plans;
 
   const placeholders = userIds.map(() => "?").join(",");
   const rows = await env.AUTH_DB.prepare(
     `SELECT id, personal_plan, personal_plan_status, personal_plan_started_at,
-            personal_plan_cancel_at, granted_plan, granted_plan_expires_at,
-            granted_plan_started_at
+            personal_plan_cancel_at, personal_plan_style, personal_presence_color,
+            granted_plan, granted_plan_expires_at, granted_plan_started_at
      FROM users WHERE id IN (${placeholders})`,
   ).bind(...userIds).all<AuthPlanRow>();
 
@@ -46,8 +54,10 @@ async function loadMemberPlans(env: Env, userIds: string[]): Promise<Map<string,
       personal_plan_status: r.personal_plan_status,
       personal_plan_started_at: r.personal_plan_started_at,
       personal_plan_cancel_at: r.personal_plan_cancel_at,
+      personal_plan_style: r.personal_plan_style,
+      personal_presence_color: r.personal_presence_color,
     });
-    plans.set(r.id, resolved.plan);
+    plans.set(r.id, { plan: resolved.plan, style: resolved.style });
   }
   return plans;
 }
@@ -83,18 +93,22 @@ export async function handleMembers(
 
     const plans = await loadMemberPlans(env, rows.results.map(r => r.user_id));
 
-    return okResponse(rows.results.map(r => ({
-      id: r.id,
-      projectId: r.project_id,
-      userId: r.user_id,
-      email: r.email,
-      name: r.name,
-      role: r.role,
-      accepted: r.accepted === 1,
-      invitedBy: r.invited_by,
-      createdAt: r.created_at,
-      personalPlan: plans.get(r.user_id) ?? "free",
-    })));
+    return okResponse(rows.results.map(r => {
+      const info = plans.get(r.user_id);
+      return {
+        id: r.id,
+        projectId: r.project_id,
+        userId: r.user_id,
+        email: r.email,
+        name: r.name,
+        role: r.role,
+        accepted: r.accepted === 1,
+        invitedBy: r.invited_by,
+        createdAt: r.created_at,
+        personalPlan: info?.plan ?? "free",
+        personalPlanStyle: info?.style ?? null,
+      };
+    }));
   }
 
   // POST /projects/:id/members — admin/owner can invite

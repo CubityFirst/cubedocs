@@ -17,7 +17,8 @@
       "Bash(pnpm -C packages/frontend test)",
       "Bash(pnpm -C packages/frontend build)",
       "Bash(npx wrangler *)",
-      "Bash(node -e ' *)"
+      "Bash(node -e ' *)",
+      "WebFetch(domain:www.shadcn.io)"
     ]
   }
 }

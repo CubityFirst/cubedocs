@@ -7,6 +7,7 @@ interface Editor {
   name: string;
   color: string;
   personalPlan?: "free" | "ink";
+  personalPlanStyle?: string | null;
 }
 
 interface Props {
@@ -25,7 +26,7 @@ function PresenceAvatar({ editor }: { editor: Editor }) {
         className="relative rounded-full shrink-0"
         style={isInk ? undefined : { boxShadow: `0 0 0 2px ${editor.color}` }}
       >
-        <UserAvatar userId={editor.userId} name={editor.name} className="h-6 w-6 text-[10px]" personalPlan={editor.personalPlan} />
+        <UserAvatar userId={editor.userId} name={editor.name} className="h-6 w-6 text-[10px]" personalPlan={editor.personalPlan} personalPlanStyle={editor.personalPlanStyle} />
       </div>
       {/* Sliding name label */}
       <span
@@ -75,7 +76,7 @@ export function EditorPresence({ editors }: Props) {
                         className="rounded-full shrink-0"
                         style={isInk ? undefined : { boxShadow: `0 0 0 2px ${editor.color}` }}
                       >
-                        <UserAvatar userId={editor.userId} name={editor.name} className="h-6 w-6 text-[10px]" personalPlan={editor.personalPlan} />
+                        <UserAvatar userId={editor.userId} name={editor.name} className="h-6 w-6 text-[10px]" personalPlan={editor.personalPlan} personalPlanStyle={editor.personalPlanStyle} />
                       </div>
                       <span className="truncate text-sm">{editor.name}</span>
                     </button>

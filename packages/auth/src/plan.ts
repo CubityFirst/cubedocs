@@ -12,6 +12,24 @@
 
 export type PersonalPlan = "free" | "ink";
 
+// Allowed ring style ids. Default ('shimmer') is what every supporter gets
+// before customising; null on the row means "use the default". Adding a
+// new style: append the id here, add a CSS variant in ink-border.css, and
+// add it to INK_PRESENCE_RING_STYLES below.
+export const INK_RING_STYLES = ["shimmer", "aurora", "ember", "mono"] as const;
+export type InkRingStyle = typeof INK_RING_STYLES[number];
+
+export function isInkRingStyle(value: unknown): value is InkRingStyle {
+  return typeof value === "string" && (INK_RING_STYLES as readonly string[]).includes(value);
+}
+
+// Strict #rrggbb. We render the colour straight into a CSS box-shadow /
+// caret-color, so we lock the input down to a known-safe shape.
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+export function isInkPresenceColor(value: unknown): value is string {
+  return typeof value === "string" && HEX_COLOR.test(value);
+}
+
 export type PlanRow = {
   granted_plan: string | null;
   granted_plan_expires_at: number | null;
@@ -20,6 +38,8 @@ export type PlanRow = {
   personal_plan_status: string | null;
   personal_plan_started_at: number | null;
   personal_plan_cancel_at: number | null;
+  personal_plan_style: string | null;
+  personal_presence_color: string | null;
 };
 
 export type ResolvedPlan = {
@@ -30,13 +50,27 @@ export type ResolvedPlan = {
   // When non-null, the active sub has been set to cancel and access
   // ends at this Unix-ms timestamp. Stays in 'active' status until
   // then; UI uses this to show "expires on X".
-  cancelAt: number | null;
+  cancelAt: null | number;
+  // Cosmetic prefs. null on a free user (no Ink → no perks); for an Ink
+  // user, null means "use the default" (style: 'shimmer', presence colour:
+  // deterministic from userColor()). Persisted values that fail validation
+  // are normalised to null here so callers don't have to re-validate.
+  style: InkRingStyle | null;
+  presenceColor: string | null;
 };
 
 const ACTIVE_STATUSES = new Set(["active", "trialing", "past_due"]);
 
 function asPlan(value: string | null): PersonalPlan {
   return value === "ink" ? "ink" : "free";
+}
+
+function readStyle(row: PlanRow): InkRingStyle | null {
+  return isInkRingStyle(row.personal_plan_style) ? row.personal_plan_style : null;
+}
+
+function readPresenceColor(row: PlanRow): string | null {
+  return isInkPresenceColor(row.personal_presence_color) ? row.personal_presence_color : null;
 }
 
 export function resolvePersonalPlan(row: PlanRow, now: number = Date.now()): ResolvedPlan {
@@ -47,6 +81,8 @@ export function resolvePersonalPlan(row: PlanRow, now: number = Date.now()): Res
       since: row.granted_plan_started_at,
       status: "granted",
       cancelAt: null,
+      style: readStyle(row),
+      presenceColor: readPresenceColor(row),
     };
   }
 
@@ -57,8 +93,10 @@ export function resolvePersonalPlan(row: PlanRow, now: number = Date.now()): Res
       since: row.personal_plan_started_at,
       status: row.personal_plan_status,
       cancelAt: row.personal_plan_cancel_at,
+      style: readStyle(row),
+      presenceColor: readPresenceColor(row),
     };
   }
 
-  return { plan: "free", via: "free", since: null, status: null, cancelAt: null };
+  return { plan: "free", via: "free", since: null, status: null, cancelAt: null, style: null, presenceColor: null };
 }
