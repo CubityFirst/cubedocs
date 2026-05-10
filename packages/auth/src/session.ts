@@ -1,5 +1,6 @@
 import { verifyJwt } from "./jwt";
 import { errorResponse, Errors, type Session } from "./lib";
+import { resolvePersonalPlan } from "./plan";
 
 interface SessionUserRow {
   id: string;
@@ -7,6 +8,11 @@ interface SessionUserRow {
   moderation: number;
   force_password_change: number;
   is_admin: number;
+  personal_plan: string | null;
+  personal_plan_status: string | null;
+  personal_plan_started_at: number | null;
+  granted_plan: string | null;
+  granted_plan_expires_at: number | null;
 }
 
 interface SessionStateRow {
@@ -52,7 +58,10 @@ export async function loadCurrentSession(
 
   const [userResult, sessionResult] = await db.batch([
     db.prepare(
-      "SELECT id, email, moderation, force_password_change, is_admin FROM users WHERE id = ?",
+      `SELECT id, email, moderation, force_password_change, is_admin,
+              personal_plan, personal_plan_status, personal_plan_started_at,
+              granted_plan, granted_plan_expires_at
+       FROM users WHERE id = ?`,
     ).bind(tokenSession.userId),
     db.prepare(
       "SELECT id, expires_at, revoked_at, last_used_at FROM sessions WHERE id = ? AND user_id = ?",
@@ -89,6 +98,14 @@ export async function loadCurrentSession(
     );
   }
 
+  const resolved = resolvePersonalPlan({
+    granted_plan: user.granted_plan,
+    granted_plan_expires_at: user.granted_plan_expires_at,
+    personal_plan: user.personal_plan,
+    personal_plan_status: user.personal_plan_status,
+    personal_plan_started_at: user.personal_plan_started_at,
+  }, now);
+
   return {
     kind: "ok",
     session: {
@@ -97,6 +114,9 @@ export async function loadCurrentSession(
       expiresAt: tokenSession.expiresAt,
       isAdmin: Boolean(user.is_admin),
       sid: sessionRow.id,
+      personalPlan: resolved.plan,
+      personalPlanSince: resolved.since,
+      personalPlanStatus: resolved.status,
     },
   };
 }

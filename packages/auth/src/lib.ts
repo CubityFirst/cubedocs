@@ -11,6 +11,12 @@ export interface Session {
   // tokens; mirrored on `users.change_token_id`. Re-issuing the token
   // overwrites the row, invalidating any prior unused token.
   cti?: string;
+  // Resolved per-user plan, computed by resolvePersonalPlan() when the
+  // session is loaded. Optional so JWT-only consumers (no DB hit) and
+  // the api worker's filtered session don't need to populate them.
+  personalPlan?: "free" | "ink";
+  personalPlanSince?: number | null;
+  personalPlanStatus?: string | null;
 }
 
 export const Errors = {

@@ -28,6 +28,8 @@ import { handleSessionsList } from "./routes/sessions-list";
 import { handleSessionsRevoke } from "./routes/sessions-revoke";
 import { handleSessionsRevokeOthers } from "./routes/sessions-revoke-others";
 import { handleSessionsLogout } from "./routes/sessions-logout";
+import { handleBillingCheckout, handleBillingPortal } from "./routes/billing";
+import { handleStripeWebhook } from "./routes/stripe-webhook";
 
 export interface Env {
   DB: D1Database;
@@ -52,6 +54,9 @@ export interface Env {
   RATE_LIMITER_LOOKUP: { limit(opts: { key: string }): Promise<{ success: boolean }> };
   RATE_LIMITER_AUTH: { limit(opts: { key: string }): Promise<{ success: boolean }> };
   RATE_LIMITER_EMAIL_VERIFY: { limit(opts: { key: string }): Promise<{ success: boolean }> };
+  STRIPE_SECRET_KEY: string;
+  STRIPE_WEBHOOK_SECRET: string;
+  STRIPE_INK_PRICE_ID: string;
 }
 
 export default {
@@ -137,6 +142,16 @@ export default {
         response = await handleSessionsRevokeOthers(request, env);
       } else if (url.pathname === "/sessions/logout" && request.method === "POST") {
         response = await handleSessionsLogout(request, env);
+      } else if (url.pathname === "/billing/checkout" && request.method === "POST") {
+        response = await handleBillingCheckout(request, env);
+      } else if (url.pathname === "/billing/portal" && request.method === "POST") {
+        response = await handleBillingPortal(request, env);
+      } else if (url.pathname === "/stripe/webhook" && request.method === "POST") {
+        // Stripe webhook handler reads its own raw body for signature
+        // verification; it must NOT be wrapped by anything that calls
+        // request.json() upstream. CORS is also irrelevant — Stripe
+        // calls this server-to-server, not from a browser.
+        response = await handleStripeWebhook(request, env);
       } else {
         response = errorResponse(Errors.NOT_FOUND);
       }

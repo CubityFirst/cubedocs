@@ -54,6 +54,7 @@ const editorTheme = EditorView.theme({
 interface CollabUser {
   id: string;
   name: string;
+  personalPlan?: "free" | "ink";
 }
 
 interface Props {
@@ -63,7 +64,7 @@ interface Props {
   onSave?: () => void;
   autoFocus?: boolean;
   collab?: { docId: string; user: CollabUser };
-  onAwarenessChange?: (editors: { userId: string; name: string; color: string }[]) => void;
+  onAwarenessChange?: (editors: { userId: string; name: string; color: string; personalPlan?: "free" | "ink" }[]) => void;
   // Terminal signal from collab server — reconnecting won't help (doc size cap exceeded
   // server-side, or our last frame was too big and local state has diverged). The provider
   // stops reconnecting; the parent should drop out of collab mode.
@@ -229,6 +230,7 @@ export function WysiwygEditor({
         name: collabOpts.user.name,
         color,
         colorLight,
+        personalPlan: collabOpts.user.personalPlan ?? "free",
       });
 
       yText.observe(() => {
@@ -240,7 +242,7 @@ export function WysiwygEditor({
       awareness.on("change", () => {
         if (!onAwarenessChangeRef.current) return;
         const states = awareness!.getStates();
-        const editors: { userId: string; name: string; color: string }[] = [];
+        const editors: { userId: string; name: string; color: string; personalPlan?: "free" | "ink" }[] = [];
         states.forEach((state, clientId) => {
           if (clientId === ydoc!.clientID) return;
           if (state?.user) {
@@ -248,6 +250,7 @@ export function WysiwygEditor({
               userId: state.user.id ?? String(clientId),
               name: state.user.name ?? "Unknown",
               color: state.user.color ?? "#888",
+              personalPlan: state.user.personalPlan === "ink" ? "ink" : "free",
             });
           }
         });

@@ -26,7 +26,7 @@ import { getToken, clearToken } from "@/lib/auth";
 import { UserAvatar } from "@/components/UserAvatar";
 import { AvatarCropDialog } from "@/components/AvatarCropDialog";
 import { InlineSaveControls } from "@/components/InlineSaveControls";
-import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertCircle, Camera, Smartphone, Tablet, Laptop, Monitor, Upload } from "lucide-react";
+import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertCircle, Camera, Smartphone, Tablet, Laptop, Monitor, Upload, Sparkles } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { TIMEZONE_GROUPS, detectTimezoneGroup, getTimezoneGroup, formatTimezoneLabel, formatTimeInZone } from "@/lib/timezone";
@@ -155,6 +155,13 @@ export function UserSettingsPage() {
   const [sessionRevokingId, setSessionRevokingId] = useState<string | null>(null);
   const [revokingOthers, setRevokingOthers] = useState(false);
 
+  // Annex Ink billing state. personalPlanStatus === "granted" means a comp
+  // grant (no Stripe linkage); we hide the Manage button in that case.
+  const [personalPlan, setPersonalPlan] = useState<"free" | "ink">("free");
+  const [personalPlanSince, setPersonalPlanSince] = useState<number | null>(null);
+  const [personalPlanStatus, setPersonalPlanStatus] = useState<string | null>(null);
+  const [billingBusy, setBillingBusy] = useState(false);
+
   const { runWithTwoFA, twoFADialog, busy: twoFABusy } = use2FA({
     totp: totpEnabled,
     webauthn: webauthnCredentials.length > 0,
@@ -164,7 +171,7 @@ export function UserSettingsPage() {
     const token = getToken();
     if (!token) return;
     fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json() as Promise<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean; userId: string; timezone: string | null } }>)
+      .then(r => r.json() as Promise<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean; userId: string; timezone: string | null; personalPlan: "free" | "ink"; personalPlanSince: number | null; personalPlanStatus: string | null } }>)
       .then(json => {
         if (json.ok && json.data) {
           setCurrentName(json.data.name);
@@ -175,6 +182,9 @@ export function UserSettingsPage() {
           setUserId(json.data.userId);
           setTimezone(json.data.timezone);
           setTimezonePrivate(json.data.timezone === null);
+          setPersonalPlan(json.data.personalPlan);
+          setPersonalPlanSince(json.data.personalPlanSince);
+          setPersonalPlanStatus(json.data.personalPlanStatus);
         }
       })
       .catch(() => {});
@@ -657,6 +667,32 @@ export function UserSettingsPage() {
 
   const twoFactorProtected = totpEnabled || webauthnCredentials.length > 0;
 
+  // Posts to the auth-side billing endpoint (proxied by /api in dev) and
+  // navigates the browser to the Stripe-hosted url. We intentionally use
+  // window.location rather than fetch+redirect so the back button works.
+  async function startCheckoutOrPortal(path: "/api/billing/checkout" | "/api/billing/portal") {
+    if (billingBusy) return;
+    setBillingBusy(true);
+    try {
+      const token = getToken();
+      if (!token) return;
+      const res = await fetch(path, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json() as { ok: boolean; data?: { url: string } };
+      if (json.ok && json.data?.url) {
+        window.location.href = json.data.url;
+        return;
+      }
+      toast({ title: "Couldn't open billing", description: "Please try again in a moment.", variant: "destructive" });
+    } catch {
+      toast({ title: "Couldn't open billing", description: "Please try again in a moment.", variant: "destructive" });
+    } finally {
+      setBillingBusy(false);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-3xl px-6 py-10">
       <div className="flex gap-12">
@@ -665,6 +701,7 @@ export function UserSettingsPage() {
           <nav className="sticky top-10 flex flex-col">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">On this page</p>
             <a href="#account" className="py-1 text-sm text-muted-foreground transition-colors hover:text-foreground">Account</a>
+            <a href="#billing" className="py-1 text-sm text-muted-foreground transition-colors hover:text-foreground">Billing</a>
             <a href="#two-factor" className="py-1 text-sm text-muted-foreground transition-colors hover:text-foreground">Security</a>
             <a href="#danger" className="py-1 text-sm text-destructive/70 transition-colors hover:text-destructive">Danger Zone</a>
           </nav>
@@ -696,7 +733,7 @@ export function UserSettingsPage() {
                     <Popover open={avatarPopoverOpen} onOpenChange={setAvatarPopoverOpen}>
                       <PopoverTrigger asChild>
                         <button type="button" className="relative group rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0">
-                          <UserAvatar userId={userId} name={name || "?"} className="size-32 text-3xl" cacheBust={avatarKey} />
+                          <UserAvatar userId={userId} name={name || "?"} className="size-32 text-3xl" cacheBust={avatarKey} personalPlan={personalPlan} />
                           <div className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
                             {avatarUploading
                               ? <Loader2 className="size-6 text-white animate-spin" />
@@ -899,6 +936,72 @@ export function UserSettingsPage() {
                 <p className="text-xs text-muted-foreground pl-6">When enabled, your timezone won't appear on your profile card.</p>
               </div>
             </div>
+          </section>
+
+          <Separator className="my-6" />
+
+          {/* Billing section — Annex Ink supporter tier */}
+          <section id="billing">
+            <h2 className="text-base font-semibold flex items-center gap-1.5">
+              Billing
+              {personalPlan === "ink" && <Sparkles className="size-3.5 text-amber-500" />}
+            </h2>
+            <p className="mt-0.5 text-sm text-muted-foreground">Your supporter subscription.</p>
+
+            {personalPlanStatus === "past_due" && (
+              <div className="mt-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive flex items-start gap-2">
+                <AlertCircle className="size-4 mt-0.5 shrink-0" />
+                <span>Your last payment failed. Update your payment method to keep your Ink perks.</span>
+              </div>
+            )}
+
+            {personalPlan === "free" ? (
+              <div className="mt-4 rounded-lg border bg-card p-5">
+                <div className="flex items-start justify-between gap-4 flex-wrap">
+                  <div>
+                    <h3 className="text-sm font-semibold flex items-center gap-1.5">
+                      <Sparkles className="size-3.5 text-amber-500" />
+                      Annex Ink
+                    </h3>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      $5/mo. A shiny animated ring on your avatar wherever it shows, and a "supporter since" badge on your profile. Helps keep the lights on.
+                    </p>
+                  </div>
+                  <Button onClick={() => startCheckoutOrPortal("/api/billing/checkout")} disabled={billingBusy}>
+                    {billingBusy ? <Loader2 className="size-4 animate-spin" /> : <>Become a supporter</>}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4 rounded-lg border bg-card p-5">
+                <div className="flex items-start justify-between gap-4 flex-wrap">
+                  <div className="flex items-center gap-4">
+                    {userId && (
+                      <UserAvatar userId={userId} name={name || "?"} className="size-12" cacheBust={avatarKey} personalPlan="ink" />
+                    )}
+                    <div>
+                      <h3 className="text-sm font-semibold flex items-center gap-1.5">
+                        <Sparkles className="size-3.5 text-amber-500" />
+                        Annex Ink
+                        {personalPlanStatus === "granted" && <span className="text-xs font-normal text-muted-foreground">(gifted)</span>}
+                      </h3>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {personalPlanStatus === "granted"
+                          ? "You've been comped a supporter subscription. Thanks for being here."
+                          : personalPlanSince
+                            ? `Supporter since ${new Date(personalPlanSince).getFullYear()}.`
+                            : "Active supporter."}
+                      </p>
+                    </div>
+                  </div>
+                  {personalPlanStatus !== "granted" && (
+                    <Button variant="outline" onClick={() => startCheckoutOrPortal("/api/billing/portal")} disabled={billingBusy}>
+                      {billingBusy ? <Loader2 className="size-4 animate-spin" /> : <>Manage subscription</>}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
           </section>
 
           <Separator className="my-6" />

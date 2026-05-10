@@ -10,6 +10,13 @@ binding = "ASSETS"
 binding = "API"
 service = "annex-api"
 
+# Service binding to the auth worker — used only for Stripe webhook
+# forwarding (/stripe/webhook). The auth worker is otherwise reached
+# via the api worker's own AUTH binding for authenticated calls.
+[[services]]
+binding = "AUTH"
+service = "annex-auth"
+
 [[routes]]
 pattern = "docs.cubityfir.st"
 custom_domain = true

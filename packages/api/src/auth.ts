@@ -23,6 +23,9 @@ export async function authenticate(request: Request, env: Env): Promise<Session 
       userId: result.session.userId,
       email: result.session.email,
       expiresAt: result.session.expiresAt,
+      personalPlan: result.session.personalPlan ?? "free",
+      personalPlanSince: result.session.personalPlanSince ?? null,
+      personalPlanStatus: result.session.personalPlanStatus ?? null,
     };
   }
   if (result.kind === "invalid") return null;

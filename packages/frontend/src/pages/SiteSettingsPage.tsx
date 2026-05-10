@@ -92,6 +92,7 @@ interface Member {
   name: string;
   role: Role;
   accepted: boolean;
+  personalPlan?: "free" | "ink";
 }
 
 interface InviteLink {
@@ -1434,7 +1435,7 @@ export function SiteSettingsPage() {
                     <div key={member.userId} className="flex items-center gap-3 px-4 py-3">
                       <UserProfileCard userId={member.userId} name={member.name}>
                         <button type="button" className="-mx-1 flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded px-1 py-0.5 text-left transition-colors hover:bg-muted/50">
-                          <UserAvatar userId={member.userId} name={member.name} className="size-8 shrink-0 text-xs" />
+                          <UserAvatar userId={member.userId} name={member.name} className="size-8 shrink-0 text-xs" personalPlan={member.personalPlan} />
                           <div className="flex min-w-0 flex-1 flex-col">
                             <span className="truncate text-sm font-medium">
                               {member.name}

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@simplewebauthn/server": "^9.0.0",
+    "stripe": "^17.0.0",
     "zxcvbn": "^4.4.2"
   },
   "devDependencies": {

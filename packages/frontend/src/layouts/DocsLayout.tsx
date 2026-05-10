@@ -83,7 +83,7 @@ export interface DocsLayoutContext {
   aiEnabled: boolean;
   aiSummarizationType: string;
   projectFeatures: number;
-  currentUser: { id: string; name: string } | null;
+  currentUser: { id: string; name: string; personalPlan: "free" | "ink" } | null;
   docs: { id: string; title: string; display_title?: string | null; folder_id?: string | null; tags?: string | null }[];
   folders: { id: string; name: string; parent_id: string | null }[];
   addDoc: (doc: { id: string; title: string; display_title?: string | null; folder_id?: string | null; tags?: string | null }) => void;
@@ -205,6 +205,7 @@ export function DocsLayout() {
   // current user
   const [userName, setUserName] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  const [personalPlan, setPersonalPlan] = useState<"free" | "ink">("free");
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -234,11 +235,12 @@ export function DocsLayout() {
 
   useEffect(() => {
     if (!getToken()) return;
-    apiFetchJson<{ name: string; userId: string }>("/api/me")
+    apiFetchJson<{ name: string; userId: string; personalPlan: "free" | "ink" }>("/api/me")
       .then(result => {
         if (result.ok && result.data) {
           setUserName(result.data.name);
           setUserId(result.data.userId);
+          setPersonalPlan(result.data.personalPlan ?? "free");
         }
       })
       .catch(() => {});
@@ -338,7 +340,7 @@ export function DocsLayout() {
     aiEnabled: !!(currentProject?.ai_enabled),
     aiSummarizationType: currentProject?.ai_summarization_type ?? "manual",
     projectFeatures: currentProject?.features ?? 0,
-    currentUser: userId && userName ? { id: userId, name: userName } : null,
+    currentUser: userId && userName ? { id: userId, name: userName, personalPlan } : null,
     docs,
     folders,
     addDoc,
@@ -478,7 +480,7 @@ export function DocsLayout() {
                   title={userName}
                   className="flex flex-1 min-w-0 items-center gap-2 rounded-md -mx-1 px-1 py-1 ring-offset-background transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
-                  <UserAvatar userId={userId} name={userName} className="size-7 shrink-0 text-xs" />
+                  <UserAvatar userId={userId} name={userName} className="size-7 shrink-0 text-xs" personalPlan={personalPlan} />
                   <span className="flex-1 truncate text-left text-sm font-medium">
                     {userName}
                   </span>

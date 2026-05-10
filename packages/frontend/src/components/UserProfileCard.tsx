@@ -10,9 +10,10 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { UserAvatar } from "@/components/UserAvatar";
 import { getToken, clearToken } from "@/lib/auth";
-import { CalendarDays, Building2, Clock, Settings, KeyRound, LogOut, ChevronRight } from "lucide-react";
+import { CalendarDays, Building2, Clock, Settings, KeyRound, LogOut, ChevronRight, Sparkles } from "lucide-react";
 import { formatTimeInZone, getTimezoneGroup } from "@/lib/timezone";
 import { TimezoneMap } from "@/components/TimezoneMap";
 
@@ -66,6 +67,8 @@ interface ProfileData {
   createdAt: string;
   timezone?: string;
   sharedProjects: SharedProject[];
+  personalPlan?: "free" | "ink";
+  personalPlanSince?: number | null;
 }
 
 interface UserProfileCardProps {
@@ -128,9 +131,32 @@ export function UserProfileCard({ userId, name, children }: UserProfileCardProps
             );
           })()}
 
-          <UserAvatar userId={userId} name={name} className="relative z-10 size-20 shrink-0 text-2xl" />
+          <UserAvatar userId={userId} name={name} className="relative z-10 size-20 shrink-0 text-2xl" personalPlan={profile?.personalPlan} />
           <div className="relative z-10 min-w-0 flex-1">
-            <h2 className="truncate text-lg font-semibold">{name}</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="truncate text-lg font-semibold">{name}</h2>
+              {profile?.personalPlan === "ink" && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      // Tap on mobile focuses the button, which opens the
+                      // tooltip via radix's focus behavior. Desktop hover
+                      // still works the same way.
+                      className="shrink-0 inline-flex items-center justify-center rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      aria-label="Annex Ink supporter"
+                    >
+                      <Sparkles className="size-4 ink-icon" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    {profile.personalPlanSince
+                      ? `Annex Ink supporter since ${new Date(profile.personalPlanSince).getFullYear()}`
+                      : "Annex Ink supporter"}
+                  </TooltipContent>
+                </Tooltip>
+              )}
+            </div>
             {loading ? (
               <Skeleton className="mt-2 h-4 w-40" />
             ) : profile ? (

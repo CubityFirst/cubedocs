@@ -1,12 +1,50 @@
 import { okResponse, errorResponse, Errors, ROLE_RANK, type Role, type Member } from "../lib";
 import type { Env } from "../index";
 import type { Session } from "../lib";
+import { resolvePersonalPlan, type PersonalPlan } from "../../../auth/src/plan";
 
 const VALID_ROLES: Role[] = ["limited", "viewer", "editor", "admin", "owner"];
 
 interface MemberRow {
   id: string; project_id: string; user_id: string; email: string; name: string;
   role: Role; invited_by: string; created_at: string; accepted: number;
+}
+
+interface AuthPlanRow {
+  id: string;
+  personal_plan: string | null;
+  personal_plan_status: string | null;
+  personal_plan_started_at: number | null;
+  granted_plan: string | null;
+  granted_plan_expires_at: number | null;
+}
+
+// One D1 read against AUTH_DB returns the plan columns for every user
+// id in the list. Empty list short-circuits — D1 doesn't accept zero
+// placeholders in IN(). Map keys are user ids, values are the resolved
+// PersonalPlan ('free' | 'ink').
+async function loadMemberPlans(env: Env, userIds: string[]): Promise<Map<string, PersonalPlan>> {
+  const plans = new Map<string, PersonalPlan>();
+  if (userIds.length === 0) return plans;
+
+  const placeholders = userIds.map(() => "?").join(",");
+  const rows = await env.AUTH_DB.prepare(
+    `SELECT id, personal_plan, personal_plan_status, personal_plan_started_at,
+            granted_plan, granted_plan_expires_at
+     FROM users WHERE id IN (${placeholders})`,
+  ).bind(...userIds).all<AuthPlanRow>();
+
+  for (const r of rows.results) {
+    const resolved = resolvePersonalPlan({
+      granted_plan: r.granted_plan,
+      granted_plan_expires_at: r.granted_plan_expires_at,
+      personal_plan: r.personal_plan,
+      personal_plan_status: r.personal_plan_status,
+      personal_plan_started_at: r.personal_plan_started_at,
+    });
+    plans.set(r.id, resolved.plan);
+  }
+  return plans;
 }
 
 async function getCallerRole(db: D1Database, projectId: string, userId: string): Promise<Role | null> {
@@ -38,6 +76,8 @@ export async function handleMembers(
       "SELECT * FROM project_members WHERE project_id = ? ORDER BY created_at ASC",
     ).bind(projectId).all<MemberRow>();
 
+    const plans = await loadMemberPlans(env, rows.results.map(r => r.user_id));
+
     return okResponse(rows.results.map(r => ({
       id: r.id,
       projectId: r.project_id,
@@ -48,6 +88,7 @@ export async function handleMembers(
       accepted: r.accepted === 1,
       invitedBy: r.invited_by,
       createdAt: r.created_at,
+      personalPlan: plans.get(r.user_id) ?? "free",
     })));
   }
 

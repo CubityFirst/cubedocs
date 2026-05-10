@@ -14,6 +14,7 @@ import { handleGraph, handlePublicGraph, handleGraphReindex } from "./routes/gra
 import { handleProjectExport } from "./routes/export";
 import { handleSearch, handlePublicSearch } from "./routes/search";
 import { DocCollabRoom } from "./collab/DocCollabRoom";
+import { resolvePersonalPlan } from "../../auth/src/plan";
 
 export { DocCollabRoom };
 
@@ -146,6 +147,32 @@ export default {
         return addCorsHeaders(authRes);
       }
 
+      // /billing/* — authenticated, proxied to auth worker (Stripe Checkout
+      // and Customer Portal session creation). Public Stripe webhook is
+      // hit directly on the auth worker, not through here.
+      if (url.pathname === "/billing/checkout" && request.method === "POST") {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        const authHeader = request.headers.get("Authorization");
+        const authRes = await env.AUTH.fetch("https://auth/billing/checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
+          body: "{}",
+        });
+        return addCorsHeaders(authRes);
+      }
+      if (url.pathname === "/billing/portal" && request.method === "POST") {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        const authHeader = request.headers.get("Authorization");
+        const authRes = await env.AUTH.fetch("https://auth/billing/portal", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
+          body: "{}",
+        });
+        return addCorsHeaders(authRes);
+      }
+
       // PATCH /me/password — change password
       if (url.pathname === "/me/password" && request.method === "PATCH") {
         const session = await getSession(request, env);
@@ -173,7 +200,20 @@ export default {
         if (!lookupRes.ok) return addCorsHeaders(errorResponse(Errors.INTERNAL));
         const data = await lookupRes.json<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean; timezone: string | null } }>();
         if (!data.ok || !data.data) return addCorsHeaders(errorResponse(Errors.INTERNAL));
-        return addCorsHeaders(Response.json({ ok: true, data: { name: data.data.name, email: data.data.email, emailVerified: data.data.emailVerified, emailVerificationEnabled: data.data.emailVerificationEnabled, userId: session.userId, timezone: data.data.timezone } }));
+        return addCorsHeaders(Response.json({
+          ok: true,
+          data: {
+            name: data.data.name,
+            email: data.data.email,
+            emailVerified: data.data.emailVerified,
+            emailVerificationEnabled: data.data.emailVerificationEnabled,
+            userId: session.userId,
+            timezone: data.data.timezone,
+            personalPlan: session.personalPlan ?? "free",
+            personalPlanSince: session.personalPlanSince ?? null,
+            personalPlanStatus: session.personalPlanStatus ?? null,
+          },
+        }));
       }
 
       // PATCH /me — update authenticated user's name and/or timezone
@@ -324,11 +364,26 @@ export default {
            ORDER BY p.name ASC`,
         ).bind(session.userId, targetUserId).all<{ id: string; name: string; their_role: string }>();
 
+        const planRow = await env.AUTH_DB.prepare(
+          `SELECT personal_plan, personal_plan_status, personal_plan_started_at,
+                  granted_plan, granted_plan_expires_at
+           FROM users WHERE id = ?`,
+        ).bind(targetUserId).first<{
+          personal_plan: string | null;
+          personal_plan_status: string | null;
+          personal_plan_started_at: number | null;
+          granted_plan: string | null;
+          granted_plan_expires_at: number | null;
+        }>();
+        const resolvedPlan = planRow ? resolvePersonalPlan(planRow) : { plan: "free" as const, since: null };
+
         const profileData: Record<string, unknown> = {
           userId: lookupData.data.userId,
           name: lookupData.data.name,
           createdAt: lookupData.data.createdAt,
           sharedProjects: sharedRows.results.map(r => ({ id: r.id, name: r.name, theirRole: r.their_role })),
+          personalPlan: resolvedPlan.plan,
+          personalPlanSince: resolvedPlan.since,
         };
         if (lookupData.data.timezone) profileData.timezone = lookupData.data.timezone;
 

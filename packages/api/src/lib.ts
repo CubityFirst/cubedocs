@@ -2,6 +2,9 @@ export interface Session {
   userId: string;
   email: string;
   expiresAt: number;
+  personalPlan?: "free" | "ink";
+  personalPlanSince?: number | null;
+  personalPlanStatus?: string | null;
 }
 
 export interface Folder {
