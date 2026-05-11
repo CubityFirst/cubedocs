@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { getToken } from "@/lib/auth";
 import { AnnexLogo } from "@/components/AnnexLogo";
+import { InkSparkle } from "@/components/InkSparkle";
 import "./LandingPage.css";
 
 const WORDS = ["research", "campaigns", "ideas", "knowledge", "writing"];
@@ -257,6 +258,63 @@ export function LandingPage() {
                 </div>
               );
             })}
+          </div>
+        </div>
+      </section>
+
+      {/* INK PRICING */}
+      <hr className="l-section-divider" />
+      <section id="pricing" className="l-ink">
+        <div className="site-wrap">
+          <div className="l-features-label">Annex Ink</div>
+          <div className="l-ink-grid">
+            <div className="l-ink-copy">
+              <div className="l-ink-headline">
+                A small supporter tier.
+                <br />
+                <span>Cosmetic&nbsp;only.</span>
+              </div>
+              <p className="l-ink-sub">
+                Annex stays free. There's no paywall, no upsell, no missing button.
+                Annex Ink is a way to chip in if the project's useful to you — in
+                return, your account gets some quietly fancy decoration.
+              </p>
+              <div className="l-ink-price">
+                <span className="l-ink-price-amount">$5</span>
+                <span className="l-ink-price-unit">/month</span>
+              </div>
+              <Link className="l-btn-primary" to={isLoggedIn ? "/settings#billing" : "/register"}>
+                {isLoggedIn ? "Become a supporter" : "Get started →"}
+              </Link>
+            </div>
+
+            <div className="l-ink-card">
+              <div className="l-ink-card-head">
+                <span className="l-ink-card-icon"><InkSparkle className="l-ink-sparkle" /></span>
+                <div>
+                  <div className="l-ink-card-title">What you get</div>
+                  <div className="l-ink-card-sub">Cosmetic perks only — no extra features locked behind it.</div>
+                </div>
+              </div>
+              <ul className="l-ink-perks">
+                <li>
+                  <div className="l-ink-perk-title">Animated avatar ring</div>
+                  <div className="l-ink-perk-desc">Pick from four styles — shimmer, aurora, ember, or mono.</div>
+                </li>
+                <li>
+                  <div className="l-ink-perk-title">Custom collab cursor colour</div>
+                  <div className="l-ink-perk-desc">Override the default and stand out in shared documents.</div>
+                </li>
+                <li>
+                  <div className="l-ink-perk-title">Rainbow sparkle by your name</div>
+                  <div className="l-ink-perk-desc">A small animated mark next to your profile, everywhere it shows.</div>
+                </li>
+                <li>
+                  <div className="l-ink-perk-title">Support Annex</div>
+                  <div className="l-ink-perk-desc">Keeps the workers running and the project moving. Cancel anytime.</div>
+                </li>
+              </ul>
+            </div>
           </div>
         </div>
       </section>
