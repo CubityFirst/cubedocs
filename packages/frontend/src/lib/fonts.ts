@@ -27,7 +27,7 @@ export const FONT_LABELS: Record<FontChoice, string> = {
 };
 
 export const DEFAULT_READING_FONT: FontChoice = "sans";
-export const DEFAULT_EDITING_FONT: FontChoice = "sans";
+export const DEFAULT_EDITING_FONT: FontChoice = "mono";
 export const DEFAULT_UI_FONT: FontChoice = "sans";
 
 export function resolveFontChoice(value: string | null | undefined, fallback: FontChoice): FontChoice {

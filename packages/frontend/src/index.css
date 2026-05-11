@@ -45,7 +45,7 @@
      wysiwyg/styles.css. Overridden at runtime by main.tsx (cookie boot) and
      DocsLayout (state from /api/me) based on the user's per-tier choice. */
   --reading-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --editing-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --editing-font: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --ui-font: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
   --background: oklch(1 0 0);
