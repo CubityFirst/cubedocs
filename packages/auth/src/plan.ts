@@ -13,10 +13,11 @@
 export type PersonalPlan = "free" | "ink";
 
 // Allowed ring style ids. Default ('shimmer') is what every supporter gets
-// before customising; null on the row means "use the default". Adding a
-// new style: append the id here, add a CSS variant in ink-border.css, and
-// add it to INK_PRESENCE_RING_STYLES below.
-export const INK_RING_STYLES = ["shimmer", "aurora", "ember", "mono"] as const;
+// before customising; null on the row means "use the default". 'none'
+// opts out of the animated ring entirely. Adding a new style: append the
+// id here, add a CSS variant in ink-border.css, and add it to
+// INK_PRESENCE_RING_STYLES below.
+export const INK_RING_STYLES = ["shimmer", "aurora", "ember", "mono", "none"] as const;
 export type InkRingStyle = typeof INK_RING_STYLES[number];
 
 export function isInkRingStyle(value: unknown): value is InkRingStyle {

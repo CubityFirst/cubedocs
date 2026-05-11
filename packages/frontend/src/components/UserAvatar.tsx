@@ -13,7 +13,8 @@ export type PersonalPlan = "free" | "ink";
 
 // Allowed values mirror INK_RING_STYLES in packages/auth/src/plan.ts.
 // Anything unrecognised falls back to the default shimmer style.
-const KNOWN_INK_STYLES = new Set(["shimmer", "aurora", "ember", "mono"]);
+// 'none' opts out of the ring entirely — the avatar renders bare.
+const KNOWN_INK_STYLES = new Set(["shimmer", "aurora", "ember", "mono", "none"]);
 
 interface UserAvatarProps {
   userId: string;
@@ -41,6 +42,7 @@ export function UserAvatar({ userId, name, className, cacheBust, personalPlan, p
   );
   if (personalPlan === "ink") {
     const style = personalPlanStyle && KNOWN_INK_STYLES.has(personalPlanStyle) ? personalPlanStyle : "shimmer";
+    if (style === "none") return inner;
     const cls = style === "shimmer" ? "ink-border inline-block" : `ink-border ink-style-${style} inline-block`;
     return <span className={cls}>{inner}</span>;
   }

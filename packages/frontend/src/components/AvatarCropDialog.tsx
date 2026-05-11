@@ -9,6 +9,13 @@ const CONTAINER_H = 260;
 const CIRCLE_R = 116;
 const OUTPUT_SIZE = 512;
 
+// Each entry is one fully-composited animation frame (already resolved
+// against the GIF's disposal semantics) at the source GIF's logical
+// screen size. We hold ImageBitmaps so the apply step can drawImage
+// them through the same transform pipeline as a static crop. Output
+// goes to animated WebP regardless of input format.
+type GifFrame = { bmp: ImageBitmap; delayMs: number };
+
 function clampOffset(ox: number, oy: number, scale: number, natW: number, natH: number, rotation: number) {
   const swapped = rotation === 90 || rotation === 270;
   const effW = (swapped ? natH : natW) * scale;
@@ -50,6 +57,9 @@ export function AvatarCropDialog({ file, onApply, onClose, shape = "circle" }: A
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [rotation, setRotation] = useState(0);
   const [applying, setApplying] = useState(false);
+  const [gifFrames, setGifFrames] = useState<GifFrame[] | null>(null);
+  const [gifDecoding, setGifDecoding] = useState(false);
+  const [encodeProgress, setEncodeProgress] = useState<{ done: number; total: number } | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   // Map of active pointer ids → their current client positions
@@ -68,6 +78,85 @@ export function AvatarCropDialog({ file, onApply, onClose, shape = "circle" }: A
     setImageSrc(url);
     return () => URL.revokeObjectURL(url);
   }, [file]);
+
+  // Decode animated GIFs upfront so the Apply step can re-encode every
+  // frame through the user's crop transform. Single-frame GIFs fall back
+  // to the static JPEG path (no animation to preserve). Bitmap cleanup
+  // is handled by the gifFrames cleanup effect below, not here.
+  useEffect(() => {
+    if (file.type !== "image/gif") {
+      setGifFrames(null);
+      return;
+    }
+    let cancelled = false;
+    setGifDecoding(true);
+    (async () => {
+      try {
+        const [{ parseGIF, decompressFrames }, buf] = await Promise.all([
+          import("gifuct-js"),
+          file.arrayBuffer(),
+        ]);
+        if (cancelled) return;
+        const parsed = parseGIF(buf);
+        const raw = decompressFrames(parsed, true);
+        if (raw.length <= 1) return;
+
+        const lsdW = parsed.lsd.width;
+        const lsdH = parsed.lsd.height;
+        const compose = document.createElement("canvas");
+        compose.width = lsdW;
+        compose.height = lsdH;
+        const ctx = compose.getContext("2d", { willReadFrequently: true })!;
+
+        const out: GifFrame[] = [];
+        let prevDisposal = 0;
+        let prevDims: { top: number; left: number; width: number; height: number } | null = null;
+        let savedState: ImageData | null = null;
+
+        for (const frame of raw) {
+          if (cancelled) return;
+          // Apply previous frame's disposal before drawing this one.
+          // Type 2 = clear the prior frame's rectangle; type 3 = restore
+          // the canvas to whatever it looked like before the prior frame.
+          // 0/1 = leave alone (the common case).
+          if (prevDisposal === 2 && prevDims) {
+            ctx.clearRect(prevDims.left, prevDims.top, prevDims.width, prevDims.height);
+          } else if (prevDisposal === 3 && savedState) {
+            ctx.putImageData(savedState, 0, 0);
+          }
+          savedState = frame.disposalType === 3 ? ctx.getImageData(0, 0, lsdW, lsdH) : null;
+
+          // Composite the frame patch via a temp canvas so alpha=0 pixels
+          // don't overwrite the cumulative state (putImageData ignores
+          // existing pixels — drawImage respects them).
+          const patchData = new ImageData(new Uint8ClampedArray(frame.patch), frame.dims.width, frame.dims.height);
+          const patchCanvas = document.createElement("canvas");
+          patchCanvas.width = frame.dims.width;
+          patchCanvas.height = frame.dims.height;
+          patchCanvas.getContext("2d")!.putImageData(patchData, 0, 0);
+          ctx.drawImage(patchCanvas, frame.dims.left, frame.dims.top);
+
+          const bmp = await createImageBitmap(compose);
+          if (cancelled) { bmp.close(); return; }
+          out.push({ bmp, delayMs: frame.delay > 0 ? frame.delay : 100 });
+          prevDims = frame.dims;
+          prevDisposal = frame.disposalType ?? 0;
+        }
+        if (!cancelled) setGifFrames(out);
+        else out.forEach(f => f.bmp.close());
+      } catch (err) {
+        console.error("GIF decode failed; falling back to static crop", err);
+      } finally {
+        if (!cancelled) setGifDecoding(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [file]);
+
+  // Release decoded bitmaps when the set is replaced or the dialog unmounts.
+  useEffect(() => {
+    return () => { gifFrames?.forEach(f => f.bmp.close()); };
+  }, [gifFrames]);
 
   function handleImageLoad(e: React.SyntheticEvent<HTMLImageElement>) {
     const { naturalWidth: w, naturalHeight: h } = e.currentTarget;
@@ -169,10 +258,67 @@ export function AvatarCropDialog({ file, onApply, onClose, shape = "circle" }: A
     setRotation(0);
   }
 
+  // Reproduce the layout the user sees in the preview onto a 512×512
+  // canvas: translate to centre → fit the circle to the output → apply
+  // pan/rotate/zoom → draw the source image centred. Same transform is
+  // used for static images and animated GIF frames so the framing matches
+  // 1:1.
+  function applyCropTransform(ctx: CanvasRenderingContext2D, srcW: number, srcH: number) {
+    ctx.translate(OUTPUT_SIZE / 2, OUTPUT_SIZE / 2);
+    ctx.scale(OUTPUT_SIZE / (CIRCLE_R * 2), OUTPUT_SIZE / (CIRCLE_R * 2));
+    ctx.translate(offset.x, offset.y);
+    ctx.rotate((rotation * Math.PI) / 180);
+    ctx.scale(scale, scale);
+    ctx.translate(-srcW / 2, -srcH / 2);
+  }
+
+  async function encodeAnimatedWebP(frames: GifFrame[]): Promise<Blob> {
+    const { muxAnimatedWebP } = await import("@/lib/webpMux");
+    const canvas = document.createElement("canvas");
+    canvas.width = OUTPUT_SIZE;
+    canvas.height = OUTPUT_SIZE;
+    const ctx = canvas.getContext("2d")!;
+    const encoded: { webp: Uint8Array; delayMs: number }[] = [];
+    for (let i = 0; i < frames.length; i++) {
+      const f = frames[i];
+      // Match the static path's implicit black background — the preview
+      // shows the same and the avatar gets clipped to a circle anyway.
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.fillStyle = "black";
+      ctx.fillRect(0, 0, OUTPUT_SIZE, OUTPUT_SIZE);
+      ctx.save();
+      applyCropTransform(ctx, f.bmp.width, f.bmp.height);
+      ctx.drawImage(f.bmp, 0, 0);
+      ctx.restore();
+
+      const blob = await new Promise<Blob>((resolve, reject) =>
+        canvas.toBlob(b => (b ? resolve(b) : reject(new Error("WebP encode failed"))), "image/webp", 0.9),
+      );
+      encoded.push({ webp: new Uint8Array(await blob.arrayBuffer()), delayMs: f.delayMs });
+      setEncodeProgress({ done: i + 1, total: frames.length });
+      // Yield so the UI can repaint between frames — the per-frame WebP
+      // encode is the slow step; without a yield a 100-frame avatar would
+      // freeze the dialog for several seconds with no feedback.
+      await new Promise<void>(r => setTimeout(r, 0));
+    }
+    const muxed = muxAnimatedWebP(encoded, OUTPUT_SIZE, OUTPUT_SIZE);
+    // Copy into a fresh ArrayBuffer — TS's lib.dom narrows BlobPart to an
+    // ArrayBuffer-backed view, not a generic ArrayBufferLike.
+    const buf = new ArrayBuffer(muxed.byteLength);
+    new Uint8Array(buf).set(muxed);
+    return new Blob([buf], { type: "image/webp" });
+  }
+
   async function handleApply() {
     if (!imageSrc) return;
     setApplying(true);
     try {
+      if (gifFrames && gifFrames.length > 0) {
+        const blob = await encodeAnimatedWebP(gifFrames);
+        await onApply(blob);
+        return;
+      }
+
       const img = new Image();
       await new Promise<void>((resolve, reject) => {
         img.onload = () => resolve();
@@ -184,23 +330,17 @@ export function AvatarCropDialog({ file, onApply, onClose, shape = "circle" }: A
       canvas.width = OUTPUT_SIZE;
       canvas.height = OUTPUT_SIZE;
       const ctx = canvas.getContext("2d")!;
-
-      // Mirror the CSS layout: output centre = circle centre, then apply
-      // offset → rotation → image scale → draw centred.
-      ctx.translate(OUTPUT_SIZE / 2, OUTPUT_SIZE / 2);
-      ctx.scale(OUTPUT_SIZE / (CIRCLE_R * 2), OUTPUT_SIZE / (CIRCLE_R * 2));
-      ctx.translate(offset.x, offset.y);
-      ctx.rotate((rotation * Math.PI) / 180);
-      ctx.scale(scale, scale);
-      ctx.drawImage(img, -naturalSize.w / 2, -naturalSize.h / 2);
+      applyCropTransform(ctx, naturalSize.w, naturalSize.h);
+      ctx.drawImage(img, 0, 0);
 
       const blob = await new Promise<Blob>((resolve, reject) =>
-        canvas.toBlob(b => (b ? resolve(b) : reject(new Error("Export failed"))), "image/jpeg", 0.92),
+        canvas.toBlob(b => (b ? resolve(b) : reject(new Error("Export failed"))), "image/webp", 0.9),
       );
 
       await onApply(blob);
     } finally {
       setApplying(false);
+      setEncodeProgress(null);
     }
   }
 
@@ -318,8 +458,14 @@ export function AvatarCropDialog({ file, onApply, onClose, shape = "circle" }: A
             <Button type="button" variant="outline" onClick={onClose} disabled={applying}>
               Cancel
             </Button>
-            <Button type="button" onClick={handleApply} disabled={applying || !imageSrc}>
-              {applying ? "Applying…" : "Apply"}
+            <Button type="button" onClick={handleApply} disabled={applying || gifDecoding || !imageSrc}>
+              {gifDecoding
+                ? "Decoding…"
+                : encodeProgress
+                  ? `Encoding ${encodeProgress.done}/${encodeProgress.total}…`
+                  : applying
+                    ? "Applying…"
+                    : "Apply"}
             </Button>
           </div>
         </DialogFooter>

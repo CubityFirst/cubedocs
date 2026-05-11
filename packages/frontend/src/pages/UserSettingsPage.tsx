@@ -40,11 +40,12 @@ import { formatInkSince } from "@/lib/inkDate";
 // Mirrors INK_RING_STYLES in packages/auth/src/plan.ts. Order is the
 // display order in the picker. 'shimmer' is the default — selecting it
 // stores NULL on the row.
-const INK_RING_STYLE_OPTIONS: { id: "shimmer" | "aurora" | "ember" | "mono"; label: string }[] = [
+const INK_RING_STYLE_OPTIONS: { id: "shimmer" | "aurora" | "ember" | "mono" | "none"; label: string }[] = [
   { id: "shimmer", label: "Shimmer" },
   { id: "aurora", label: "Aurora" },
   { id: "ember", label: "Ember" },
   { id: "mono", label: "Mono" },
+  { id: "none", label: "None" },
 ];
 
 const STRENGTH_LABELS = ["Very weak", "Weak", "Fair", "Strong", "Very strong"];
@@ -286,7 +287,7 @@ export function UserSettingsPage() {
   async function handleCropApply(blob: Blob) {
     const token = getToken();
     const form = new FormData();
-    form.append("file", new File([blob], "avatar.jpg", { type: blob.type }));
+    form.append("file", new File([blob], "avatar.webp", { type: blob.type }));
     const res = await fetch("/api/avatar", {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
@@ -1374,6 +1375,10 @@ export function UserSettingsPage() {
                         <div className="mt-3 flex flex-wrap gap-3">
                           {INK_RING_STYLE_OPTIONS.map(opt => {
                             const active = (personalPlanStyle ?? "shimmer") === opt.id;
+                            const swatch = <span className="block size-8 rounded-full bg-muted" />;
+                            const wrappedSwatch = opt.id === "none"
+                              ? swatch
+                              : <span className={opt.id === "shimmer" ? "ink-border inline-block" : `ink-border ink-style-${opt.id} inline-block`}>{swatch}</span>;
                             return (
                               <button
                                 key={opt.id}
@@ -1383,9 +1388,7 @@ export function UserSettingsPage() {
                                 className={`flex flex-col items-center gap-1.5 rounded-md border px-3 py-2 transition-colors disabled:opacity-50 ${active ? "border-foreground bg-accent" : "border-border hover:bg-accent"}`}
                                 aria-pressed={active}
                               >
-                                <span className={opt.id === "shimmer" ? "ink-border inline-block" : `ink-border ink-style-${opt.id} inline-block`}>
-                                  <span className="block size-8 rounded-full bg-muted" />
-                                </span>
+                                {wrappedSwatch}
                                 <span className="text-xs">{opt.label}</span>
                               </button>
                             );

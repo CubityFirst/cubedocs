@@ -734,7 +734,8 @@ export function SiteSettingsPage() {
 
   // Wide-slot upload: validate then upload the raw file.
   // Square-slot upload arrives here pre-cropped from AvatarCropDialog as a
-  // 512×512 JPEG blob (no further validation needed beyond the server checks).
+  // 512×512 WebP blob — static for stills, animated for animated GIF input
+  // (the crop dialog re-encodes every frame and muxes them).
   async function uploadLogoBlob(variant: LogoVariant, file: File | Blob, filename: string) {
     if (!projectId) return;
     setLogoError(prev => ({ ...prev, [variant]: null }));
@@ -777,7 +778,7 @@ export function SiteSettingsPage() {
   }
 
   async function handleSquareCropApply(blob: Blob) {
-    await uploadLogoBlob("square", blob, "logo-square.jpg");
+    await uploadLogoBlob("square", blob, "logo-square.webp");
     setSquareCropFile(null);
     if (squareLogoInputRef.current) squareLogoInputRef.current.value = "";
   }
