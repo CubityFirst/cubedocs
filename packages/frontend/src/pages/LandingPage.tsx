@@ -276,7 +276,7 @@ export function LandingPage() {
               </div>
               <p className="l-ink-sub">
                 There's no paywall, no upsell, no missing button. Annex Ink is a
-                way to chip in if the project's useful to you — in return, your
+                way to chip in if the project's useful to you - in return, your
                 account gets some quietly fancy decoration.
               </p>
               <div className="l-ink-price">
@@ -293,13 +293,13 @@ export function LandingPage() {
                 <span className="l-ink-card-icon"><InkSparkle className="l-ink-sparkle" /></span>
                 <div>
                   <div className="l-ink-card-title">What you get</div>
-                  <div className="l-ink-card-sub">Cosmetic perks only — no extra features locked behind it.</div>
+                  <div className="l-ink-card-sub">Cosmetic perks only - no extra features locked behind it.</div>
                 </div>
               </div>
               <ul className="l-ink-perks">
                 <li>
                   <div className="l-ink-perk-title">Animated avatar ring</div>
-                  <div className="l-ink-perk-desc">Pick from four styles — shimmer, aurora, ember, or mono.</div>
+                  <div className="l-ink-perk-desc">Pick from four styles: shimmer, aurora, ember, or mono.</div>
                 </li>
                 <li>
                   <div className="l-ink-perk-title">Custom collab cursor colour</div>
