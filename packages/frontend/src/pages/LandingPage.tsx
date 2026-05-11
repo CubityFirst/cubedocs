@@ -275,9 +275,9 @@ export function LandingPage() {
                 <span>Cosmetic&nbsp;only.</span>
               </div>
               <p className="l-ink-sub">
-                Annex stays free. There's no paywall, no upsell, no missing button.
-                Annex Ink is a way to chip in if the project's useful to you — in
-                return, your account gets some quietly fancy decoration.
+                There's no paywall, no upsell, no missing button. Annex Ink is a
+                way to chip in if the project's useful to you — in return, your
+                account gets some quietly fancy decoration.
               </p>
               <div className="l-ink-price">
                 <span className="l-ink-price-amount">$5</span>
