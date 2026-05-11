@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import {
   Dialog,
   DialogContent,
@@ -14,7 +14,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { UserAvatar } from "@/components/UserAvatar";
 import { getToken, clearToken } from "@/lib/auth";
-import { CalendarDays, Clock, Settings, KeyRound, LogOut, ChevronRight, CodeXml, FlaskConical, Globe } from "lucide-react";
+import { CalendarDays, Clock, Settings, KeyRound, LogOut, ChevronRight, CodeXml, FlaskConical, Globe, Eye } from "lucide-react";
 import { formatTimeInZone, getTimezoneGroup } from "@/lib/timezone";
 import { formatInkSince } from "@/lib/inkDate";
 import { TimezoneMap } from "@/components/TimezoneMap";
@@ -91,15 +91,29 @@ const BADGE_BETA_TESTER = 1 << 1;
 interface UserProfileCardProps {
   userId: string;
   name: string;
-  children: React.ReactNode;
+  children?: React.ReactNode;
+  /** Controlled open state. When provided, the dialog is fully controlled and `children`/`DialogTrigger` are skipped. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Force the bio/favourites/shared view even when viewing your own profile (used by the /u/:userId route). */
+  forceViewAsPublic?: boolean;
 }
 
-export function UserProfileCard({ userId, name, children }: UserProfileCardProps) {
-  const [open, setOpen] = useState(false);
+export function UserProfileCard({ userId, name, children, open: controlledOpen, onOpenChange, forceViewAsPublic }: UserProfileCardProps) {
+  const isControlled = controlledOpen !== undefined;
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = isControlled ? controlledOpen : uncontrolledOpen;
+  const setOpen = (next: boolean) => {
+    if (!isControlled) setUncontrolledOpen(next);
+    onOpenChange?.(next);
+  };
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(false);
   const [isSelf, setIsSelf] = useState<boolean>(currentUserIdCache === userId);
   const navigate = useNavigate();
+  const location = useLocation();
+  const showPublicView = forceViewAsPublic || !isSelf;
+  const displayName = name || profile?.name || "";
 
   useEffect(() => {
     if (!open || profile) return;
@@ -128,14 +142,14 @@ export function UserProfileCard({ userId, name, children }: UserProfileCardProps
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{children}</DialogTrigger>
+      {children !== undefined && <DialogTrigger asChild>{children}</DialogTrigger>}
       <DialogContent
-        className="max-w-lg p-0 overflow-hidden"
+        className="max-w-lg p-0 overflow-hidden focus:outline-none focus-visible:outline-none focus-visible:ring-0"
         onContextMenu={e => e.stopPropagation()}
         onOpenAutoFocus={e => e.preventDefault()}
       >
-        <DialogTitle className="sr-only">{name}'s profile</DialogTitle>
-        <DialogDescription className="sr-only">Profile information for {name}</DialogDescription>
+        <DialogTitle className="sr-only">{displayName}'s profile</DialogTitle>
+        <DialogDescription className="sr-only">Profile information for {displayName}</DialogDescription>
 
         {/* Header */}
         <div className="relative overflow-hidden flex items-center gap-5 px-6 pt-6 pb-5">
@@ -152,9 +166,9 @@ export function UserProfileCard({ userId, name, children }: UserProfileCardProps
             );
           })()}
 
-          <UserAvatar userId={userId} name={name} className="relative z-10 size-20 shrink-0 text-2xl" personalPlan={profile?.personalPlan} personalPlanStyle={profile?.personalPlanStyle} />
+          <UserAvatar userId={userId} name={displayName} className="relative z-10 size-20 shrink-0 text-2xl" personalPlan={profile?.personalPlan} personalPlanStyle={profile?.personalPlanStyle} />
           <div className="relative z-10 min-w-0 flex-1">
-            <h2 className="truncate text-lg font-semibold">{name}</h2>
+            <h2 className="truncate text-lg font-semibold">{displayName}</h2>
             {profile && (() => {
               const badgeBits = profile.badges ?? 0;
               const isInk = profile.personalPlan === "ink";
@@ -237,13 +251,22 @@ export function UserProfileCard({ userId, name, children }: UserProfileCardProps
 
         {/* Separator hidden when nothing follows (other-user view, no bio /
             favourites / shared) so the dialog doesn't show an orphaned line. */}
-        {(isSelf || loading || (profile && (profile.bio || profile.favouriteSites.length > 0 || profile.sharedProjects.length > 0))) && (
+        {((!showPublicView) || loading || (profile && (profile.bio || profile.favouriteSites.length > 0 || profile.sharedProjects.length > 0))) && (
           <Separator />
         )}
 
         {/* Shared sites — or quick self-actions when viewing your own card */}
-        {isSelf ? (
+        {!showPublicView ? (
           <div className="flex flex-col gap-1 px-3 py-3">
+            <button
+              type="button"
+              onClick={() => { setOpen(false); navigate(`/u/${userId}`, { state: { backgroundLocation: location } }); }}
+              className="group flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-muted/60"
+            >
+              <Eye className="size-4 shrink-0 text-muted-foreground" />
+              <span className="flex-1 text-sm font-medium">View your public profile</span>
+              <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+            </button>
             <button
               type="button"
               onClick={() => { setOpen(false); navigate("/settings"); }}
