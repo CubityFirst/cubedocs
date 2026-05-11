@@ -196,3 +196,13 @@ body {
     break-inside: avoid;
   }
 }
+
+/* Radix ScrollArea wraps its viewport's content in `<div style="display:table">`
+   so horizontal-scroll cases work, but for the public-doc reader we only want
+   vertical scrolling and that wrapper collapses to ~32px regardless of how
+   tall the WysiwygEditor inside is — which breaks scroll-to-heading by
+   making the viewport think there's nothing to scroll. Force a block layout
+   on the public-doc scroller only. */
+.public-doc-scroller [data-radix-scroll-area-viewport] > div {
+  display: block !important;
+}

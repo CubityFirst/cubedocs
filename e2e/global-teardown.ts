@@ -49,6 +49,6 @@ export default async function globalTeardown() {
   run(
     apiDir,
     "cubedocs-main",
-    "DELETE FROM projects WHERE name LIKE 'E2E Project %' OR name LIKE 'Invite Test %' OR name LIKE 'Limited Perm Test %';",
+    "DELETE FROM projects WHERE name LIKE 'E2E Project %' OR name LIKE 'E2E Scroll %' OR name LIKE 'Invite Test %' OR name LIKE 'Limited Perm Test %';",
   );
 }

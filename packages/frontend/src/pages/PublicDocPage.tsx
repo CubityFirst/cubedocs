@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSwipeGesture } from "@/hooks/useSwipeGesture";
 import { SearchPalette } from "@/components/SearchPalette";
 import { useParams, useNavigate, NavLink, useLocation } from "react-router-dom";
+import { EditorView } from "@codemirror/view";
 import { parseFrontmatter } from "@/lib/frontmatter";
-import { toHeadingId } from "@/lib/headingSlug";
+import { toHeadingId, findHeadingLine } from "@/lib/headingSlug";
 import { WysiwygEditor } from "@/components/wysiwyg/WysiwygEditor";
 import { GraphView, type GraphData } from "@/components/GraphView";
 import { LinkedDocsPanel } from "@/components/LinkedDocsPanel";
@@ -449,30 +450,133 @@ export function PublicDocPage() {
     }
   }, [data, projectId, docId, navigate]);
 
-  // Scroll to #heading anchor when one is present in the URL. Retries for a
-  // few frames because the WysiwygEditor mounts asynchronously and the heading
-  // line (with its slug id) isn't in the DOM the instant `data` becomes set.
+  // Shared scroll-to-heading helper used by both the URL-hash effect below and
+  // the outline buttons. Drives CodeMirror's own `scrollIntoView` against the
+  // heading's *line position* (parsed from the markdown source). That's
+  // crucial because:
+  //   - CodeMirror virtualises its DOM — far-off-screen heading lines may not
+  //     exist as elements, so `getElementById` would fail.
+  //   - The Lezer markdown parser sometimes fails to tag a `## Heading` as an
+  //     ATXHeading after long paragraphs, so even when the line is rendered
+  //     it may lack the `id` attribute our decoration would normally set.
+  //   - CM walks up to find the actual scroll parent (the Radix viewport)
+  //     and writes scrollTop on it directly, so the scroll works whether the
+  //     user is at the top, at the bottom, or anywhere else in the doc.
+  //
+  // After the initial scroll we watch the content with a ResizeObserver for
+  // ~2.5s and re-scroll on layout shifts (images loading, etc.).
+  const scrollAttemptRef = useRef<{ cancel: () => void } | null>(null);
+  const docContent = data?.doc.content;
+  const scrollToHash = useCallback((hash: string) => {
+    scrollAttemptRef.current?.cancel();
+    if (!hash || !docContent) return;
+
+    const lineNum = findHeadingLine(docContent, hash);
+    if (lineNum < 0) return;
+
+    let cancelled = false;
+    let observer: ResizeObserver | null = null;
+    let stopTimer: ReturnType<typeof setTimeout> | null = null;
+
+    function getView(): EditorView | null {
+      const cmEditor = document.querySelector(".cm-wysiwyg--reading .cm-editor") as HTMLElement | null;
+      return cmEditor ? EditorView.findFromDOM(cmEditor) : null;
+    }
+
+    // Compute the target scrollTop from CM's height map (`lineBlockAt`),
+    // which works whether or not the line is currently rendered as DOM, then
+    // write it directly on the Radix viewport. We deliberately avoid CM's own
+    // `scrollIntoView` effect — it competes with this manual write on the
+    // next measure cycle and leaves the scroll position slightly off.
+    function doScroll(): boolean {
+      const view = getView();
+      if (!view) return false;
+      if (lineNum > view.state.doc.lines) return false;
+      const pos = view.state.doc.line(lineNum).from;
+      const viewport = view.scrollDOM.closest("[data-radix-scroll-area-viewport]") as HTMLElement | null;
+      if (!viewport) {
+        view.dispatch({ effects: EditorView.scrollIntoView(pos, { y: "start" }) });
+        return true;
+      }
+      const lineBlock = view.lineBlockAt(pos);
+      const contentRect = view.contentDOM.getBoundingClientRect();
+      const vpRect = viewport.getBoundingClientRect();
+      const contentTopInScroll = contentRect.top - vpRect.top + viewport.scrollTop;
+      const target = contentTopInScroll + lineBlock.top;
+      const max = viewport.scrollHeight - viewport.clientHeight;
+      viewport.scrollTop = Math.max(0, Math.min(max, target));
+      return true;
+    }
+
+    let userScrollCleanup: (() => void) | null = null;
+    function cancelAttempt() {
+      cancelled = true;
+      observer?.disconnect();
+      observer = null;
+      if (stopTimer) clearTimeout(stopTimer);
+      userScrollCleanup?.();
+      userScrollCleanup = null;
+    }
+
+    function startWatching() {
+      const view = getView();
+      if (!view) return;
+      const viewport = view.scrollDOM.closest("[data-radix-scroll-area-viewport]") as HTMLElement | null;
+      const watchTarget = viewport?.firstElementChild ?? viewport ?? view.scrollDOM;
+      observer = new ResizeObserver(() => { doScroll(); });
+      observer.observe(watchTarget);
+      stopTimer = setTimeout(cancelAttempt, 2500);
+
+      // Treat any user-initiated scroll input as a cancel — once the user
+      // has reached for the wheel / touchpad / a key, our re-anchor should
+      // back off so we don't yank them away from where they wanted to be.
+      if (viewport) {
+        const cancelOnUser = () => cancelAttempt();
+        const onKey = (e: KeyboardEvent) => {
+          if (
+            e.key === "ArrowUp" || e.key === "ArrowDown" ||
+            e.key === "PageUp" || e.key === "PageDown" ||
+            e.key === "Home" || e.key === "End" || e.key === " "
+          ) cancelAttempt();
+        };
+        viewport.addEventListener("wheel", cancelOnUser, { passive: true });
+        viewport.addEventListener("touchstart", cancelOnUser, { passive: true });
+        viewport.addEventListener("touchmove", cancelOnUser, { passive: true });
+        window.addEventListener("keydown", onKey);
+        userScrollCleanup = () => {
+          viewport.removeEventListener("wheel", cancelOnUser);
+          viewport.removeEventListener("touchstart", cancelOnUser);
+          viewport.removeEventListener("touchmove", cancelOnUser);
+          window.removeEventListener("keydown", onKey);
+        };
+      }
+    }
+
+    let attempts = 0;
+    function tick() {
+      if (cancelled) return;
+      if (doScroll()) {
+        startWatching();
+        return;
+      }
+      if (++attempts < 120) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+
+    scrollAttemptRef.current = { cancel: cancelAttempt };
+  }, [docContent]);
+
+  useEffect(() => () => scrollAttemptRef.current?.cancel(), []);
+
+  // Scroll to #heading anchor when one is present in the URL.
   useEffect(() => {
     if (!data || isGraph) return;
     const raw = location.hash.slice(1);
     if (!raw) return;
     let hash: string;
     try { hash = decodeURIComponent(raw); } catch { hash = raw; }
-    if (!hash) return;
-    let cancelled = false;
-    let attempts = 0;
-    function tick() {
-      if (cancelled) return;
-      const el = document.getElementById(hash);
-      if (el) {
-        el.scrollIntoView({ block: "start" });
-        return;
-      }
-      if (++attempts < 30) requestAnimationFrame(tick);
-    }
-    requestAnimationFrame(tick);
-    return () => { cancelled = true; };
-  }, [data, docId, isGraph, location.hash]);
+    scrollToHash(hash);
+  }, [data, docId, isGraph, location.hash, scrollToHash]);
 
   // Fetch graph once when viewing a doc on a project with the published graph enabled
   useEffect(() => {
@@ -706,7 +810,7 @@ export function PublicDocPage() {
             )}
           </div>
         ) : (
-        <ScrollArea className="flex-1">
+        <ScrollArea className="flex-1 public-doc-scroller">
           {selectedFile ? (
             <PublicFileView file={selectedFile} projectId={projectId ?? ""} />
           ) : (
@@ -807,10 +911,25 @@ export function PublicDocPage() {
                           </p>
                           <ScrollArea className="max-h-[calc(100vh-8rem)]">
                             <nav className="flex flex-col gap-0.5">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  try { window.history.replaceState(null, "", window.location.pathname); } catch { /* */ }
+                                  const scroller = document.querySelector(".public-doc-scroller");
+                                  const vp = scroller?.querySelector("[data-radix-scroll-area-viewport]") as HTMLElement | null;
+                                  if (vp) vp.scrollTop = 0;
+                                }}
+                                className="truncate rounded px-2 py-1 text-left text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                              >
+                                Top
+                              </button>
                               {headings.map((h, i) => (
                                 <button
                                   key={i}
-                                  onClick={() => document.getElementById(h.id)?.scrollIntoView({ behavior: "smooth" })}
+                                  onClick={() => {
+                                    try { window.history.replaceState(null, "", `#${h.id}`); } catch { /* */ }
+                                    scrollToHash(h.id);
+                                  }}
                                   style={{ paddingLeft: `${(h.level - 1) * 0.75}rem` }}
                                   className="truncate rounded px-2 py-1 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                                 >

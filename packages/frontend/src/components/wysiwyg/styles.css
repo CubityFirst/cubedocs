@@ -7,6 +7,16 @@
 .cm-wysiwyg--reading .cm-scroller {
   overflow: visible !important;
   padding: 0 !important;
+  /* `enforceFullHeightInReadingMode` writes `min-height` here to keep CM's
+     viewport open while lines are still being measured. As measurements
+     tighten the heightmap, min-height shrinks — animate the change so the
+     gap below the editor slides closed rather than snapping. */
+  transition: min-height 220ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cm-wysiwyg--reading .cm-scroller {
+    transition: none;
+  }
 }
 .cm-wysiwyg--reading .cm-content {
   padding: 0 !important;

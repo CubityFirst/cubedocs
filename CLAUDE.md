@@ -24,7 +24,7 @@ Authentication uses `Authorization: Bearer <JWT>` headers. JWTs are issued by th
 
 ## Frontend Notes
 
-- UI components from shadcn/ui — always use these instead of raw HTML elements
+- UI components from shadcn/ui — always use these instead of raw HTML elements when possible
 - Document rendering and editing both go through `packages/frontend/src/components/wysiwyg/WysiwygEditor.tsx` (CodeMirror 6, Lezer markdown grammar, decoration-based inline-rendered widgets). The `mode` prop selects `"reading"` | `"editing"` | `"raw"`.
 - `react-markdown` + remark plugins is still used for the AI-summary block in `DocPage.tsx` and the file-summary block in `FileManager.tsx`, but not for the main document body.
 - Authenticated images use the `AuthenticatedImage` component (fetches with auth header)
@@ -44,6 +44,14 @@ Personal supporter subscription ($5/mo) with Stripe billing, comp-grant override
 ## Realtime Collaboration
 
 Yjs-based realtime co-editing gated per-project by `projects.features & 4` (`ProjectFeatures.REALTIME`), served from the `DocCollabRoom` Durable Object behind the API worker. **Anything touching `DocCollabRoom`, the `/api/docs/:id/collab` WebSocket route, `CollabProvider`, `EditorPresence`, or the `collab` prop on `WysiwygEditor` belongs to this system** — see `memories/Collab.md` for architecture, key files, WebSocket auth flow, reconnect behavior, and the local-enable command.
+
+## Tests
+
+Tests exist — run them before reporting work as done when changes are testable.
+
+- **Vitest unit tests** live next to source as `*.test.ts(x)` in each package. Run per-package with `pnpm --filter <api|auth|frontend> test`, or all packages + e2e with `pnpm test` from the root. Coverage is heaviest in `packages/auth` (login, password, jwt, totp, plan, billing, stripe-webhook) and `packages/frontend/src/lib` (remark plugins, dice, frontmatter, userColor).
+- **Playwright e2e tests** live in `e2e/tests/` (`2fa`, `app`, `change-password`, `invites`, `limited-permissions`). Run with `pnpm test:e2e` (headless) or `pnpm test:e2e:ui` (UI mode). First run needs `pnpm --filter cubedocs-e2e install:browsers`.
+- When adding behavior with existing test coverage in the same area, extend the corresponding suite rather than leaving it untested.
 
 ## CLI Notes
 
