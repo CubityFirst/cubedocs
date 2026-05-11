@@ -1202,7 +1202,7 @@ export function DocPage() {
               className={`mb-6${isEditor ? " mr-32" : ""}`}
             />
           )}
-          <article data-pdf-print-target className="prose prose-neutral dark:prose-invert max-w-none">
+          <article data-pdf-print-target className="reading-prose prose prose-neutral dark:prose-invert max-w-none">
             {(() => {
               const fm = parseFrontmatter(viewingRevision ? viewingRevision.content : doc.content);
               const showHeading = fm.hide_title !== undefined ? !fm.hide_title : doc.show_heading !== 0;

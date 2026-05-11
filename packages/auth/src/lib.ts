@@ -20,6 +20,11 @@ export interface Session {
   personalPlanCancelAt?: number | null;
   personalPlanStyle?: string | null;
   personalPresenceColor?: string | null;
+  // User-picked prose fonts for reading vs editing modes. NULL means the
+  // frontend falls back to the default sans stack. Not gated on plan.
+  readingFont?: string | null;
+  editingFont?: string | null;
+  uiFont?: string | null;
 }
 
 export const Errors = {

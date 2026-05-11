@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Kbd } from "@/components/ui/kbd";
 import { clearToken, getToken } from "@/lib/auth";
 import { apiFetch, apiFetchJson } from "@/lib/apiFetch";
+import { type FontChoice, DEFAULT_READING_FONT, DEFAULT_EDITING_FONT, DEFAULT_UI_FONT, resolveFontChoice, readFontPrefsCookie, writeFontPrefsCookie, applyFontVarsToRoot } from "@/lib/fonts";
 import {
   BookOpen,
   Settings,
@@ -89,6 +90,12 @@ export interface DocsLayoutContext {
   // Lets nested routes (e.g. UserSettingsPage) push Ink cosmetic changes
   // back into the layout so the sidebar avatar updates without a reload.
   updateInkAppearance: (patch: { personalPlanStyle?: string | null; personalPresenceColor?: string | null }) => void;
+  // Current resolved font choices + a setter so the settings page can apply
+  // changes instantly (CSS variables on :root) without waiting for a refetch.
+  readingFont: FontChoice;
+  editingFont: FontChoice;
+  uiFont: FontChoice;
+  updateFontAppearance: (patch: { readingFont?: FontChoice; editingFont?: FontChoice; uiFont?: FontChoice }) => void;
   docs: { id: string; title: string; display_title?: string | null; folder_id?: string | null; tags?: string | null }[];
   folders: { id: string; name: string; parent_id: string | null }[];
   addDoc: (doc: { id: string; title: string; display_title?: string | null; folder_id?: string | null; tags?: string | null }) => void;
@@ -213,6 +220,13 @@ export function DocsLayout() {
   const [personalPlan, setPersonalPlan] = useState<"free" | "ink">("free");
   const [personalPlanStyle, setPersonalPlanStyle] = useState<string | null>(null);
   const [personalPresenceColor, setPersonalPresenceColor] = useState<string | null>(null);
+  // Seed from the cookie (written on every prior change) so we render with the
+  // user's choice immediately instead of flashing the default while /api/me is
+  // in flight. /api/me overrides if it disagrees — the cookie is best-effort,
+  // the server row is authoritative.
+  const [readingFont, setReadingFont] = useState<FontChoice>(() => readFontPrefsCookie().readingFont);
+  const [editingFont, setEditingFont] = useState<FontChoice>(() => readFontPrefsCookie().editingFont);
+  const [uiFont, setUiFont] = useState<FontChoice>(() => readFontPrefsCookie().uiFont);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -242,7 +256,7 @@ export function DocsLayout() {
 
   useEffect(() => {
     if (!getToken()) return;
-    apiFetchJson<{ name: string; userId: string; personalPlan: "free" | "ink"; personalPlanStyle: string | null; personalPresenceColor: string | null }>("/api/me")
+    apiFetchJson<{ name: string; userId: string; personalPlan: "free" | "ink"; personalPlanStyle: string | null; personalPresenceColor: string | null; readingFont: string | null; editingFont: string | null; uiFont: string | null }>("/api/me")
       .then(result => {
         if (result.ok && result.data) {
           setUserName(result.data.name);
@@ -250,10 +264,25 @@ export function DocsLayout() {
           setPersonalPlan(result.data.personalPlan ?? "free");
           setPersonalPlanStyle(result.data.personalPlanStyle ?? null);
           setPersonalPresenceColor(result.data.personalPresenceColor ?? null);
+          setReadingFont(resolveFontChoice(result.data.readingFont, DEFAULT_READING_FONT));
+          setEditingFont(resolveFontChoice(result.data.editingFont, DEFAULT_EDITING_FONT));
+          setUiFont(resolveFontChoice(result.data.uiFont, DEFAULT_UI_FONT));
         }
       })
       .catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync the resolved font stacks to CSS variables on :root and persist the
+  // pair in a cookie so unauthenticated/published-doc pages can apply the
+  // user's choice without an /api/me round-trip. wysiwyg/styles.css reads
+  // --reading-font on .cm-wysiwyg--reading .cm-content and --editing-font on
+  // the not-reading variant. No cleanup that removes the vars — we want them
+  // to persist across route changes (PublicDocPage doesn't re-set them).
+  useEffect(() => {
+    const prefs = { readingFont, editingFont, uiFont };
+    applyFontVarsToRoot(prefs);
+    writeFontPrefsCookie(prefs);
+  }, [readingFont, editingFont, uiFont]);
 
   useEffect(() => {
     if (!getToken()) return;
@@ -353,6 +382,14 @@ export function DocsLayout() {
     updateInkAppearance: (patch) => {
       if ("personalPlanStyle" in patch) setPersonalPlanStyle(patch.personalPlanStyle ?? null);
       if ("personalPresenceColor" in patch) setPersonalPresenceColor(patch.personalPresenceColor ?? null);
+    },
+    readingFont,
+    editingFont,
+    uiFont,
+    updateFontAppearance: (patch) => {
+      if (patch.readingFont) setReadingFont(patch.readingFont);
+      if (patch.editingFont) setEditingFont(patch.editingFont);
+      if (patch.uiFont) setUiFont(patch.uiFont);
     },
     docs,
     folders,

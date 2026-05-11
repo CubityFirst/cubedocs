@@ -818,7 +818,7 @@ export function PublicDocPage() {
               {/* Article */}
               <div className="flex-1 min-w-0 px-6 py-10">
                 <div className="mx-auto max-w-3xl">
-                  <article className="prose prose-neutral dark:prose-invert max-w-none">
+                  <article className="reading-prose prose prose-neutral dark:prose-invert max-w-none">
                     {(() => {
                       const fm = parseFrontmatter(data.doc.content);
                       const showHeading = fm.hide_title !== undefined ? !fm.hide_title : data.doc.showHeading;

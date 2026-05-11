@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { use2FA } from "@/hooks/use2FA";
@@ -28,7 +29,7 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { AvatarCropDialog } from "@/components/AvatarCropDialog";
 import { InlineSaveControls } from "@/components/InlineSaveControls";
 import { InkSparkle } from "@/components/InkSparkle";
-import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertCircle, Camera, Smartphone, Tablet, Laptop, Monitor, Upload, Sparkles, ChevronDown, Globe, X, Search, Plus } from "lucide-react";
+import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertCircle, Camera, Smartphone, Tablet, Laptop, Monitor, Upload, Sparkles, ChevronDown, Globe, X, Search, Plus, Info } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ColorPicker } from "@/components/ui/color-picker";
@@ -36,6 +37,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { TIMEZONE_GROUPS, detectTimezoneGroup, getTimezoneGroup, formatTimezoneLabel, formatTimeInZone } from "@/lib/timezone";
 import { formatInkSince } from "@/lib/inkDate";
+import { FONT_CHOICES, FONT_LABELS, FONT_STACKS, DEFAULT_READING_FONT, DEFAULT_EDITING_FONT, DEFAULT_UI_FONT, type FontChoice } from "@/lib/fonts";
+import { cn } from "@/lib/utils";
+import { toast as sonnerToast } from "sonner";
 
 // Mirrors INK_RING_STYLES in packages/auth/src/plan.ts. Order is the
 // display order in the picker. 'shimmer' is the default — selecting it
@@ -100,7 +104,8 @@ function formatRelative(timestampMs: number): string {
 export function UserSettingsPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { updateInkAppearance } = useOutletContext<DocsLayoutContext>();
+  const { updateInkAppearance, readingFont, editingFont, uiFont, updateFontAppearance } = useOutletContext<DocsLayoutContext>();
+  const [fontPrefsBusy, setFontPrefsBusy] = useState(false);
   useEffect(() => {
     if (!location.hash) return;
     const id = location.hash.slice(1);
@@ -795,6 +800,75 @@ export function UserSettingsPage() {
     }
   }
 
+  // Persists the user's reading / editing prose-font choice. Optimistic
+  // update via DocsLayout's updateFontAppearance — that's the source of
+  // truth for the CSS variables, so writing it immediately flips the
+  // wysiwyg viewport without waiting for the round-trip. Rolls back the
+  // same way on failure.
+  async function saveFontPrefs(patch: { readingFont?: FontChoice; editingFont?: FontChoice; uiFont?: FontChoice }) {
+    if (fontPrefsBusy) return;
+    setFontPrefsBusy(true);
+    const prev: { readingFont?: FontChoice; editingFont?: FontChoice; uiFont?: FontChoice } = {};
+    if (patch.readingFont) prev.readingFont = readingFont;
+    if (patch.editingFont) prev.editingFont = editingFont;
+    if (patch.uiFont) prev.uiFont = uiFont;
+    updateFontAppearance(patch);
+    try {
+      const token = getToken();
+      if (!token) return;
+      const res = await fetch("/api/me/reading-font", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) {
+        updateFontAppearance(prev);
+        sonnerToast.error("Couldn't save", { description: "Please try again in a moment." });
+        return;
+      }
+      const labels = [
+        patch.readingFont && "Reading",
+        patch.editingFont && "Editing",
+        patch.uiFont && "Other",
+      ].filter(Boolean) as string[];
+      sonnerToast.success(labels.length === 1 ? `${labels[0]} font updated` : "Fonts updated");
+    } catch {
+      updateFontAppearance(prev);
+      sonnerToast.error("Couldn't save", { description: "Please try again in a moment." });
+    } finally {
+      setFontPrefsBusy(false);
+    }
+  }
+
+  // Reset all three tiers to NULL on the row — frontend treats that as the
+  // default sans stack. Same optimistic-update pattern as saveFontPrefs.
+  async function resetFontPrefs() {
+    if (fontPrefsBusy) return;
+    setFontPrefsBusy(true);
+    const prev = { readingFont, editingFont, uiFont };
+    updateFontAppearance({ readingFont: DEFAULT_READING_FONT, editingFont: DEFAULT_EDITING_FONT, uiFont: DEFAULT_UI_FONT });
+    try {
+      const token = getToken();
+      if (!token) return;
+      const res = await fetch("/api/me/reading-font", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ readingFont: null, editingFont: null, uiFont: null }),
+      });
+      if (!res.ok) {
+        updateFontAppearance(prev);
+        sonnerToast.error("Couldn't reset", { description: "Please try again in a moment." });
+        return;
+      }
+      sonnerToast.success("Fonts reset to defaults");
+    } catch {
+      updateFontAppearance(prev);
+      sonnerToast.error("Couldn't reset", { description: "Please try again in a moment." });
+    } finally {
+      setFontPrefsBusy(false);
+    }
+  }
+
   async function handleSaveBio(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = bio.trim();
@@ -1471,6 +1545,105 @@ export function UserSettingsPage() {
                 </Collapsible>
               </div>
             )}
+          </section>
+
+          <Separator className="my-6" />
+
+          {/* Reading font — picks the prose font used in document reading and
+              editing views. Free for all users (not Ink-gated); OpenDyslexic
+              is an accessibility option. Each column is a radio across the
+              three font rows; code lines stay monospace either way. */}
+          <section id="reading-font">
+            <h2 className="text-base font-semibold">Reading font</h2>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Choose the font used for document prose and app chrome. Hover the column headers below for where each one applies. Inline code always stays monospaced.
+            </p>
+
+            <div className="mt-5 overflow-hidden rounded-md border border-border">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="px-4 py-2 text-left font-medium">Font</th>
+                    {([
+                      { label: "Reading", help: "Used when you're viewing a document, including the document title." },
+                      { label: "Editing", help: "Used when you're editing a document." },
+                      { label: "Other", help: "Used everywhere else — sidebar, settings, outline, and the rest of the app." },
+                    ] as const).map(col => (
+                      <th key={col.label} className="w-20 px-2 py-2 text-center font-medium">
+                        <span className="inline-flex items-center gap-1">
+                          {col.label}
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button type="button" aria-label={`Where does the ${col.label} font apply?`} className="inline-flex text-muted-foreground transition-colors hover:text-foreground">
+                                <Info className="size-3.5" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="max-w-[220px]">{col.help}</TooltipContent>
+                          </Tooltip>
+                        </span>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {FONT_CHOICES.map(choice => {
+                    const columns: { key: "readingFont" | "editingFont" | "uiFont"; checked: boolean; label: string }[] = [
+                      { key: "readingFont", checked: readingFont === choice, label: "reading mode" },
+                      { key: "editingFont", checked: editingFont === choice, label: "editing mode" },
+                      { key: "uiFont", checked: uiFont === choice, label: "the rest of the app" },
+                    ];
+                    return (
+                      <tr key={choice} className="border-t border-border">
+                        <td className="px-4 py-3">
+                          <div className="font-medium">{FONT_LABELS[choice]}</div>
+                          <div className="mt-0.5 text-xs text-muted-foreground" style={{ fontFamily: FONT_STACKS[choice] }}>
+                            The quick brown fox jumps over the lazy dog.
+                          </div>
+                        </td>
+                        {columns.map(col => (
+                          <td key={col.key} className="px-2 py-3 text-center">
+                            <label className={cn(
+                              "relative inline-flex items-center justify-center",
+                              fontPrefsBusy ? "cursor-not-allowed opacity-50" : "cursor-pointer",
+                            )}>
+                              <input
+                                type="radio"
+                                name={col.key}
+                                value={choice}
+                                checked={col.checked}
+                                disabled={fontPrefsBusy}
+                                onChange={() => saveFontPrefs({ [col.key]: choice })}
+                                aria-label={`Use ${FONT_LABELS[choice]} for ${col.label}`}
+                                className="peer sr-only"
+                              />
+                              <span className={cn(
+                                "flex size-4 items-center justify-center rounded-full border transition-colors",
+                                col.checked ? "border-foreground" : "border-input bg-background",
+                                "peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2",
+                              )}>
+                                {col.checked && <span className="size-2 rounded-full bg-foreground" />}
+                              </span>
+                            </label>
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-3 flex justify-end">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={fontPrefsBusy || (readingFont === DEFAULT_READING_FONT && editingFont === DEFAULT_EDITING_FONT && uiFont === DEFAULT_UI_FONT)}
+                onClick={resetFontPrefs}
+              >
+                Reset to defaults
+              </Button>
+            </div>
           </section>
 
           <Separator className="my-6" />

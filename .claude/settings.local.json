@@ -19,7 +19,10 @@
       "Bash(npx wrangler *)",
       "Bash(node -e ' *)",
       "WebFetch(domain:www.shadcn.io)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(pnpm --filter frontend typecheck)",
+      "Bash(pnpm -r typecheck)",
+      "Bash(pnpm --filter * test)"
     ]
   }
 }

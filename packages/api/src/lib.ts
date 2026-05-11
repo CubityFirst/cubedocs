@@ -8,6 +8,9 @@ export interface Session {
   personalPlanCancelAt?: number | null;
   personalPlanStyle?: string | null;
   personalPresenceColor?: string | null;
+  readingFont?: string | null;
+  editingFont?: string | null;
+  uiFont?: string | null;
 }
 
 export interface Folder {

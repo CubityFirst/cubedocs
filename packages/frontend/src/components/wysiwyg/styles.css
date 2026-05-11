@@ -28,9 +28,19 @@
 /* WYSIWYG editor typography. Scoped to .cm-content so it does not leak into the rest of the app. */
 
 .cm-wysiwyg .cm-content {
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: 15px;
   line-height: 1.6;
+}
+/* Reading mode uses --reading-font; everything else (editing, raw) uses
+   --editing-font. The CSS variables are set on :root by DocsLayout based
+   on the user's per-account preference. Code lines / inline-code keep
+   their own monospace rule further down — those are deliberately not
+   overridden so inline code stays legible under any prose font. */
+.cm-wysiwyg--reading .cm-content {
+  font-family: var(--reading-font);
+}
+.cm-wysiwyg:not(.cm-wysiwyg--reading) .cm-content {
+  font-family: var(--editing-font);
 }
 
 /*

@@ -29,6 +29,9 @@ export async function authenticate(request: Request, env: Env): Promise<Session 
       personalPlanCancelAt: result.session.personalPlanCancelAt ?? null,
       personalPlanStyle: result.session.personalPlanStyle ?? null,
       personalPresenceColor: result.session.personalPresenceColor ?? null,
+      readingFont: result.session.readingFont ?? null,
+      editingFont: result.session.editingFont ?? null,
+      uiFont: result.session.uiFont ?? null,
     };
   }
   if (result.kind === "invalid") return null;

@@ -216,6 +216,9 @@ export default {
             personalPlanCancelAt: session.personalPlanCancelAt ?? null,
             personalPlanStyle: session.personalPlanStyle ?? null,
             personalPresenceColor: session.personalPresenceColor ?? null,
+            readingFont: session.readingFont ?? null,
+            editingFont: session.editingFont ?? null,
+            uiFont: session.uiFont ?? null,
           },
         }));
       }
@@ -263,6 +266,20 @@ export default {
         const body = await request.json<unknown>();
         const authHeader = request.headers.get("Authorization");
         const updateRes = await env.AUTH.fetch("https://auth/update-ink-prefs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
+          body: JSON.stringify(body),
+        });
+        return addCorsHeaders(updateRes);
+      }
+
+      // PATCH /me/reading-font — update user's reading/editing prose-font choices
+      if (url.pathname === "/me/reading-font" && request.method === "PATCH") {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        const body = await request.json<unknown>();
+        const authHeader = request.headers.get("Authorization");
+        const updateRes = await env.AUTH.fetch("https://auth/update-reading-font", {
           method: "POST",
           headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
           body: JSON.stringify(body),
