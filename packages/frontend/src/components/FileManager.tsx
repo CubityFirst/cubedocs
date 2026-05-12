@@ -16,6 +16,7 @@ import { apiFetch, apiFetchJson } from "@/lib/apiFetch";
 import { UserProfileCard } from "@/components/UserProfileCard";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
 
 interface FolderItem {
   id: string;
@@ -1043,7 +1044,7 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
               </div>
             ) : (
               <div className="prose prose-sm dark:prose-invert max-w-none text-muted-foreground [&_ul]:my-1 [&_li]:my-0">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{summary ?? ""}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>{summary ?? ""}</ReactMarkdown>
               </div>
             )}
           </div>

@@ -23,7 +23,6 @@ interface Props {
 export function ExportPdfDialog({ trigger, documentName }: Props) {
   const [open, setOpen] = useState(false);
   const [pageSize, setPageSize] = useState<PdfPageSize>("A4");
-  const [margins, setMargins] = useState(true);
   const [theme, setTheme] = useState<PdfTheme>("light");
   const [includeTitle, setIncludeTitle] = useState(true);
   const [hideAiSummary, setHideAiSummary] = useState(false);
@@ -33,7 +32,7 @@ export function ExportPdfDialog({ trigger, documentName }: Props) {
     setOpen(false);
     // Let the dialog finish closing before the print pass snapshots the DOM.
     requestAnimationFrame(() => {
-      runPdfExport({ pageSize, margins, theme, includeTitle, hideAiSummary, hideLastUpdated, documentName });
+      runPdfExport({ pageSize, theme, includeTitle, hideAiSummary, hideLastUpdated, documentName });
     });
   }
 
@@ -67,14 +66,6 @@ export function ExportPdfDialog({ trigger, documentName }: Props) {
           <Separator />
           <div className="flex items-center justify-between gap-3">
             <div className="flex flex-col gap-1">
-              <Label htmlFor="pdf-margins" className="text-sm font-medium cursor-pointer">Include margins</Label>
-              <p className="text-xs text-muted-foreground">Adds 15&nbsp;mm of whitespace around the page.</p>
-            </div>
-            <Switch id="pdf-margins" checked={margins} onCheckedChange={setMargins} />
-          </div>
-          <Separator />
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col gap-1">
               <Label htmlFor="pdf-theme" className="text-sm font-medium">Theme</Label>
               <p className="text-xs text-muted-foreground">Light is recommended for printing.</p>
             </div>
@@ -89,31 +80,35 @@ export function ExportPdfDialog({ trigger, documentName }: Props) {
             </Select>
           </div>
           <Separator />
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col gap-1">
-              <Label htmlFor="pdf-include-title" className="text-sm font-medium cursor-pointer">Include document name at top of page</Label>
-              <p className="text-xs text-muted-foreground">Renders the document title as a heading on the first page.</p>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-0.5">
+              <h3 className="text-sm font-semibold">Content</h3>
+              <p className="text-xs text-muted-foreground">Choose which parts of the document appear in the export.</p>
             </div>
-            <Switch id="pdf-include-title" checked={includeTitle} onCheckedChange={setIncludeTitle} />
-          </div>
-          <Separator />
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col gap-1">
-              <Label htmlFor="pdf-hide-ai-summary" className="text-sm font-medium cursor-pointer">Hide AI summary</Label>
-              <p className="text-xs text-muted-foreground">Omits the AI-generated summary block from the PDF.</p>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="pdf-include-title" className="text-sm font-medium cursor-pointer">Include document name at top of page</Label>
+                <p className="text-xs text-muted-foreground">Renders the document title as a heading on the first page.</p>
+              </div>
+              <Switch id="pdf-include-title" checked={includeTitle} onCheckedChange={setIncludeTitle} />
             </div>
-            <Switch id="pdf-hide-ai-summary" checked={hideAiSummary} onCheckedChange={setHideAiSummary} />
-          </div>
-          <Separator />
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col gap-1">
-              <Label htmlFor="pdf-hide-last-updated" className="text-sm font-medium cursor-pointer">Hide last updated &amp; reading time</Label>
-              <p className="text-xs text-muted-foreground">Omits the &ldquo;Last updated&hellip; · X min read&rdquo; line.</p>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="pdf-hide-ai-summary" className="text-sm font-medium cursor-pointer">Hide AI summary</Label>
+                <p className="text-xs text-muted-foreground">Omits the AI-generated summary block from the PDF.</p>
+              </div>
+              <Switch id="pdf-hide-ai-summary" checked={hideAiSummary} onCheckedChange={setHideAiSummary} />
             </div>
-            <Switch id="pdf-hide-last-updated" checked={hideLastUpdated} onCheckedChange={setHideLastUpdated} />
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="pdf-hide-last-updated" className="text-sm font-medium cursor-pointer">Hide last updated &amp; reading time</Label>
+                <p className="text-xs text-muted-foreground">Omits the &ldquo;Last updated&hellip; · X min read&rdquo; line.</p>
+              </div>
+              <Switch id="pdf-hide-last-updated" checked={hideLastUpdated} onCheckedChange={setHideLastUpdated} />
+            </div>
           </div>
           <p className="text-xs text-muted-foreground">
-            Tip: scale and other layout adjustments are available in the browser's print dialog.
+            Tip: margins, scale, and other layout adjustments are available in the browser's print dialog.
           </p>
         </div>
         <DialogFooter>

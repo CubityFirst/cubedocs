@@ -186,6 +186,69 @@ body {
   font-family: var(--reading-font);
 }
 
+/* PDF print mirror — react-markdown render of the doc body used only for
+   printing. @tailwindcss/typography sets --tw-prose-hr / --tw-prose-*-borders
+   to near-white via `prose-neutral`, and never adds column separators on
+   table cells at all. We force solid borders with !important so they win
+   regardless of Tailwind layer/cascade order, and add the missing column
+   separators ourselves. `print-color-adjust: exact` keeps Chromium from
+   stripping them when "background graphics" is off in the print dialog
+   (most browsers treat borders as part of the background paint). */
+.pdf-print-mirror {
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+.pdf-print-mirror hr {
+  border-color: #1f1f1f !important;
+  /* 2px (not 1px) so the rule survives sub-pixel rounding when the print
+     dialog scales the page below 100%. At 1px + 75% scale Chromium/Firefox
+     round to 0 and the line disappears entirely. */
+  border-top-width: 2px !important;
+  print-color-adjust: exact !important;
+  -webkit-print-color-adjust: exact !important;
+}
+.pdf-print-mirror table {
+  border-collapse: collapse !important;
+  print-color-adjust: exact !important;
+  -webkit-print-color-adjust: exact !important;
+}
+/* Firefox's print engine ignores borders set on <tr>, so we attach every
+   border to the cell (th/td) instead. Chromium handles either; cells are
+   the safe path for both.
+
+   All borders are 2px (not 1px) so they survive sub-pixel rounding when
+   the print dialog scales the page below 100%. At 1px + 75% scale,
+   Chromium/Firefox round to 0 and the line disappears. The thead rule
+   stays 2px to keep the header→body separation visually heavier than
+   the row/column rules; we differentiate by color/weight elsewhere if
+   needed, but uniform 2px is the safe minimum. */
+.pdf-print-mirror table thead th {
+  border-bottom: 2px solid #1f1f1f !important;
+  border-right: 2px solid #1f1f1f !important;
+}
+.pdf-print-mirror table tbody td {
+  border-bottom: 2px solid #1f1f1f !important;
+  border-right: 2px solid #1f1f1f !important;
+}
+.pdf-print-mirror table tbody tr:last-child td {
+  border-bottom: 0 !important;
+}
+.pdf-print-mirror table thead th:last-child,
+.pdf-print-mirror table tbody td:last-child {
+  border-right: 0 !important;
+}
+.dark .pdf-print-mirror hr {
+  border-color: #d4d4d4 !important;
+}
+.dark .pdf-print-mirror table thead th {
+  border-bottom-color: #d4d4d4 !important;
+  border-right-color: #d4d4d4 !important;
+}
+.dark .pdf-print-mirror table tbody td {
+  border-bottom-color: #d4d4d4 !important;
+  border-right-color: #d4d4d4 !important;
+}
+
 /* @tailwindcss/typography wraps inline <code> in literal backtick characters
    via ::before/::after. The live reading view is .not-prose (CodeMirror) so
    it never sees them, but the PDF print mirror and the AI-summary block
@@ -262,6 +325,19 @@ body {
   body.pdf-printing img,
   body.pdf-printing [data-callout] {
     break-inside: avoid;
+  }
+  /* On-screen, fenced code blocks scroll horizontally — fine for a viewport
+     but in print the off-screen portion is silently clipped at the page
+     margin. Force long lines to wrap so they're visible in the PDF even if
+     it breaks code aesthetics. Applies to both Shiki output (.shiki <pre>)
+     and the fallback <pre> in CodeBlock.tsx. */
+  body.pdf-printing pre,
+  body.pdf-printing pre code,
+  body.pdf-printing pre .line,
+  body.pdf-printing pre span {
+    white-space: pre-wrap !important;
+    word-break: break-word !important;
+    overflow-wrap: anywhere !important;
   }
 }
 

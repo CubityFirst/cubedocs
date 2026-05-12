@@ -1,15 +1,14 @@
 // Drives the browser's native print engine to produce a real text PDF
 // (selectable text, working hyperlinks, screen-reader accessible). The user
 // goes through the browser's print dialog and picks "Save as PDF" as the
-// destination. Page size and margins are injected as a transient @page rule;
-// scale lives in the browser's own dialog.
+// destination. Page size is injected as a transient @page rule; margins and
+// scale live in the browser's own dialog.
 
 export type PdfPageSize = "A3" | "A4" | "A5";
 export type PdfTheme = "light" | "dark";
 
 export interface PdfExportOptions {
   pageSize: PdfPageSize;
-  margins: boolean;
   theme: PdfTheme;
   includeTitle: boolean;
   hideAiSummary: boolean;
@@ -48,11 +47,11 @@ export function runPdfExport(opts: PdfExportOptions): void {
   printRoot.appendChild(clone);
   document.body.appendChild(printRoot);
 
-  // Inject a transient @page rule. Chromium honors size + margin and
-  // pre-fills its print dialog with these values.
+  // Inject a transient @page rule. Chromium honors size and pre-fills its
+  // print dialog with it; the user can still tweak margins in that dialog.
   const style = document.createElement("style");
   style.id = STYLE_ID;
-  style.textContent = `@page { size: ${opts.pageSize}; margin: ${opts.margins ? "15mm" : "0"}; }`;
+  style.textContent = `@page { size: ${opts.pageSize}; }`;
   document.head.appendChild(style);
 
   const html = document.documentElement;

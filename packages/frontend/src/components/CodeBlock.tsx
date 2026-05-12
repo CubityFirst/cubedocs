@@ -45,7 +45,7 @@ export function CodeBlock({ lang, code }: CodeBlockProps) {
       size="icon"
       variant="ghost"
       onClick={copy}
-      className="absolute top-2 right-2 h-7 w-7 text-zinc-400 hover:text-zinc-100 hover:bg-white/10"
+      className="pdf-print-hide absolute top-2 right-2 h-7 w-7 text-zinc-400 hover:text-zinc-100 hover:bg-white/10"
       aria-label="Copy code"
     >
       {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}

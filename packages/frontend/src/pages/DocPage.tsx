@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo, isValidElement } from "react";
 import { useParams, useLocation, useNavigate, useOutletContext } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
 import remarkFrontmatter from "remark-frontmatter";
 import { remarkCallouts } from "@/lib/remark-callouts";
 import { remarkImageAttrs } from "@/lib/remark-image-attrs";
@@ -142,7 +143,7 @@ function Code({ children }: { children: string }) {
   );
 }
 
-const remarkPlugins = [remarkFrontmatter, remarkWikilinks, remarkGfm, remarkCallouts, remarkImageAttrs, remarkUnderline];
+const remarkPlugins = [remarkFrontmatter, remarkWikilinks, remarkGfm, remarkBreaks, remarkCallouts, remarkImageAttrs, remarkUnderline];
 
 function makeAuthenticatedImage(projectId: string) {
   return function AuthImg(props: React.ComponentPropsWithoutRef<"img">) {

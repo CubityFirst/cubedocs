@@ -165,8 +165,11 @@
 .cm-wysiwyg .cm-content .cm-wysiwyg-hr hr {
   margin: 0;
   border: 0;
-  border-top: 1px solid hsl(0 0% 50% / 0.5);
+  border-top: 1px solid #3a3a3a;
   height: 0;
+}
+.dark .cm-wysiwyg .cm-content .cm-wysiwyg-hr hr {
+  border-top-color: #b0b0b0;
 }
 
 /* Code fence — keep every code line the SAME height as surrounding prose so
@@ -190,6 +193,18 @@
 .cm-wysiwyg .cm-content .cm-codefence-widget-root > div {
   margin-top: 0 !important;
   margin-bottom: 0 !important;
+}
+/* Reading mode: wrap long code lines instead of overflowing horizontally.
+   Shiki's <pre> is a grandchild of CodeBlock's wrapper, so CodeBlock's
+   `[&>pre]:overflow-x-auto` never matches it — without this rule, a single
+   long line pushes the document wider and breaks surrounding layout. */
+.cm-wysiwyg--reading .cm-codefence-widget-root pre,
+.cm-wysiwyg--reading .cm-codefence-widget-root pre code,
+.cm-wysiwyg--reading .cm-codefence-widget-root pre .line,
+.cm-wysiwyg--reading .cm-codefence-widget-root pre span {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 .cm-wysiwyg .cm-content .cm-code-fence-marker {
   color: hsl(var(--muted-foreground));
@@ -219,15 +234,17 @@
   font-size: 0.95em;
 }
 /* Direct hsl values (not CSS vars) so the borders render regardless of how
-   the surrounding theme defines `--border` / `--foreground`. */
+   the surrounding theme defines `--border` / `--foreground`. Light mode uses
+   a darker grey so the rules are clearly visible against white; .dark
+   overrides drop back to the original faint-grey treatment. */
 .cm-wysiwyg .cm-content .cm-wysiwyg-table th,
 .cm-wysiwyg .cm-content .cm-wysiwyg-table td {
   padding: 0.35em 0.75em;
   text-align: left;
   vertical-align: top;
   border: 0;
-  /* Faint vertical column separator */
-  border-right: 1px solid hsl(0 0% 50% / 0.35);
+  /* Vertical column separator */
+  border-right: 1px solid hsl(0 0% 15% / 0.55);
 }
 .cm-wysiwyg .cm-content .cm-wysiwyg-table th:last-child,
 .cm-wysiwyg .cm-content .cm-wysiwyg-table td:last-child {
@@ -235,15 +252,25 @@
 }
 .cm-wysiwyg .cm-content .cm-wysiwyg-table thead th {
   font-weight: 600;
-  /* Thicker, brighter rule separating header from body */
-  border-bottom: 2px solid hsl(0 0% 80% / 0.8);
+  /* Rule separating header from body */
+  border-bottom: 2px solid hsl(0 0% 15% / 0.75);
 }
 .cm-wysiwyg .cm-content .cm-wysiwyg-table tbody td {
-  /* Fainter rule between body rows */
-  border-bottom: 1px solid hsl(0 0% 50% / 0.35);
+  /* Rule between body rows */
+  border-bottom: 1px solid hsl(0 0% 15% / 0.4);
 }
 .cm-wysiwyg .cm-content .cm-wysiwyg-table tbody tr:last-child td {
   border-bottom: 0;
+}
+.dark .cm-wysiwyg .cm-content .cm-wysiwyg-table th,
+.dark .cm-wysiwyg .cm-content .cm-wysiwyg-table td {
+  border-right-color: hsl(0 0% 50% / 0.35);
+}
+.dark .cm-wysiwyg .cm-content .cm-wysiwyg-table thead th {
+  border-bottom-color: hsl(0 0% 80% / 0.8);
+}
+.dark .cm-wysiwyg .cm-content .cm-wysiwyg-table tbody td {
+  border-bottom-color: hsl(0 0% 50% / 0.35);
 }
 .cm-wysiwyg .cm-content .cm-wysiwyg-table-empty {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;

@@ -21,7 +21,9 @@
       "WebFetch(domain:www.shadcn.io)",
       "WebFetch(domain:github.com)",
       "Bash(pnpm --filter frontend typecheck)",
-      "Bash(pnpm -r typecheck)"
+      "Bash(pnpm -r typecheck)",
+      "Bash(pnpm --filter frontend exec tsc --noEmit)",
+      "Bash(pnpm --filter @annex/frontend exec tsc --noEmit)"
     ]
   }
 }
