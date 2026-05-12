@@ -310,6 +310,10 @@ export function LandingPage() {
                   <div className="l-ink-perk-desc">A small animated mark next to your profile, everywhere it shows.</div>
                 </li>
                 <li>
+                  <div className="l-ink-perk-title">Sparkles on dice crits</div>
+                  <div className="l-ink-perk-desc">A small burst of sparkles whenever an inline dice roll lands a critical success.</div>
+                </li>
+                <li>
                   <div className="l-ink-perk-title">Support Annex</div>
                   <div className="l-ink-perk-desc">Keeps the workers running and the project moving. Cancel anytime.</div>
                 </li>

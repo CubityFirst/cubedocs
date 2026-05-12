@@ -19,6 +19,22 @@ import { formatTimeInZone, getTimezoneGroup } from "@/lib/timezone";
 import { formatInkSince } from "@/lib/inkDate";
 import { TimezoneMap } from "@/components/TimezoneMap";
 import { InkSparkle } from "@/components/InkSparkle";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
+
+// Constrained inline-ish markdown for Ink supporter bios. Raw HTML is never
+// rendered (react-markdown's default) and `javascript:` URLs are filtered by
+// the default urlTransform — so the allowlist below is purely about layout,
+// not safety. Blocks like headings/lists/tables are unwrapped so their text
+// content survives but doesn't add huge vertical spacing in the profile card.
+const BIO_ALLOWED_ELEMENTS = ["p", "a", "strong", "em", "code", "del", "br"];
+const BIO_REMARK_PLUGINS = [remarkGfm, remarkBreaks];
+const bioMarkdownComponents = {
+  a: ({ href, children }: { href?: string; children?: React.ReactNode }) => (
+    <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
+  ),
+};
 
 let currentUserIdCache: string | null = null;
 let currentUserIdPromise: Promise<string | null> | null = null;
@@ -322,7 +338,16 @@ export function UserProfileCard({ userId, name, children, open: controlledOpen, 
           // appear once 2+ have content.
           const bioContent = profile.bio ? (
             <div className="px-6 py-5">
-              <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{profile.bio}</p>
+              <div className="text-sm leading-relaxed text-foreground [&_p]:m-0 [&_p+p]:mt-2 [&_a]:break-words [&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2 [&_strong]:font-semibold [&_em]:italic [&_del]:line-through [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs">
+                <ReactMarkdown
+                  remarkPlugins={BIO_REMARK_PLUGINS}
+                  allowedElements={BIO_ALLOWED_ELEMENTS}
+                  unwrapDisallowed
+                  components={bioMarkdownComponents}
+                >
+                  {profile.bio}
+                </ReactMarkdown>
+              </div>
             </div>
           ) : null;
 

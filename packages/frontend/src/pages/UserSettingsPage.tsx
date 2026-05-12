@@ -1524,6 +1524,7 @@ export function UserSettingsPage() {
                       <form onSubmit={handleSaveBio}>
                         <h4 className="text-sm font-semibold">Bio</h4>
                         <p className="mt-0.5 text-xs text-muted-foreground">A short note shown on your profile card. Leave empty to fall back to favourites or shared sites.</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">Supports markdown: <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">**bold**</code>, <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">*italic*</code>, <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">[links](https://…)</code>, <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">`code`</code>.</p>
                         <div className="mt-3 flex items-start gap-2">
                           <div className="relative flex-1">
                             <Textarea

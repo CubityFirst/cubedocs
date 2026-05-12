@@ -10,12 +10,13 @@ The Annex Ink personal supporter subscription, its Stripe billing integration, a
 - "Supporter since {Xth of Month, Year}" tenure flag in `UserSettingsPage` billing card and `UserProfileCard` tooltip
 - Animated rainbow Sparkles icon next to the user's name on the profile card
 - Custom presence colour for collab cursors. Free users get a deterministic per-user HSL from `userColor()`; supporters can override it via `personalPresenceColor` and the picked colour is broadcast through Yjs awareness to other clients.
+- Sparkle burst on dice critical successes — a short animated burst of `lucide` Sparkles emitted by `DiceRoll` when the rolled total hits the max possible total or a `cs` condition succeeds. Gated by the *viewer* being Ink (not the doc author), threaded through `RendererCtx.showInkCritSparkles` from `DocPage` / `DocsLayout`. Supporters can opt out via the `personalCritSparkles` toggle in user settings (default on). Keyframes/colour variants in `ink-border.css` (`.ink-crit-sparkles`, `.ink-crit-sparkle-1..5`).
 
 Free users render with a deterministic per-user color ring in collab presence (`EditorPresence.tsx`); Ink supporters render with the animated ring **instead** (the two are mutually exclusive — see `EditorPresence.PresenceAvatar`).
 
 ## Schema
 
-All Ink state lives on the **auth DB** `users` table. Migrations: `0014_add_stripe_columns.sql` (initial), `0015_add_personal_plan_cancel_at.sql` (pending-cancellation tracking).
+All Ink state lives on the **auth DB** `users` table. Migrations: `0014_add_stripe_columns.sql` (initial), `0015_add_personal_plan_cancel_at.sql` (pending-cancellation tracking), `0016_add_granted_plan_started_at.sql` (grant tenure), `0018_add_ink_cosmetic_prefs.sql` (ring style + presence colour), `0022_add_personal_crit_sparkles.sql` (dice crit sparkle toggle).
 
 Columns:
 - `stripe_customer_id`, `stripe_subscription_id` — set by `checkout.session.completed` and `subscription.created` webhooks
@@ -27,6 +28,7 @@ Columns:
 - `granted_plan`, `granted_plan_expires_at`, `granted_plan_reason` — manual override (admin grants). Takes precedence over Stripe-managed plan.
 - `personal_plan_style` — chosen ring variant (`shimmer` default | `aurora` | `ember` | `mono` | `none`). NULL = default (shimmer). `none` opts out of the ring. Allowed list lives in `INK_RING_STYLES` in `plan.ts`.
 - `personal_presence_color` — supporter override for the deterministic per-user collab cursor colour. Strict `#rrggbb`. NULL = use `userColor()`. Validated server-side; the colour is rendered into a CSS box-shadow / caret-color so the format is locked down.
+- `personal_crit_sparkles` — INTEGER tri-state for the dice crit sparkle burst. NULL = "use default" (on), `1` = explicit on, `0` = off. The resolver normalises to a `critSparkles: boolean` and **forces it false for non-Ink users** so a free user with a stale `1` from a lapsed sub doesn't keep the perk.
 
 Plus `webhook_events (event_id PRIMARY KEY, type, processed_at)` for idempotency.
 
@@ -38,7 +40,7 @@ Plus `webhook_events (event_id PRIMARY KEY, type, processed_at)` for idempotency
 2. `personal_plan` set AND `personal_plan_status` ∈ `{active, trialing, past_due}` → `via: 'paid'`
 3. otherwise → `via: 'free'`
 
-Returns `{ plan, via, since, status, cancelAt }`. `since` is null for granted plans (we don't track granted-at). `past_due` keeps perks active during Stripe's smart-retry grace; UI surfaces a banner.
+Returns `{ plan, via, since, status, cancelAt, style, presenceColor, critSparkles }`. `since` comes from `personal_plan_started_at` for paid and from `granted_plan_started_at` for granted (added in migration 0016 — older grants pre-dating that column will still be null). `past_due` keeps perks active during Stripe's smart-retry grace; UI surfaces a banner. Cosmetic prefs (`style`, `presenceColor`, `critSparkles`) are normalised by the resolver — invalid persisted values become null/default, and for free users `critSparkles` is forced false regardless of the column value.
 
 The resolver is imported across packages — `packages/api`, `packages/admin`, plus the auth worker's session loader. Each consumer's `tsconfig.json` includes `../auth/src/plan.ts` in its `include` array.
 
