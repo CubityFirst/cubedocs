@@ -202,13 +202,19 @@ export function UserSettingsPage() {
   const BIO_MAX = 280;
 
   // Favourite published sites for the profile card.
-  const [favouriteSites, setFavouriteSites] = useState<Array<{ id: string; name: string; vanitySlug: string | null; logoSquareUpdatedAt: string | null }>>([]);
+  const [favouriteSites, setFavouriteSites] = useState<Array<{ id: string; name: string; vanitySlug: string | null; logoSquareUpdatedAt: string | null; note: string | null }>>([]);
   const [favouritesLoading, setFavouritesLoading] = useState(true);
   const [favouriteRemovingId, setFavouriteRemovingId] = useState<string | null>(null);
   const [favouriteSearch, setFavouriteSearch] = useState("");
   const [favouriteSearchResults, setFavouriteSearchResults] = useState<Array<{ id: string; name: string; vanitySlug: string | null; logoSquareUpdatedAt: string | null }>>([]);
   const [favouriteSearchLoading, setFavouriteSearchLoading] = useState(false);
   const [favouriteAddingId, setFavouriteAddingId] = useState<string | null>(null);
+  // Draft notes keyed by project id — separate from server state so we can
+  // show a save/reset affordance only while the draft differs.
+  const [favouriteNoteDrafts, setFavouriteNoteDrafts] = useState<Record<string, string>>({});
+  const [favouriteNoteSavingId, setFavouriteNoteSavingId] = useState<string | null>(null);
+  const [favouriteNoteExpanded, setFavouriteNoteExpanded] = useState<Record<string, boolean>>({});
+  const FAV_NOTE_MAX = 140;
 
   const { runWithTwoFA, twoFADialog, busy: twoFABusy } = use2FA({
     totp: totpEnabled,
@@ -244,9 +250,12 @@ export function UserSettingsPage() {
       .catch(() => {});
 
     fetch("/api/me/favourite-sites", { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json() as Promise<{ ok: boolean; data?: Array<{ id: string; name: string; vanitySlug: string | null; logoSquareUpdatedAt: string | null }> }>)
+      .then(r => r.json() as Promise<{ ok: boolean; data?: Array<{ id: string; name: string; vanitySlug: string | null; logoSquareUpdatedAt: string | null; note: string | null }> }>)
       .then(json => {
-        if (json.ok && json.data) setFavouriteSites(json.data);
+        if (json.ok && json.data) {
+          setFavouriteSites(json.data);
+          setFavouriteNoteDrafts(Object.fromEntries(json.data.map(s => [s.id, s.note ?? ""])));
+        }
       })
       .catch(() => {})
       .finally(() => setFavouritesLoading(false));
@@ -946,7 +955,9 @@ export function UserSettingsPage() {
       });
       const json = await res.json() as { ok: boolean };
       if (json.ok) {
-        setFavouriteSites(list => [site, ...list.filter(s => s.id !== site.id)]);
+        setFavouriteSites(list => [{ ...site, note: null }, ...list.filter(s => s.id !== site.id)]);
+        setFavouriteNoteDrafts(d => ({ ...d, [site.id]: "" }));
+        setFavouriteNoteExpanded(e => ({ ...e, [site.id]: true }));
         setFavouriteSearchResults(list => list.filter(s => s.id !== site.id));
       } else {
         toast({ title: "Couldn't add favourite", variant: "destructive" });
@@ -969,6 +980,10 @@ export function UserSettingsPage() {
       const json = await res.json() as { ok: boolean };
       if (json.ok) {
         setFavouriteSites(list => list.filter(s => s.id !== projectId));
+        setFavouriteNoteDrafts(d => {
+          const { [projectId]: _, ...rest } = d;
+          return rest;
+        });
       } else {
         toast({ title: "Couldn't remove favourite", variant: "destructive" });
       }
@@ -976,6 +991,32 @@ export function UserSettingsPage() {
       toast({ title: "Could not connect to the server", variant: "destructive" });
     } finally {
       setFavouriteRemovingId(null);
+    }
+  }
+
+  async function handleSaveFavouriteNote(projectId: string) {
+    const draft = (favouriteNoteDrafts[projectId] ?? "").trim();
+    if (draft.length > FAV_NOTE_MAX) return;
+    setFavouriteNoteSavingId(projectId);
+    try {
+      const token = getToken();
+      const res = await fetch(`/api/me/favourite-sites/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ note: draft.length === 0 ? null : draft }),
+      });
+      const json = await res.json() as { ok: boolean; data?: { note: string | null } };
+      if (json.ok) {
+        const saved = json.data?.note ?? null;
+        setFavouriteSites(list => list.map(s => s.id === projectId ? { ...s, note: saved } : s));
+        setFavouriteNoteDrafts(d => ({ ...d, [projectId]: saved ?? "" }));
+      } else {
+        toast({ title: "Couldn't save note", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Could not connect to the server", variant: "destructive" });
+    } finally {
+      setFavouriteNoteSavingId(null);
     }
   }
 
@@ -1312,40 +1353,110 @@ export function UserSettingsPage() {
                 <div className="h-11 rounded-md bg-muted/40 animate-pulse" />
               </div>
             ) : favouriteSites.length === 0 ? null : (
-              <ul className="mt-4 flex flex-col gap-1">
+              <ul className="mt-4 flex flex-col gap-2">
                 {favouriteSites.map(site => {
                   const slug = site.vanitySlug ?? site.id;
                   const removing = favouriteRemovingId === site.id;
+                  const draft = favouriteNoteDrafts[site.id] ?? "";
+                  const savedNote = site.note ?? "";
+                  const noteDirty = draft.trim() !== savedNote.trim();
+                  const noteSaving = favouriteNoteSavingId === site.id;
+                  const noteTooLong = draft.trim().length > FAV_NOTE_MAX;
+                  // Default-open if there's a saved note or unsaved draft, so the
+                  // user can see/edit existing content without an extra click.
+                  // Explicit toggle state overrides the default once the user
+                  // touches the chevron.
+                  const explicitExpanded = favouriteNoteExpanded[site.id];
+                  const expanded = explicitExpanded ?? (savedNote.length > 0 || noteDirty);
                   return (
                     <li
                       key={site.id}
-                      className="flex items-center gap-3 rounded-md border bg-card px-3 py-2"
+                      className="flex flex-col gap-2 rounded-md border bg-card px-3 py-2"
                     >
-                      {site.logoSquareUpdatedAt ? (
-                        <img
-                          src={`/api/public/projects/${site.id}/logo/square?v=${encodeURIComponent(site.logoSquareUpdatedAt)}`}
-                          alt=""
-                          className="size-7 shrink-0 rounded object-cover"
-                        />
-                      ) : (
-                        <Globe className="size-5 shrink-0 text-muted-foreground" />
+                      <div className="flex items-center gap-3">
+                        {site.logoSquareUpdatedAt ? (
+                          <img
+                            src={`/api/public/projects/${site.id}/logo/square?v=${encodeURIComponent(site.logoSquareUpdatedAt)}`}
+                            alt=""
+                            className="size-7 shrink-0 rounded object-cover"
+                          />
+                        ) : (
+                          <Globe className="size-5 shrink-0 text-muted-foreground" />
+                        )}
+                        <Link
+                          to={`/s/${slug}`}
+                          className="min-w-0 flex-1 truncate text-sm font-medium hover:underline"
+                        >
+                          {site.name}
+                        </Link>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setFavouriteNoteExpanded(e => ({ ...e, [site.id]: !expanded }))}
+                          aria-label={expanded ? `Hide note for ${site.name}` : `Add a note for ${site.name}`}
+                          aria-expanded={expanded}
+                        >
+                          <ChevronDown className={`size-4 transition-transform ${expanded ? "rotate-180" : ""}`} />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          disabled={removing}
+                          onClick={() => handleRemoveFavourite(site.id)}
+                          aria-label={`Remove ${site.name} from favourites`}
+                        >
+                          {removing ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+                        </Button>
+                      </div>
+                      {expanded && (
+                        <div className="flex items-start gap-2">
+                          <div className="relative flex-1">
+                            <Textarea
+                              value={draft}
+                              onChange={e => setFavouriteNoteDrafts(d => ({ ...d, [site.id]: e.target.value }))}
+                              maxLength={FAV_NOTE_MAX}
+                              rows={2}
+                              placeholder="Why is this site on your list? (optional)"
+                              className="min-h-[52px] resize-none text-sm"
+                              aria-label={`Note for ${site.name}`}
+                            />
+                            <span className="pointer-events-none absolute bottom-1.5 right-2 text-[11px] tabular-nums text-muted-foreground">
+                              {draft.trim().length}/{FAV_NOTE_MAX}
+                            </span>
+                          </div>
+                          <div
+                            className={`flex flex-col gap-1 overflow-hidden transition-[width,opacity] duration-200 ease-out ${
+                              noteDirty ? "w-11 opacity-100" : "w-0 opacity-0"
+                            }`}
+                            aria-hidden={!noteDirty}
+                          >
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="outline"
+                              disabled={noteSaving || !noteDirty || noteTooLong}
+                              onClick={() => handleSaveFavouriteNote(site.id)}
+                              tabIndex={noteDirty ? 0 : -1}
+                              aria-label={`Save note for ${site.name}`}
+                            >
+                              {noteSaving ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="ghost"
+                              disabled={noteSaving}
+                              onClick={() => setFavouriteNoteDrafts(d => ({ ...d, [site.id]: savedNote }))}
+                              tabIndex={noteDirty ? 0 : -1}
+                              aria-label={`Reset note for ${site.name}`}
+                            >
+                              <X className="size-4" />
+                            </Button>
+                          </div>
+                        </div>
                       )}
-                      <Link
-                        to={`/s/${slug}`}
-                        className="min-w-0 flex-1 truncate text-sm font-medium hover:underline"
-                      >
-                        {site.name}
-                      </Link>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        disabled={removing}
-                        onClick={() => handleRemoveFavourite(site.id)}
-                        aria-label={`Remove ${site.name} from favourites`}
-                      >
-                        {removing ? <Loader2 className="size-4 animate-spin" /> : <X className="size-4" />}
-                      </Button>
                     </li>
                   );
                 })}

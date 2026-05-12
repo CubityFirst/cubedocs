@@ -186,6 +186,16 @@ body {
   font-family: var(--reading-font);
 }
 
+/* @tailwindcss/typography wraps inline <code> in literal backtick characters
+   via ::before/::after. The live reading view is .not-prose (CodeMirror) so
+   it never sees them, but the PDF print mirror and the AI-summary block
+   render react-markdown straight into .prose and the backticks leak through.
+   Match typography's selector specificity so this override wins. */
+.prose :where(code):not(:where([class~="not-prose"], [class~="not-prose"] *))::before,
+.prose :where(code):not(:where([class~="not-prose"], [class~="not-prose"] *))::after {
+  content: none;
+}
+
 /* Sonner's stylesheet sets font-family on :where([data-sonner-toaster]) — a
    zero-specificity selector, so it doesn't lose to body inheritance, it just
    overrides nothing in particular and ships its own stack. Bump specificity

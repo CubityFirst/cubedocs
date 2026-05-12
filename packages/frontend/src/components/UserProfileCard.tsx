@@ -85,6 +85,7 @@ interface FavouriteSite {
   name: string;
   vanitySlug: string | null;
   logoSquareUpdatedAt: string | null;
+  note: string | null;
 }
 
 interface ProfileData {
@@ -356,11 +357,12 @@ export function UserProfileCard({ userId, name, children, open: controlledOpen, 
               <div className="flex flex-col gap-1">
                 {profile.favouriteSites.map(site => {
                   const slug = site.vanitySlug ?? site.id;
+                  const note = site.note?.trim();
                   return (
                     <button
                       key={site.id}
                       type="button"
-                      className="flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-muted/60"
+                      className="flex w-full cursor-pointer items-start gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-muted/60"
                       onClick={() => { setOpen(false); navigate(`/s/${slug}`); }}
                     >
                       {site.logoSquareUpdatedAt ? (
@@ -372,7 +374,14 @@ export function UserProfileCard({ userId, name, children, open: controlledOpen, 
                       ) : (
                         <Globe className="size-5 shrink-0 text-muted-foreground" />
                       )}
-                      <span className="truncate text-sm font-medium">{site.name}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium">{site.name}</span>
+                        {note ? (
+                          <span className="mt-0.5 block text-xs text-muted-foreground whitespace-pre-wrap break-words">
+                            {note}
+                          </span>
+                        ) : null}
+                      </span>
                     </button>
                   );
                 })}

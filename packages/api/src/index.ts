@@ -341,12 +341,12 @@ export default {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
         const rows = await env.DB.prepare(
-          `SELECT p.id, p.name, p.vanity_slug, p.logo_square_updated_at, p.logo_wide_updated_at, ufp.created_at
+          `SELECT p.id, p.name, p.vanity_slug, p.logo_square_updated_at, p.logo_wide_updated_at, ufp.note, ufp.created_at
            FROM user_favourite_projects ufp
            JOIN projects p ON p.id = ufp.project_id
            WHERE ufp.user_id = ? AND p.published_at IS NOT NULL
            ORDER BY ufp.created_at DESC`,
-        ).bind(session.userId).all<{ id: string; name: string; vanity_slug: string | null; logo_square_updated_at: string | null; logo_wide_updated_at: string | null; created_at: number }>();
+        ).bind(session.userId).all<{ id: string; name: string; vanity_slug: string | null; logo_square_updated_at: string | null; logo_wide_updated_at: string | null; note: string | null; created_at: number }>();
         return addCorsHeaders(Response.json({
           ok: true,
           data: rows.results.map(r => ({
@@ -355,6 +355,7 @@ export default {
             vanitySlug: r.vanity_slug,
             logoSquareUpdatedAt: r.logo_square_updated_at,
             logoWideUpdatedAt: r.logo_wide_updated_at,
+            note: r.note,
           })),
         }));
       }
@@ -390,6 +391,19 @@ export default {
             "DELETE FROM user_favourite_projects WHERE user_id = ? AND project_id = ?",
           ).bind(session.userId, projectId).run();
           return addCorsHeaders(Response.json({ ok: true, data: { favourited: false } }));
+        }
+        // PATCH — update the per-favourite note. Empty/missing string clears it.
+        // 140-char cap to keep it a short justification, not a bio.
+        if (request.method === "PATCH") {
+          const body = await request.json<{ note?: string | null }>().catch(() => ({} as { note?: string | null }));
+          const raw = typeof body.note === "string" ? body.note.trim() : "";
+          if (raw.length > 140) return addCorsHeaders(errorResponse(Errors.BAD_REQUEST));
+          const note = raw.length === 0 ? null : raw;
+          const res = await env.DB.prepare(
+            "UPDATE user_favourite_projects SET note = ? WHERE user_id = ? AND project_id = ?",
+          ).bind(note, session.userId, projectId).run();
+          if (!res.meta.changes) return addCorsHeaders(errorResponse(Errors.NOT_FOUND));
+          return addCorsHeaders(Response.json({ ok: true, data: { note } }));
         }
       }
 
@@ -506,12 +520,12 @@ export default {
         ).bind(session.userId, targetUserId).all<{ id: string; name: string; their_role: string }>();
 
         const favouriteRows = await env.DB.prepare(
-          `SELECT p.id, p.name, p.vanity_slug, p.logo_square_updated_at, p.logo_wide_updated_at
+          `SELECT p.id, p.name, p.vanity_slug, p.logo_square_updated_at, p.logo_wide_updated_at, ufp.note
            FROM user_favourite_projects ufp
            JOIN projects p ON p.id = ufp.project_id
            WHERE ufp.user_id = ? AND p.published_at IS NOT NULL
            ORDER BY ufp.created_at DESC`,
-        ).bind(targetUserId).all<{ id: string; name: string; vanity_slug: string | null; logo_square_updated_at: string | null; logo_wide_updated_at: string | null }>();
+        ).bind(targetUserId).all<{ id: string; name: string; vanity_slug: string | null; logo_square_updated_at: string | null; logo_wide_updated_at: string | null; note: string | null }>();
 
         const planRow = await env.AUTH_DB.prepare(
           `SELECT personal_plan, personal_plan_status, personal_plan_started_at,
@@ -544,6 +558,7 @@ export default {
             vanitySlug: r.vanity_slug,
             logoSquareUpdatedAt: r.logo_square_updated_at,
             logoWideUpdatedAt: r.logo_wide_updated_at,
+            note: r.note,
           })),
           personalPlan: resolvedPlan.plan,
           personalPlanSince: resolvedPlan.since,
