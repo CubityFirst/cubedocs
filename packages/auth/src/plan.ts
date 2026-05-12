@@ -41,6 +41,7 @@ export type PlanRow = {
   personal_plan_cancel_at: number | null;
   personal_plan_style: string | null;
   personal_presence_color: string | null;
+  personal_crit_sparkles: number | null;
 };
 
 export type ResolvedPlan = {
@@ -58,6 +59,10 @@ export type ResolvedPlan = {
   // are normalised to null here so callers don't have to re-validate.
   style: InkRingStyle | null;
   presenceColor: string | null;
+  // Whether to render the dice crit sparkle burst for this user. Ink-only
+  // perk: false for free users. For Ink users, NULL on the row means "use
+  // the default" which is true; an explicit 0 turns it off.
+  critSparkles: boolean;
 };
 
 const ACTIVE_STATUSES = new Set(["active", "trialing", "past_due"]);
@@ -74,6 +79,11 @@ function readPresenceColor(row: PlanRow): string | null {
   return isInkPresenceColor(row.personal_presence_color) ? row.personal_presence_color : null;
 }
 
+// NULL → default (on); explicit 0 → off; anything else → on.
+function readCritSparkles(row: PlanRow): boolean {
+  return row.personal_crit_sparkles !== 0;
+}
+
 export function resolvePersonalPlan(row: PlanRow, now: number = Date.now()): ResolvedPlan {
   if (row.granted_plan && (row.granted_plan_expires_at === null || row.granted_plan_expires_at > now)) {
     return {
@@ -84,6 +94,7 @@ export function resolvePersonalPlan(row: PlanRow, now: number = Date.now()): Res
       cancelAt: null,
       style: readStyle(row),
       presenceColor: readPresenceColor(row),
+      critSparkles: readCritSparkles(row),
     };
   }
 
@@ -96,8 +107,9 @@ export function resolvePersonalPlan(row: PlanRow, now: number = Date.now()): Res
       cancelAt: row.personal_plan_cancel_at,
       style: readStyle(row),
       presenceColor: readPresenceColor(row),
+      critSparkles: readCritSparkles(row),
     };
   }
 
-  return { plan: "free", via: "free", since: null, status: null, cancelAt: null, style: null, presenceColor: null };
+  return { plan: "free", via: "free", since: null, status: null, cancelAt: null, style: null, presenceColor: null, critSparkles: false };
 }

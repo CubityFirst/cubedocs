@@ -11,6 +11,7 @@ const FREE: PlanRow = {
   personal_plan_cancel_at: null,
   personal_plan_style: null,
   personal_presence_color: null,
+  personal_crit_sparkles: null,
 };
 
 const NOW = 1_000_000;
@@ -175,5 +176,30 @@ describe("resolvePersonalPlan", () => {
     }, NOW);
     expect(r.via).toBe("granted");
     expect(r.since).toBe(12345);
+  });
+
+  it("crit sparkles default to true for paid Ink users (NULL column)", () => {
+    const r = resolvePersonalPlan({
+      ...FREE,
+      personal_plan: "ink",
+      personal_plan_status: "active",
+    }, NOW);
+    expect(r.critSparkles).toBe(true);
+  });
+
+  it("crit sparkles respect explicit 0 (off) for Ink users", () => {
+    const r = resolvePersonalPlan({
+      ...FREE,
+      personal_plan: "ink",
+      personal_plan_status: "active",
+      personal_crit_sparkles: 0,
+    }, NOW);
+    expect(r.critSparkles).toBe(false);
+  });
+
+  it("crit sparkles are always false for free users", () => {
+    const r = resolvePersonalPlan({ ...FREE, personal_crit_sparkles: 1 }, NOW);
+    expect(r.plan).toBe("free");
+    expect(r.critSparkles).toBe(false);
   });
 });

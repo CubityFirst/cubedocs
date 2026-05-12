@@ -8,6 +8,7 @@ export interface Session {
   personalPlanCancelAt?: number | null;
   personalPlanStyle?: string | null;
   personalPresenceColor?: string | null;
+  personalCritSparkles?: boolean;
   readingFont?: string | null;
   editingFont?: string | null;
   uiFont?: string | null;

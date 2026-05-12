@@ -14,6 +14,7 @@ interface SessionUserRow {
   personal_plan_cancel_at: number | null;
   personal_plan_style: string | null;
   personal_presence_color: string | null;
+  personal_crit_sparkles: number | null;
   granted_plan: string | null;
   granted_plan_expires_at: number | null;
   granted_plan_started_at: number | null;
@@ -68,6 +69,7 @@ export async function loadCurrentSession(
       `SELECT id, email, moderation, force_password_change, is_admin,
               personal_plan, personal_plan_status, personal_plan_started_at,
               personal_plan_cancel_at, personal_plan_style, personal_presence_color,
+              personal_crit_sparkles,
               granted_plan, granted_plan_expires_at, granted_plan_started_at,
               reading_font, editing_font, ui_font
        FROM users WHERE id = ?`,
@@ -117,6 +119,7 @@ export async function loadCurrentSession(
     personal_plan_cancel_at: user.personal_plan_cancel_at,
     personal_plan_style: user.personal_plan_style,
     personal_presence_color: user.personal_presence_color,
+    personal_crit_sparkles: user.personal_crit_sparkles,
   }, now);
 
   return {
@@ -133,6 +136,7 @@ export async function loadCurrentSession(
       personalPlanCancelAt: resolved.cancelAt,
       personalPlanStyle: resolved.style,
       personalPresenceColor: resolved.presenceColor,
+      personalCritSparkles: resolved.critSparkles,
       readingFont: user.reading_font,
       editingFont: user.editing_font,
       uiFont: user.ui_font,

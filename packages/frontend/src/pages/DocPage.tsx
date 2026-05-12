@@ -234,18 +234,18 @@ export function DocPage() {
     }),
   }), [projectId, allDocs, allFolders]);
 
-  const userIsInk = currentUser?.personalPlan === "ink";
+  const showInkCritSparkles = currentUser?.personalPlan === "ink" && currentUser.personalCritSparkles;
   const wysiwygCtx = useMemo(() => ({
     projectId,
     isPublic: false,
     currentDocId: docId,
     revealOnCursor: true,
-    userIsInk,
+    showInkCritSparkles,
     docs: allDocs,
     folders: allFolders,
     buildUrl: (id: string, anchor?: string) =>
       `/projects/${projectId}/docs/${id}${anchor ? "#" + anchor : ""}`,
-  }), [projectId, docId, userIsInk, allDocs, allFolders]);
+  }), [projectId, docId, showInkCritSparkles, allDocs, allFolders]);
 
   const [doc, setDoc] = useState<Doc | null>(null);
   const [myRole, setMyRole] = useState<string | null>(null);

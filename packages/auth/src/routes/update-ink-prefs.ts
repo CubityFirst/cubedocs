@@ -16,9 +16,9 @@ export async function handleUpdateInkPrefs(request: Request, env: Env): Promise<
   const session = await requireAuthenticatedSession(request, env);
   if (session instanceof Response) return session;
 
-  const body = await request.json<{ style?: string | null; presenceColor?: string | null }>();
+  const body = await request.json<{ style?: string | null; presenceColor?: string | null; critSparkles?: boolean | null }>();
 
-  if (!("style" in body) && !("presenceColor" in body)) return errorResponse(Errors.BAD_REQUEST);
+  if (!("style" in body) && !("presenceColor" in body) && !("critSparkles" in body)) return errorResponse(Errors.BAD_REQUEST);
 
   if ("style" in body && body.style !== null && !isInkRingStyle(body.style)) {
     return errorResponse(Errors.BAD_REQUEST);
@@ -26,10 +26,14 @@ export async function handleUpdateInkPrefs(request: Request, env: Env): Promise<
   if ("presenceColor" in body && body.presenceColor !== null && !isInkPresenceColor(body.presenceColor)) {
     return errorResponse(Errors.BAD_REQUEST);
   }
+  if ("critSparkles" in body && body.critSparkles !== null && typeof body.critSparkles !== "boolean") {
+    return errorResponse(Errors.BAD_REQUEST);
+  }
 
   const planRow = await env.DB.prepare(
     `SELECT personal_plan, personal_plan_status, personal_plan_started_at,
             personal_plan_cancel_at, personal_plan_style, personal_presence_color,
+            personal_crit_sparkles,
             granted_plan, granted_plan_expires_at, granted_plan_started_at
      FROM users WHERE id = ?`,
   ).bind(session.userId).first<{
@@ -39,6 +43,7 @@ export async function handleUpdateInkPrefs(request: Request, env: Env): Promise<
     personal_plan_cancel_at: number | null;
     personal_plan_style: string | null;
     personal_presence_color: string | null;
+    personal_crit_sparkles: number | null;
     granted_plan: string | null;
     granted_plan_expires_at: number | null;
     granted_plan_started_at: number | null;
@@ -58,6 +63,11 @@ export async function handleUpdateInkPrefs(request: Request, env: Env): Promise<
     sets.push("personal_presence_color = ?");
     binds.push(body.presenceColor ?? null);
   }
+  if ("critSparkles" in body) {
+    sets.push("personal_crit_sparkles = ?");
+    // NULL means "use the default" (on). Persist 0/1 for explicit values.
+    binds.push(body.critSparkles === null ? null : body.critSparkles ? 1 : 0);
+  }
   binds.push(session.userId);
 
   await env.DB.prepare(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`).bind(...binds).run();
@@ -65,5 +75,6 @@ export async function handleUpdateInkPrefs(request: Request, env: Env): Promise<
   return okResponse({
     style: "style" in body ? (body.style ?? null) : resolved.style,
     presenceColor: "presenceColor" in body ? (body.presenceColor ?? null) : resolved.presenceColor,
+    critSparkles: "critSparkles" in body ? (body.critSparkles ?? true) : resolved.critSparkles,
   });
 }

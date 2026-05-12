@@ -20,6 +20,7 @@ export interface Session {
   personalPlanCancelAt?: number | null;
   personalPlanStyle?: string | null;
   personalPresenceColor?: string | null;
+  personalCritSparkles?: boolean;
   // User-picked prose fonts for reading vs editing modes. NULL means the
   // frontend falls back to the default sans stack. Not gated on plan.
   readingFont?: string | null;

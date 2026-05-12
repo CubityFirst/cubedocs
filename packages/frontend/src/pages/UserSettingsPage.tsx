@@ -35,6 +35,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { ColorPicker } from "@/components/ui/color-picker";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { TIMEZONE_GROUPS, detectTimezoneGroup, getTimezoneGroup, formatTimezoneLabel, formatTimeInZone } from "@/lib/timezone";
 import { formatInkSince } from "@/lib/inkDate";
 import { FONT_CHOICES, FONT_LABELS, FONT_STACKS, DEFAULT_READING_FONT, DEFAULT_EDITING_FONT, DEFAULT_UI_FONT, type FontChoice } from "@/lib/fonts";
@@ -188,6 +189,7 @@ export function UserSettingsPage() {
   const [personalPlanCancelAt, setPersonalPlanCancelAt] = useState<number | null>(null);
   const [personalPlanStyle, setPersonalPlanStyle] = useState<string | null>(null);
   const [personalPresenceColor, setPersonalPresenceColor] = useState<string | null>(null);
+  const [personalCritSparkles, setPersonalCritSparkles] = useState<boolean>(true);
   const [inkPrefsBusy, setInkPrefsBusy] = useState(false);
   const [cosmeticsOpen, setCosmeticsOpen] = useState(false);
   const [billingBusy, setBillingBusy] = useState(false);
@@ -217,7 +219,7 @@ export function UserSettingsPage() {
     const token = getToken();
     if (!token) return;
     fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json() as Promise<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean; userId: string; timezone: string | null; bio: string | null; personalPlan: "free" | "ink"; personalPlanSince: number | null; personalPlanStatus: string | null; personalPlanCancelAt: number | null; personalPlanStyle: string | null; personalPresenceColor: string | null } }>)
+      .then(r => r.json() as Promise<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean; userId: string; timezone: string | null; bio: string | null; personalPlan: "free" | "ink"; personalPlanSince: number | null; personalPlanStatus: string | null; personalPlanCancelAt: number | null; personalPlanStyle: string | null; personalPresenceColor: string | null; personalCritSparkles: boolean } }>)
       .then(json => {
         if (json.ok && json.data) {
           setCurrentName(json.data.name);
@@ -236,6 +238,7 @@ export function UserSettingsPage() {
           setPersonalPlanCancelAt(json.data.personalPlanCancelAt);
           setPersonalPlanStyle(json.data.personalPlanStyle);
           setPersonalPresenceColor(json.data.personalPresenceColor);
+          setPersonalCritSparkles(json.data.personalCritSparkles ?? true);
         }
       })
       .catch(() => {});
@@ -756,15 +759,16 @@ export function UserSettingsPage() {
   // the auth worker. Optimistic local state — we mirror the value into
   // the picker before the request returns so the avatar updates instantly,
   // and roll it back on failure.
-  async function saveInkPrefs(patch: { style?: string | null; presenceColor?: string | null }) {
+  async function saveInkPrefs(patch: { style?: string | null; presenceColor?: string | null; critSparkles?: boolean | null }) {
     if (inkPrefsBusy) return;
     setInkPrefsBusy(true);
     const prevStyle = personalPlanStyle;
     const prevColor = personalPresenceColor;
+    const prevCritSparkles = personalCritSparkles;
     // Optimistic — update both this page and the layout so the sidebar
     // avatar reflects the change immediately. If the save fails we roll
     // both back together.
-    const layoutPatch: { personalPlanStyle?: string | null; personalPresenceColor?: string | null } = {};
+    const layoutPatch: { personalPlanStyle?: string | null; personalPresenceColor?: string | null; personalCritSparkles?: boolean } = {};
     if ("style" in patch) {
       setPersonalPlanStyle(patch.style ?? null);
       layoutPatch.personalPlanStyle = patch.style ?? null;
@@ -772,6 +776,11 @@ export function UserSettingsPage() {
     if ("presenceColor" in patch) {
       setPersonalPresenceColor(patch.presenceColor ?? null);
       layoutPatch.personalPresenceColor = patch.presenceColor ?? null;
+    }
+    if ("critSparkles" in patch) {
+      const next = patch.critSparkles ?? true;
+      setPersonalCritSparkles(next);
+      layoutPatch.personalCritSparkles = next;
     }
     updateInkAppearance(layoutPatch);
     try {
@@ -783,16 +792,18 @@ export function UserSettingsPage() {
         body: JSON.stringify(patch),
       });
       if (!res.ok) {
-        const rollback: { personalPlanStyle?: string | null; personalPresenceColor?: string | null } = {};
+        const rollback: { personalPlanStyle?: string | null; personalPresenceColor?: string | null; personalCritSparkles?: boolean } = {};
         if ("style" in patch) { setPersonalPlanStyle(prevStyle); rollback.personalPlanStyle = prevStyle; }
         if ("presenceColor" in patch) { setPersonalPresenceColor(prevColor); rollback.personalPresenceColor = prevColor; }
+        if ("critSparkles" in patch) { setPersonalCritSparkles(prevCritSparkles); rollback.personalCritSparkles = prevCritSparkles; }
         updateInkAppearance(rollback);
         toast({ title: "Couldn't save", description: "Please try again in a moment.", variant: "destructive" });
       }
     } catch {
-      const rollback: { personalPlanStyle?: string | null; personalPresenceColor?: string | null } = {};
+      const rollback: { personalPlanStyle?: string | null; personalPresenceColor?: string | null; personalCritSparkles?: boolean } = {};
       if ("style" in patch) { setPersonalPlanStyle(prevStyle); rollback.personalPlanStyle = prevStyle; }
       if ("presenceColor" in patch) { setPersonalPresenceColor(prevColor); rollback.personalPresenceColor = prevColor; }
+      if ("critSparkles" in patch) { setPersonalCritSparkles(prevCritSparkles); rollback.personalCritSparkles = prevCritSparkles; }
       updateInkAppearance(rollback);
       toast({ title: "Couldn't save", description: "Please try again in a moment.", variant: "destructive" });
     } finally {
@@ -1492,6 +1503,21 @@ export function UserSettingsPage() {
                               Reset
                             </Button>
                           )}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <h4 className="text-sm font-semibold">Dice crit sparkles</h4>
+                            <p className="mt-0.5 text-xs text-muted-foreground">Sparkle burst when your dice rolls land a critical success.</p>
+                          </div>
+                          <Switch
+                            checked={personalCritSparkles}
+                            disabled={inkPrefsBusy}
+                            onCheckedChange={(next) => saveInkPrefs({ critSparkles: next ? null : false })}
+                            aria-label="Toggle dice crit sparkles"
+                          />
                         </div>
                       </div>
 

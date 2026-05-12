@@ -21,8 +21,8 @@ export interface RendererCtx {
   hideFrontmatter?: boolean;
   /** When false, decorations are always applied (Reading mode). Default true (Editing mode). */
   revealOnCursor?: boolean;
-  /** True when the *viewing* user is an Annex Ink supporter — gates supporter-only cosmetic effects (e.g. dice crit sparkles). */
-  userIsInk?: boolean;
+  /** True when the *viewing* user is an Annex Ink supporter AND has the crit-sparkles preference enabled. Gates the sparkle burst on dice critical successes. */
+  showInkCritSparkles?: boolean;
   docs?: DocInfo[];
   folders?: FolderInfo[];
   buildUrl?: (docId: string, anchor?: string) => string;

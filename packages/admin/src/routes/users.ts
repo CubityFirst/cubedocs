@@ -135,6 +135,7 @@ interface BillingRow {
   personal_plan_cancel_at: number | null;
   personal_plan_style: string | null;
   personal_presence_color: string | null;
+  personal_crit_sparkles: number | null;
   granted_plan: string | null;
   granted_plan_expires_at: number | null;
   granted_plan_started_at: number | null;
@@ -152,6 +153,7 @@ function buildBillingDetails(row: BillingRow): BillingDetails {
     personal_plan_cancel_at: row.personal_plan_cancel_at,
     personal_plan_style: row.personal_plan_style,
     personal_presence_color: row.personal_presence_color,
+    personal_crit_sparkles: row.personal_crit_sparkles,
   });
   return {
     resolved_plan: resolved.plan,
@@ -192,6 +194,7 @@ async function loadUserDetails(env: Env, id: string): Promise<UserDetails | null
     `SELECT stripe_customer_id, stripe_subscription_id,
             personal_plan, personal_plan_status, personal_plan_started_at,
             personal_plan_cancel_at, personal_plan_style, personal_presence_color,
+            personal_crit_sparkles,
             granted_plan, granted_plan_expires_at, granted_plan_started_at,
             granted_plan_reason
      FROM users WHERE id = ?`,
@@ -279,7 +282,7 @@ async function loadUserDetails(env: Env, id: string): Promise<UserDetails | null
     billing: buildBillingDetails(billingRow ?? {
       stripe_customer_id: null, stripe_subscription_id: null,
       personal_plan: null, personal_plan_status: null, personal_plan_started_at: null, personal_plan_cancel_at: null,
-      personal_plan_style: null, personal_presence_color: null,
+      personal_plan_style: null, personal_presence_color: null, personal_crit_sparkles: null,
       granted_plan: null, granted_plan_expires_at: null, granted_plan_started_at: null, granted_plan_reason: null,
     }),
   };

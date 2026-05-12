@@ -29,6 +29,7 @@ export async function authenticate(request: Request, env: Env): Promise<Session 
       personalPlanCancelAt: result.session.personalPlanCancelAt ?? null,
       personalPlanStyle: result.session.personalPlanStyle ?? null,
       personalPresenceColor: result.session.personalPresenceColor ?? null,
+      personalCritSparkles: result.session.personalCritSparkles ?? true,
       readingFont: result.session.readingFont ?? null,
       editingFont: result.session.editingFont ?? null,
       uiFont: result.session.uiFont ?? null,

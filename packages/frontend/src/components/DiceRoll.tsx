@@ -336,7 +336,7 @@ export function DiceRoll({ notation }: DiceRollProps) {
   const [open, setOpen] = useState(false);
   const touchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const blockOpenRef = useRef(false);
-  const { userIsInk } = useRendererCtx();
+  const { showInkCritSparkles } = useRendererCtx();
 
   const clearTouchTimer = useCallback(() => {
     if (touchTimerRef.current) {
@@ -422,7 +422,7 @@ export function DiceRoll({ notation }: DiceRollProps) {
   const anyCritSuccess = result.terms.some((t) => t.anyCritSuccess);
   const anyCritFail = result.terms.some((t) => t.anyCritFail);
   const isCritSuccess = anyCritSuccess || isMaxRoll;
-  const showInkSparkles = userIsInk && isCritSuccess;
+  const showInkSparkles = !!showInkCritSparkles && isCritSuccess;
 
   return (
     <HoverCard key={rollKey} open={open} onOpenChange={handleOpenChange} openDelay={200}>
@@ -431,7 +431,7 @@ export function DiceRoll({ notation }: DiceRollProps) {
           onClick={doRoll}
           onPointerDown={handlePointerDown}
           onPointerUp={handlePointerUp}
-          className="relative inline-flex items-center gap-1 rounded bg-zinc-700/60 px-1.5 py-0.5 text-[0.875em] text-zinc-200 select-none not-prose hover:bg-zinc-700 transition-colors cursor-pointer"
+          className="inline-flex items-center gap-1 rounded bg-zinc-700/60 px-1.5 py-0.5 text-[0.875em] text-zinc-200 select-none not-prose hover:bg-zinc-700 transition-colors cursor-pointer"
           style={{ fontFamily: "var(--ui-font)" }}
           aria-label="Re-roll"
         >
@@ -441,20 +441,22 @@ export function DiceRoll({ notation }: DiceRollProps) {
             <span className="text-zinc-400">{result.label}</span>
           )}
           <span className="text-zinc-500">:</span>
-          <span className={`font-semibold ${isMaxRoll || anyCritSuccess ? "text-green-400" : isMinRoll || anyCritFail ? "text-red-400" : "text-zinc-100"}`}>{displayValue}</span>
+          <span className={`relative font-semibold ${isMaxRoll || anyCritSuccess ? "text-green-400" : isMinRoll || anyCritFail ? "text-red-400" : "text-zinc-100"}`}>
+            {displayValue}
+            {showInkSparkles && (
+              <span className="ink-crit-sparkles" aria-hidden="true">
+                <Sparkles className="ink-crit-sparkle ink-crit-sparkle-1" />
+                <Sparkles className="ink-crit-sparkle ink-crit-sparkle-2" />
+                <Sparkles className="ink-crit-sparkle ink-crit-sparkle-3" />
+                <Sparkles className="ink-crit-sparkle ink-crit-sparkle-4" />
+                <Sparkles className="ink-crit-sparkle ink-crit-sparkle-5" />
+              </span>
+            )}
+          </span>
           {isDiceSuccessCount && <span className="text-zinc-400 font-normal">succ</span>}
           {exprST && (
             <span className={`font-semibold ${result.successCount === 1 ? "text-green-400" : "text-red-400"}`}>
               {result.successCount === 1 ? "✓" : "✗"}
-            </span>
-          )}
-          {showInkSparkles && (
-            <span className="ink-crit-sparkles" aria-hidden="true">
-              <Sparkles className="ink-crit-sparkle ink-crit-sparkle-1" />
-              <Sparkles className="ink-crit-sparkle ink-crit-sparkle-2" />
-              <Sparkles className="ink-crit-sparkle ink-crit-sparkle-3" />
-              <Sparkles className="ink-crit-sparkle ink-crit-sparkle-4" />
-              <Sparkles className="ink-crit-sparkle ink-crit-sparkle-5" />
             </span>
           )}
         </button>

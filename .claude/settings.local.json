@@ -4,25 +4,24 @@
       "Bash(pnpm typecheck:*)",
       "Bash(npx tsc *)",
       "WebFetch(domain:api.anthropic.com)",
-      "Bash(pnpm --filter @annex/api test)",
       "Bash(npx vitest *)",
       "Bash(npx playwright *)",
-      "Bash(pnpm test *)",
+      "Bash(pnpm test*)",
+      "Bash(pnpm -r test*)",
+      "Bash(pnpm * test*)",
       "Bash(rg *)",
       "Bash(xargs *)",
       "Bash(fd *)",
       "Bash(fzf *)",
       "Bash(ag *)",
       "Bash(pnpm -C packages/frontend typecheck)",
-      "Bash(pnpm -C packages/frontend test)",
       "Bash(pnpm -C packages/frontend build)",
       "Bash(npx wrangler *)",
       "Bash(node -e ' *)",
       "WebFetch(domain:www.shadcn.io)",
       "WebFetch(domain:github.com)",
       "Bash(pnpm --filter frontend typecheck)",
-      "Bash(pnpm -r typecheck)",
-      "Bash(pnpm --filter * test)"
+      "Bash(pnpm -r typecheck)"
     ]
   }
 }

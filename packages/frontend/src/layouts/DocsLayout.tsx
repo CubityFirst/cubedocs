@@ -86,10 +86,10 @@ export interface DocsLayoutContext {
   aiEnabled: boolean;
   aiSummarizationType: string;
   projectFeatures: number;
-  currentUser: { id: string; name: string; personalPlan: "free" | "ink"; personalPlanStyle: string | null; personalPresenceColor: string | null } | null;
+  currentUser: { id: string; name: string; personalPlan: "free" | "ink"; personalPlanStyle: string | null; personalPresenceColor: string | null; personalCritSparkles: boolean } | null;
   // Lets nested routes (e.g. UserSettingsPage) push Ink cosmetic changes
   // back into the layout so the sidebar avatar updates without a reload.
-  updateInkAppearance: (patch: { personalPlanStyle?: string | null; personalPresenceColor?: string | null }) => void;
+  updateInkAppearance: (patch: { personalPlanStyle?: string | null; personalPresenceColor?: string | null; personalCritSparkles?: boolean }) => void;
   // Current resolved font choices + a setter so the settings page can apply
   // changes instantly (CSS variables on :root) without waiting for a refetch.
   readingFont: FontChoice;
@@ -220,6 +220,7 @@ export function DocsLayout() {
   const [personalPlan, setPersonalPlan] = useState<"free" | "ink">("free");
   const [personalPlanStyle, setPersonalPlanStyle] = useState<string | null>(null);
   const [personalPresenceColor, setPersonalPresenceColor] = useState<string | null>(null);
+  const [personalCritSparkles, setPersonalCritSparkles] = useState<boolean>(true);
   // Seed from the cookie (written on every prior change) so we render with the
   // user's choice immediately instead of flashing the default while /api/me is
   // in flight. /api/me overrides if it disagrees — the cookie is best-effort,
@@ -256,7 +257,7 @@ export function DocsLayout() {
 
   useEffect(() => {
     if (!getToken()) return;
-    apiFetchJson<{ name: string; userId: string; personalPlan: "free" | "ink"; personalPlanStyle: string | null; personalPresenceColor: string | null; readingFont: string | null; editingFont: string | null; uiFont: string | null }>("/api/me")
+    apiFetchJson<{ name: string; userId: string; personalPlan: "free" | "ink"; personalPlanStyle: string | null; personalPresenceColor: string | null; personalCritSparkles: boolean; readingFont: string | null; editingFont: string | null; uiFont: string | null }>("/api/me")
       .then(result => {
         if (result.ok && result.data) {
           setUserName(result.data.name);
@@ -264,6 +265,7 @@ export function DocsLayout() {
           setPersonalPlan(result.data.personalPlan ?? "free");
           setPersonalPlanStyle(result.data.personalPlanStyle ?? null);
           setPersonalPresenceColor(result.data.personalPresenceColor ?? null);
+          setPersonalCritSparkles(result.data.personalCritSparkles ?? true);
           setReadingFont(resolveFontChoice(result.data.readingFont, DEFAULT_READING_FONT));
           setEditingFont(resolveFontChoice(result.data.editingFont, DEFAULT_EDITING_FONT));
           setUiFont(resolveFontChoice(result.data.uiFont, DEFAULT_UI_FONT));
@@ -378,10 +380,11 @@ export function DocsLayout() {
     aiEnabled: !!(currentProject?.ai_enabled),
     aiSummarizationType: currentProject?.ai_summarization_type ?? "manual",
     projectFeatures: currentProject?.features ?? 0,
-    currentUser: userId && userName ? { id: userId, name: userName, personalPlan, personalPlanStyle, personalPresenceColor } : null,
+    currentUser: userId && userName ? { id: userId, name: userName, personalPlan, personalPlanStyle, personalPresenceColor, personalCritSparkles } : null,
     updateInkAppearance: (patch) => {
       if ("personalPlanStyle" in patch) setPersonalPlanStyle(patch.personalPlanStyle ?? null);
       if ("personalPresenceColor" in patch) setPersonalPresenceColor(patch.personalPresenceColor ?? null);
+      if ("personalCritSparkles" in patch && patch.personalCritSparkles !== undefined) setPersonalCritSparkles(patch.personalCritSparkles);
     },
     readingFont,
     editingFont,
