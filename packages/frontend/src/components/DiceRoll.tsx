@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { Dices } from "lucide-react";
+import { Dices, Sparkles } from "lucide-react";
 import {
   HoverCard,
   HoverCardContent,
@@ -11,6 +11,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { roll, splitFormulaLabel, cmpMatch, type RollResult, type TermResult, type GroupResult } from "@/lib/dice";
+import { useRendererCtx } from "@/components/wysiwyg/context/RendererContext";
 
 const opSymbol = (op: string) => op === "<=" ? "≤" : op === ">=" ? "≥" : op;
 
@@ -335,6 +336,7 @@ export function DiceRoll({ notation }: DiceRollProps) {
   const [open, setOpen] = useState(false);
   const touchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const blockOpenRef = useRef(false);
+  const { userIsInk } = useRendererCtx();
 
   const clearTouchTimer = useCallback(() => {
     if (touchTimerRef.current) {
@@ -419,6 +421,8 @@ export function DiceRoll({ notation }: DiceRollProps) {
   const isMinRoll = !isStringOnly && result.minTotal !== null && result.total === result.minTotal;
   const anyCritSuccess = result.terms.some((t) => t.anyCritSuccess);
   const anyCritFail = result.terms.some((t) => t.anyCritFail);
+  const isCritSuccess = anyCritSuccess || isMaxRoll;
+  const showInkSparkles = userIsInk && isCritSuccess;
 
   return (
     <HoverCard key={rollKey} open={open} onOpenChange={handleOpenChange} openDelay={200}>
@@ -427,7 +431,7 @@ export function DiceRoll({ notation }: DiceRollProps) {
           onClick={doRoll}
           onPointerDown={handlePointerDown}
           onPointerUp={handlePointerUp}
-          className="inline-flex items-center gap-1 rounded bg-zinc-700/60 px-1.5 py-0.5 text-[0.875em] text-zinc-200 select-none not-prose hover:bg-zinc-700 transition-colors cursor-pointer"
+          className="relative inline-flex items-center gap-1 rounded bg-zinc-700/60 px-1.5 py-0.5 text-[0.875em] text-zinc-200 select-none not-prose hover:bg-zinc-700 transition-colors cursor-pointer"
           style={{ fontFamily: "var(--ui-font)" }}
           aria-label="Re-roll"
         >
@@ -442,6 +446,15 @@ export function DiceRoll({ notation }: DiceRollProps) {
           {exprST && (
             <span className={`font-semibold ${result.successCount === 1 ? "text-green-400" : "text-red-400"}`}>
               {result.successCount === 1 ? "✓" : "✗"}
+            </span>
+          )}
+          {showInkSparkles && (
+            <span className="ink-crit-sparkles" aria-hidden="true">
+              <Sparkles className="ink-crit-sparkle ink-crit-sparkle-1" />
+              <Sparkles className="ink-crit-sparkle ink-crit-sparkle-2" />
+              <Sparkles className="ink-crit-sparkle ink-crit-sparkle-3" />
+              <Sparkles className="ink-crit-sparkle ink-crit-sparkle-4" />
+              <Sparkles className="ink-crit-sparkle ink-crit-sparkle-5" />
             </span>
           )}
         </button>

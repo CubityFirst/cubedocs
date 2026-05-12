@@ -99,3 +99,42 @@
 @media (prefers-reduced-motion: reduce) {
   .ink-icon { animation: none; }
 }
+
+/* Annex Ink supporter cosmetic — sparkle burst on dice critical successes.
+   Rendered by DiceRoll only when the viewing user is an Ink supporter AND
+   the roll satisfies a `cs` condition or hits its maximum total. */
+.ink-crit-sparkles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 1;
+}
+
+.ink-crit-sparkle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  opacity: 0;
+  animation: ink-crit-burst 1100ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  filter: drop-shadow(0 0 3px currentColor);
+}
+
+@keyframes ink-crit-burst {
+  0%   { opacity: 0; transform: translate(0, 0) scale(0.3) rotate(0deg); }
+  18%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1.15) rotate(220deg); }
+}
+
+.ink-crit-sparkle-1 { --dx: -22px; --dy: -14px; color: hsl(45 100% 62%); }
+.ink-crit-sparkle-2 { --dx:  24px; --dy: -10px; color: hsl(320 85% 65%); animation-delay: 60ms; }
+.ink-crit-sparkle-3 { --dx: -18px; --dy:  16px; color: hsl(200 85% 65%); animation-delay: 120ms; }
+.ink-crit-sparkle-4 { --dx:  26px; --dy:  12px; color: hsl(160 75% 60%); animation-delay: 180ms; }
+.ink-crit-sparkle-5 { --dx:   2px; --dy: -22px; color: hsl(45 100% 70%); animation-delay: 240ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ink-crit-sparkle { animation: none; opacity: 0; }
+}
