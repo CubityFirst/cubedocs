@@ -12,15 +12,26 @@ Authentication uses `Authorization: Bearer <JWT>` headers. JWTs are issued by th
 
 **Verification boundary — read this before touching auth flow:**
 
-- **API Worker verifies sessions inline.** It binds the auth D1 as `AUTH_DB` (read-only by convention — no migrations) and calls `loadCurrentSession` from `packages/auth/src/session.ts` directly. One D1 batch read of `users` + `sessions`, no service-binding hop. This is what every authenticated API request goes through (`packages/api/src/auth.ts`).
+- **API Worker verifies sessions inline.** It binds the auth D1 as `AUTH_DB` (read-only by convention — no migrations) and calls `loadCurrentSession` from `packages/auth/src/session.ts` directly. One batched read of `sessions` + a `users` row LEFT-JOINed against `user_billing` and `user_preferences`, no service-binding hop. This is what every authenticated API request goes through (`packages/api/src/auth.ts`).
 - **Auth Worker still owns writes.** Login, register, change-password, session revoke, TOTP/WebAuthn enroll, lookup, etc. are still proxied through the `AUTH` service binding from the API worker. Anything that mutates the auth DB or needs rate limiting / email sending stays in the auth worker.
-- **Cross-package import.** API worker imports `loadCurrentSession`, `sessionResultToResponse`, and `verifyJwt` directly from `packages/auth/src/`. The API tsconfig lists those files in `include`. **A schema change to `users` or `sessions` columns referenced in `loadCurrentSession` requires redeploying both workers**, because the API worker now reads those tables directly. Migrations themselves still only live in `packages/auth/migrations/`.
+- **Cross-package import.** API worker imports `loadCurrentSession`, `sessionResultToResponse`, and `verifyJwt` directly from `packages/auth/src/`. The API tsconfig lists those files in `include`. **A schema change to `users` / `sessions` / `user_billing` / `user_preferences` columns referenced in `loadCurrentSession` requires redeploying auth + api + admin (in that order)**, because all three packages read these tables directly. Migrations themselves still only live in `packages/auth/migrations/`.
 - The auth worker's `/verify` endpoint still exists but the API worker no longer calls it — leave it in place for now in case external tooling depends on it.
 
 ### Database Schemas
 
-- **API DB** (`cubedocs-main`): projects, docs, doc_revisions, folders, files, members — see `packages/api/migrations/`. Bound as `DB` on the API worker.
-- **Auth DB** (`cubedocs-auth`): users, sessions, totp, webauthn_credentials — see `packages/auth/migrations/`. Bound as `DB` on the auth worker (read+write) and as `AUTH_DB` on the API worker (read-only by convention; only `users` and `sessions` are read).
+- **API DB** (`cubedocs-main`): projects, docs (+ `doc_ai_summaries` satellite), doc_revisions, folders, files, members — see `packages/api/migrations/`. Bound as `DB` on the API worker.
+- **Auth DB** (`cubedocs-auth`): users, sessions, totp, webauthn_credentials, plus the 1:1 satellites `user_billing` (Stripe + plan state) and `user_preferences` (fonts, Ink cosmetics, timezone, bio, badges) — see `packages/auth/migrations/`. Bound as `DB` on the auth worker (read+write) and as `AUTH_DB` on the API worker (read-only by convention).
+
+#### Satellite tables and the resolver
+
+`users`, `docs`, and other "hot" tables have been kept narrow by moving rarely-needed columns into 1:1 satellite tables keyed by the parent's id. The pattern:
+
+- Satellite row is created lazily — first write does `INSERT … ON CONFLICT(parent_id) DO UPDATE SET …`. A user/doc/etc. that has never had the feature touched has no satellite row at all.
+- Every reader does `LEFT JOIN <satellite> ON <satellite>.<parent>_id = <parent>.id`. Missing rows return NULL for every satellite column, which the consumer treats as "default."
+- The satellite declares `REFERENCES <parent>(id) ON DELETE CASCADE` so deleting the parent wipes the satellite row automatically.
+- Existing satellites: `doc_ai_summaries` (api DB; ai_summary cache), `user_billing` (auth DB; Stripe/plan state), `user_preferences` (auth DB; fonts + cosmetics + timezone + bio + badges).
+
+`resolvePersonalPlan` in `packages/auth/src/plan.ts` is fed inputs from multiple tables (billing-state from `user_billing`, cosmetic prefs from `user_preferences`). Callers build a flat `PlanRow` from the LEFT-JOINed query result and hand it to the resolver — see `loadCurrentSession`, `members.ts`, `update-ink-prefs.ts` for the pattern.
 
 ## Frontend Notes
 
@@ -39,7 +50,7 @@ Authentication uses `Authorization: Bearer <JWT>` headers. JWTs are issued by th
 
 ## Annex Ink + Stripe
 
-Personal supporter subscription ($5/mo) with Stripe billing, comp-grant override, animated avatar ring, admin grant/revoke/cancel controls, and a webhook proxy through the frontend worker. **Anything touching `personal_plan_*` / `granted_plan_*` columns, `billing.ts`, `stripe-webhook.ts`, the billing UI in user settings or the admin user-details sheet, or the `InkBillingCard` belongs to this system** — see `memories/Ink-Stripe.md` for schema, plan resolution rules, webhook flow, deploy/dev setup, and ops cheatsheet.
+Personal supporter subscription ($5/mo) with Stripe billing, comp-grant override, animated avatar ring, admin grant/revoke/cancel controls, and a webhook proxy through the frontend worker. **Anything touching the `user_billing` table (Stripe ids, `personal_plan_*`, `granted_plan_*`), the cosmetic-pref columns on `user_preferences` (`personal_plan_style`, `personal_presence_color`, `personal_crit_sparkles`), `billing.ts`, `stripe-webhook.ts`, the billing UI in user settings or the admin user-details sheet, or the `InkBillingCard` belongs to this system** — see `memories/Ink-Stripe.md` for schema, plan resolution rules, webhook flow, deploy/dev setup, and ops cheatsheet.
 
 ## Realtime Collaboration
 

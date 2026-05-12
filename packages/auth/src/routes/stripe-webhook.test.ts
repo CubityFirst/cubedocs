@@ -125,11 +125,11 @@ describe("handleStripeWebhook — checkout.session.completed", () => {
     expect(res.status).toBe(200);
 
     expect(db._statements[0]).toContain("INSERT OR IGNORE INTO webhook_events");
-    expect(db._statements[1]).toContain("UPDATE users");
+    expect(db._statements[1]).toContain("INSERT INTO user_billing");
     expect(db._statements[1]).toContain("stripe_customer_id");
     expect(db._statements[1]).toContain("stripe_subscription_id");
-    // bind args for the user UPDATE: customerId, subId, userId
-    expect(db._bindCalls[1]).toEqual(["cus_abc", "sub_xyz", "user-1"]);
+    // bind args for the user_billing upsert: userId, customerId, subId
+    expect(db._bindCalls[1]).toEqual(["user-1", "cus_abc", "sub_xyz"]);
   });
 
   it("ignores events missing client_reference_id", async () => {
@@ -169,20 +169,20 @@ describe("handleStripeWebhook — customer.subscription.created/updated", () => 
     const res = await handleStripeWebhook(makeRequest("{}"), makeEnv(db));
     expect(res.status).toBe(200);
 
-    expect(db._statements[1]).toContain("UPDATE users");
+    expect(db._statements[1]).toContain("INSERT INTO user_billing");
     expect(db._statements[1]).toContain("personal_plan");
-    expect(db._statements[1]).toContain("COALESCE(personal_plan_started_at");
+    expect(db._statements[1]).toContain("COALESCE(user_billing.personal_plan_started_at");
 
     const args = db._bindCalls[1];
-    expect(args[0]).toBe("cus_1"); // customerId
-    expect(args[1]).toBe("sub_1"); // subscriptionId
-    expect(args[2]).toBe("ink"); // plan
-    expect(args[3]).toBe("active"); // status
-    expect(args[4]).toBe(1_700_000_000_000); // period end (ms)
-    expect(args[5]).toBeNull(); // cancel_at (null when no cancellation pending)
-    // args[6] is now (Date.now()) — just check it's a number
-    expect(typeof args[6]).toBe("number");
-    expect(args[7]).toBe("user-1"); // user id
+    expect(args[0]).toBe("user-1"); // user id (now leads since it's the upsert key)
+    expect(args[1]).toBe("cus_1"); // customerId
+    expect(args[2]).toBe("sub_1"); // subscriptionId
+    expect(args[3]).toBe("ink"); // plan
+    expect(args[4]).toBe("active"); // status
+    expect(args[5]).toBe(1_700_000_000_000); // period end (ms)
+    expect(args[6]).toBeNull(); // cancel_at (null when no cancellation pending)
+    // args[7] is now (Date.now()) — just check it's a number
+    expect(typeof args[7]).toBe("number");
   });
 
   it("captures cancel_at when subscription is set to cancel at period end", () => {
@@ -199,7 +199,7 @@ describe("handleStripeWebhook — customer.subscription.created/updated", () => 
     const db = makeDB();
     return handleStripeWebhook(makeRequest("{}"), makeEnv(db)).then(() => {
       const args = db._bindCalls[1];
-      expect(args[5]).toBe(1_750_000_000_000); // cancel_at in ms
+      expect(args[6]).toBe(1_750_000_000_000); // cancel_at in ms (now position 6 — userId leads)
     });
   });
 

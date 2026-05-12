@@ -66,13 +66,16 @@ export async function loadCurrentSession(
 
   const [userResult, sessionResult] = await db.batch([
     db.prepare(
-      `SELECT id, email, moderation, force_password_change, is_admin,
-              personal_plan, personal_plan_status, personal_plan_started_at,
-              personal_plan_cancel_at, personal_plan_style, personal_presence_color,
-              personal_crit_sparkles,
-              granted_plan, granted_plan_expires_at, granted_plan_started_at,
-              reading_font, editing_font, ui_font
-       FROM users WHERE id = ?`,
+      `SELECT u.id, u.email, u.moderation, u.force_password_change, u.is_admin,
+              p.personal_plan_style, p.personal_presence_color, p.personal_crit_sparkles,
+              p.reading_font, p.editing_font, p.ui_font,
+              b.personal_plan, b.personal_plan_status, b.personal_plan_started_at,
+              b.personal_plan_cancel_at,
+              b.granted_plan, b.granted_plan_expires_at, b.granted_plan_started_at
+       FROM users u
+       LEFT JOIN user_billing b ON b.user_id = u.id
+       LEFT JOIN user_preferences p ON p.user_id = u.id
+       WHERE u.id = ?`,
     ).bind(tokenSession.userId),
     db.prepare(
       "SELECT id, expires_at, revoked_at, last_used_at FROM sessions WHERE id = ? AND user_id = ?",

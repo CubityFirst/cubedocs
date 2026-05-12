@@ -23,7 +23,10 @@ export async function handleBillingCheckout(request: Request, env: Env): Promise
   if (session instanceof Response) return session;
 
   const user = await env.DB.prepare(
-    "SELECT email, name, stripe_customer_id FROM users WHERE id = ?",
+    `SELECT u.email, u.name, b.stripe_customer_id
+     FROM users u
+     LEFT JOIN user_billing b ON b.user_id = u.id
+     WHERE u.id = ?`,
   ).bind(session.userId).first<UserBillingRow>();
   if (!user) return errorResponse(Errors.NOT_FOUND);
 
@@ -67,10 +70,9 @@ export async function handleBillingPortal(request: Request, env: Env): Promise<R
   if (session instanceof Response) return session;
 
   const user = await env.DB.prepare(
-    "SELECT stripe_customer_id FROM users WHERE id = ?",
+    "SELECT stripe_customer_id FROM user_billing WHERE user_id = ?",
   ).bind(session.userId).first<{ stripe_customer_id: string | null }>();
-  if (!user) return errorResponse(Errors.NOT_FOUND);
-  if (!user.stripe_customer_id) return errorResponse(Errors.BAD_REQUEST);
+  if (!user?.stripe_customer_id) return errorResponse(Errors.BAD_REQUEST);
 
   const stripe = getStripe(env.STRIPE_SECRET_KEY);
   const portal = await stripe.billingPortal.sessions.create({

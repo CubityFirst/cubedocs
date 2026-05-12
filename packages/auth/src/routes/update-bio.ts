@@ -35,11 +35,14 @@ export async function handleUpdateBio(request: Request, env: Env): Promise<Respo
   }
 
   const planRow = await env.DB.prepare(
-    `SELECT personal_plan, personal_plan_status, personal_plan_started_at,
-            personal_plan_cancel_at, personal_plan_style, personal_presence_color,
-            personal_crit_sparkles,
-            granted_plan, granted_plan_expires_at, granted_plan_started_at
-     FROM users WHERE id = ?`,
+    `SELECT p.personal_plan_style, p.personal_presence_color, p.personal_crit_sparkles,
+            b.personal_plan, b.personal_plan_status, b.personal_plan_started_at,
+            b.personal_plan_cancel_at,
+            b.granted_plan, b.granted_plan_expires_at, b.granted_plan_started_at
+     FROM users u
+     LEFT JOIN user_billing b ON b.user_id = u.id
+     LEFT JOIN user_preferences p ON p.user_id = u.id
+     WHERE u.id = ?`,
   ).bind(session.userId).first<{
     personal_plan: string | null;
     personal_plan_status: string | null;
@@ -57,8 +60,10 @@ export async function handleUpdateBio(request: Request, env: Env): Promise<Respo
   const resolved = resolvePersonalPlan(planRow);
   if (resolved.plan !== "ink") return errorResponse(Errors.FORBIDDEN);
 
-  await env.DB.prepare("UPDATE users SET bio = ? WHERE id = ?")
-    .bind(normalized, session.userId).run();
+  await env.DB.prepare(
+    `INSERT INTO user_preferences (user_id, bio) VALUES (?, ?)
+     ON CONFLICT(user_id) DO UPDATE SET bio = excluded.bio`,
+  ).bind(session.userId, normalized).run();
 
   return okResponse({ bio: normalized });
 }

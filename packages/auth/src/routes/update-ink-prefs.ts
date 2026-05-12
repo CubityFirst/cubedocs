@@ -31,11 +31,14 @@ export async function handleUpdateInkPrefs(request: Request, env: Env): Promise<
   }
 
   const planRow = await env.DB.prepare(
-    `SELECT personal_plan, personal_plan_status, personal_plan_started_at,
-            personal_plan_cancel_at, personal_plan_style, personal_presence_color,
-            personal_crit_sparkles,
-            granted_plan, granted_plan_expires_at, granted_plan_started_at
-     FROM users WHERE id = ?`,
+    `SELECT p.personal_plan_style, p.personal_presence_color, p.personal_crit_sparkles,
+            b.personal_plan, b.personal_plan_status, b.personal_plan_started_at,
+            b.personal_plan_cancel_at,
+            b.granted_plan, b.granted_plan_expires_at, b.granted_plan_started_at
+     FROM users u
+     LEFT JOIN user_billing b ON b.user_id = u.id
+     LEFT JOIN user_preferences p ON p.user_id = u.id
+     WHERE u.id = ?`,
   ).bind(session.userId).first<{
     personal_plan: string | null;
     personal_plan_status: string | null;
@@ -53,24 +56,33 @@ export async function handleUpdateInkPrefs(request: Request, env: Env): Promise<
   const resolved = resolvePersonalPlan(planRow);
   if (resolved.plan !== "ink") return errorResponse(Errors.FORBIDDEN);
 
-  const sets: string[] = [];
-  const binds: unknown[] = [];
+  // Upsert only the touched columns into user_preferences (see update-reading-font.ts
+  // for the same pattern).
+  const cols: string[] = [];
+  const placeholders: string[] = [];
+  const updates: string[] = [];
+  const values: unknown[] = [];
   if ("style" in body) {
-    sets.push("personal_plan_style = ?");
-    binds.push(body.style ?? null);
+    cols.push("personal_plan_style"); placeholders.push("?");
+    updates.push("personal_plan_style = excluded.personal_plan_style");
+    values.push(body.style ?? null);
   }
   if ("presenceColor" in body) {
-    sets.push("personal_presence_color = ?");
-    binds.push(body.presenceColor ?? null);
+    cols.push("personal_presence_color"); placeholders.push("?");
+    updates.push("personal_presence_color = excluded.personal_presence_color");
+    values.push(body.presenceColor ?? null);
   }
   if ("critSparkles" in body) {
-    sets.push("personal_crit_sparkles = ?");
+    cols.push("personal_crit_sparkles"); placeholders.push("?");
+    updates.push("personal_crit_sparkles = excluded.personal_crit_sparkles");
     // NULL means "use the default" (on). Persist 0/1 for explicit values.
-    binds.push(body.critSparkles === null ? null : body.critSparkles ? 1 : 0);
+    values.push(body.critSparkles === null ? null : body.critSparkles ? 1 : 0);
   }
-  binds.push(session.userId);
 
-  await env.DB.prepare(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`).bind(...binds).run();
+  await env.DB.prepare(
+    `INSERT INTO user_preferences (user_id, ${cols.join(", ")}) VALUES (?, ${placeholders.join(", ")})
+     ON CONFLICT(user_id) DO UPDATE SET ${updates.join(", ")}`,
+  ).bind(session.userId, ...values).run();
 
   return okResponse({
     style: "style" in body ? (body.style ?? null) : resolved.style,

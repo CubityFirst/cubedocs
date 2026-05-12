@@ -81,10 +81,23 @@ export async function handleProjects(
     }
   }
 
-  // GET /projects — list projects where user is a member (includes owned)
+  // GET /projects — list projects where user is a member (includes owned).
+  // Explicit column list (not p.*) so we don't ship the large graph_tag_colors
+  // JSON or the logo_wide / vanity_slug / home_doc_id columns that the list
+  // consumers (DashboardPage, DocsLayout, UserSettingsPage) never read — those
+  // belong on the single-project endpoint.
   if (!projectId && request.method === "GET") {
     const rows = await env.DB.prepare(
-      "SELECT p.*, pm.role, pm.is_favourite, (SELECT COUNT(*) FROM docs WHERE project_id = p.id) as doc_count, (SELECT COUNT(*) FROM project_members WHERE project_id = p.id AND accepted = 1) as member_count FROM projects p INNER JOIN project_members pm ON pm.project_id = p.id WHERE pm.user_id = ? AND pm.accepted = 1 ORDER BY pm.is_favourite DESC, p.created_at DESC",
+      `SELECT p.id, p.name, p.description, p.owner_id, p.created_at, p.published_at,
+              p.changelog_mode, p.ai_enabled, p.ai_summarization_type,
+              p.graph_enabled, p.features, p.logo_square_updated_at,
+              pm.role, pm.is_favourite,
+              (SELECT COUNT(*) FROM docs WHERE project_id = p.id) as doc_count,
+              (SELECT COUNT(*) FROM project_members WHERE project_id = p.id AND accepted = 1) as member_count
+       FROM projects p
+       INNER JOIN project_members pm ON pm.project_id = p.id
+       WHERE pm.user_id = ? AND pm.accepted = 1
+       ORDER BY pm.is_favourite DESC, p.created_at DESC`,
     ).bind(user.userId).all<Project & { role: Role; is_favourite: number; doc_count: number; member_count: number }>();
     return okResponse(rows.results);
   }

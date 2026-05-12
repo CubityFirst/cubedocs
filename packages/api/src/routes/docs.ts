@@ -191,7 +191,15 @@ export async function handleDocs(
       if (caller.role === "limited" && !share) return errorResponse(Errors.FORBIDDEN);
       myPermission = share?.permission ?? null;
     }
-    const row = await env.DB.prepare("SELECT * FROM docs WHERE id = ?").bind(docId).first<Doc>();
+    const row = await env.DB.prepare(
+      `SELECT d.id, d.title, d.project_id, d.author_id, d.published_at,
+              d.show_heading, d.show_last_updated, d.folder_id,
+              d.sidebar_position, d.tags, d.created_at, d.updated_at,
+              s.summary AS ai_summary, s.version AS ai_summary_version
+       FROM docs d
+       LEFT JOIN doc_ai_summaries s ON s.doc_id = d.id
+       WHERE d.id = ?`,
+    ).bind(docId).first<Doc>();
     if (!row) return errorResponse(Errors.NOT_FOUND);
     const r2Content = await env.ASSETS.get(`${meta.project_id}/${docId}`);
     const content = r2Content ? await r2Content.text() : "";
@@ -303,6 +311,14 @@ export async function handleDocs(
         return r2 ? await r2.text() : "";
       })());
       await upsertFtsRow(env.DB, docId, doc.project_id, body.title ?? doc.title, ftsContent);
+    }
+
+    // Drop any cached AI summary when the body changed — its version is the doc's
+    // updated_at at cache time, and that just advanced. Leaving the row would
+    // show stale content under DocPage's auto-summary mode until the next
+    // doc.id change, since the effect only refires on id.
+    if (savedContent !== undefined) {
+      await env.DB.prepare("DELETE FROM doc_ai_summaries WHERE doc_id = ?").bind(docId).run();
     }
 
     const updated = {

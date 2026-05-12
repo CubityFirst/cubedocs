@@ -13,11 +13,15 @@ export async function handleAi(
     const body = await request.json<{ docId: string }>();
     if (!body.docId) return errorResponse(Errors.BAD_REQUEST);
 
-    // Get doc and verify membership in one query
+    // Get doc and verify membership in one query. doc_ai_summaries lives in its
+    // own table so the docs row stays narrow; LEFT JOIN gives us the cached
+    // summary when one exists.
     const doc = await env.DB.prepare(
-      `SELECT d.id, d.title, d.project_id, d.updated_at, d.ai_summary, d.ai_summary_version
+      `SELECT d.id, d.title, d.project_id, d.updated_at,
+              s.summary AS ai_summary, s.version AS ai_summary_version
        FROM docs d
        INNER JOIN project_members pm ON pm.project_id = d.project_id
+       LEFT JOIN doc_ai_summaries s ON s.doc_id = d.id
        WHERE d.id = ? AND pm.user_id = ? AND pm.accepted = 1`,
     ).bind(body.docId, user.userId).first<{
       id: string;
@@ -82,8 +86,9 @@ export async function handleAi(
 
     // Cache the summary against the current doc version
     await env.DB.prepare(
-      "UPDATE docs SET ai_summary = ?, ai_summary_version = ? WHERE id = ?",
-    ).bind(summary, doc.updated_at, doc.id).run();
+      `INSERT INTO doc_ai_summaries (doc_id, summary, version) VALUES (?, ?, ?)
+       ON CONFLICT(doc_id) DO UPDATE SET summary = excluded.summary, version = excluded.version`,
+    ).bind(doc.id, summary, doc.updated_at).run();
 
     return okResponse({ summary });
   }

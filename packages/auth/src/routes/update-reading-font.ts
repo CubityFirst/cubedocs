@@ -27,23 +27,34 @@ export async function handleUpdateReadingFont(request: Request, env: Env): Promi
     return errorResponse(Errors.BAD_REQUEST);
   }
 
-  const sets: string[] = [];
-  const binds: unknown[] = [];
+  // Build an upsert that only touches the columns the caller actually sent.
+  // INSERT supplies values for those columns (user_id always first); ON CONFLICT
+  // mirrors the same SET clause so existing rows aren't clobbered for unrelated
+  // pref columns.
+  const cols: string[] = [];
+  const placeholders: string[] = [];
+  const updates: string[] = [];
+  const values: unknown[] = [];
   if ("readingFont" in body) {
-    sets.push("reading_font = ?");
-    binds.push(body.readingFont ?? null);
+    cols.push("reading_font"); placeholders.push("?");
+    updates.push("reading_font = excluded.reading_font");
+    values.push(body.readingFont ?? null);
   }
   if ("editingFont" in body) {
-    sets.push("editing_font = ?");
-    binds.push(body.editingFont ?? null);
+    cols.push("editing_font"); placeholders.push("?");
+    updates.push("editing_font = excluded.editing_font");
+    values.push(body.editingFont ?? null);
   }
   if ("uiFont" in body) {
-    sets.push("ui_font = ?");
-    binds.push(body.uiFont ?? null);
+    cols.push("ui_font"); placeholders.push("?");
+    updates.push("ui_font = excluded.ui_font");
+    values.push(body.uiFont ?? null);
   }
-  binds.push(session.userId);
 
-  await env.DB.prepare(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`).bind(...binds).run();
+  await env.DB.prepare(
+    `INSERT INTO user_preferences (user_id, ${cols.join(", ")}) VALUES (?, ${placeholders.join(", ")})
+     ON CONFLICT(user_id) DO UPDATE SET ${updates.join(", ")}`,
+  ).bind(session.userId, ...values).run();
 
   return okResponse({
     readingFont: "readingFont" in body ? (body.readingFont ?? null) : undefined,

@@ -98,12 +98,22 @@ async function handleCheckoutCompleted(env: Env, sessionObj: Stripe.Checkout.Ses
 
   if (!customerId) return;
 
+  // The two COALESCE clauses are intentionally asymmetric (preserved from
+  // pre-split behavior, see migration 0023):
+  //   - stripe_customer_id: prefer the EXISTING value. Once we've linked a
+  //     customer, it should never get overwritten by a later checkout (e.g. a
+  //     duplicate/replayed event), since a different customer id would
+  //     orphan all subsequent invoice lookups.
+  //   - stripe_subscription_id: prefer the INCOMING value. A new checkout
+  //     means a new subscription; the old sub id (if any) is by definition
+  //     stale at this point.
   await env.DB.prepare(
-    `UPDATE users
-     SET stripe_customer_id = COALESCE(stripe_customer_id, ?),
-         stripe_subscription_id = COALESCE(?, stripe_subscription_id)
-     WHERE id = ?`,
-  ).bind(customerId, subscriptionId, userId).run();
+    `INSERT INTO user_billing (user_id, stripe_customer_id, stripe_subscription_id)
+     VALUES (?, ?, ?)
+     ON CONFLICT(user_id) DO UPDATE SET
+       stripe_customer_id = COALESCE(user_billing.stripe_customer_id, excluded.stripe_customer_id),
+       stripe_subscription_id = COALESCE(excluded.stripe_subscription_id, user_billing.stripe_subscription_id)`,
+  ).bind(userId, customerId, subscriptionId).run();
 }
 
 // customer.subscription.created/updated: source of truth for plan,
@@ -138,16 +148,21 @@ async function handleSubscriptionUpsert(env: Env, sub: Stripe.Subscription): Pro
   // Only set personal_plan_started_at if it's not already populated —
   // preserves the original supporter date across cancel/resub cycles.
   await env.DB.prepare(
-    `UPDATE users
-     SET stripe_customer_id = ?,
-         stripe_subscription_id = ?,
-         personal_plan = ?,
-         personal_plan_status = ?,
-         personal_period_end = ?,
-         personal_plan_cancel_at = ?,
-         personal_plan_started_at = COALESCE(personal_plan_started_at, ?)
-     WHERE id = ?`,
+    `INSERT INTO user_billing (
+       user_id, stripe_customer_id, stripe_subscription_id,
+       personal_plan, personal_plan_status, personal_period_end,
+       personal_plan_cancel_at, personal_plan_started_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(user_id) DO UPDATE SET
+       stripe_customer_id = excluded.stripe_customer_id,
+       stripe_subscription_id = excluded.stripe_subscription_id,
+       personal_plan = excluded.personal_plan,
+       personal_plan_status = excluded.personal_plan_status,
+       personal_period_end = excluded.personal_period_end,
+       personal_plan_cancel_at = excluded.personal_plan_cancel_at,
+       personal_plan_started_at = COALESCE(user_billing.personal_plan_started_at, excluded.personal_plan_started_at)`,
   ).bind(
+    userId,
     customerId,
     sub.id,
     plan,
@@ -155,7 +170,6 @@ async function handleSubscriptionUpsert(env: Env, sub: Stripe.Subscription): Pro
     periodEnd ? periodEnd * 1000 : null,
     cancelAt,
     now,
-    userId,
   ).run();
 }
 
@@ -167,13 +181,13 @@ async function handleSubscriptionDeleted(env: Env, sub: Stripe.Subscription): Pr
   if (!userId) return;
 
   await env.DB.prepare(
-    `UPDATE users
+    `UPDATE user_billing
      SET personal_plan = NULL,
          personal_plan_status = 'canceled',
          personal_period_end = NULL,
          personal_plan_cancel_at = NULL,
          stripe_subscription_id = NULL
-     WHERE id = ?`,
+     WHERE user_id = ?`,
   ).bind(userId).run();
 }
 
@@ -185,7 +199,7 @@ async function handleInvoicePaymentFailed(env: Env, invoice: Stripe.Invoice): Pr
   if (!subscriptionId) return;
 
   await env.DB.prepare(
-    `UPDATE users
+    `UPDATE user_billing
      SET personal_plan_status = 'past_due'
      WHERE stripe_subscription_id = ?`,
   ).bind(subscriptionId).run();
@@ -204,7 +218,7 @@ async function handleInvoicePaid(env: Env, invoice: Stripe.Invoice): Promise<voi
     .reduce((a, b) => Math.max(a, b), 0);
 
   await env.DB.prepare(
-    `UPDATE users
+    `UPDATE user_billing
      SET personal_plan_status = 'active',
          personal_period_end = ?
      WHERE stripe_subscription_id = ?`,

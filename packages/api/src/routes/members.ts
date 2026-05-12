@@ -40,11 +40,14 @@ async function loadMemberPlans(env: Env, userIds: string[]): Promise<Map<string,
 
   const placeholders = userIds.map(() => "?").join(",");
   const rows = await env.AUTH_DB.prepare(
-    `SELECT id, personal_plan, personal_plan_status, personal_plan_started_at,
-            personal_plan_cancel_at, personal_plan_style, personal_presence_color,
-            personal_crit_sparkles,
-            granted_plan, granted_plan_expires_at, granted_plan_started_at
-     FROM users WHERE id IN (${placeholders})`,
+    `SELECT u.id, p.personal_plan_style, p.personal_presence_color, p.personal_crit_sparkles,
+            b.personal_plan, b.personal_plan_status, b.personal_plan_started_at,
+            b.personal_plan_cancel_at,
+            b.granted_plan, b.granted_plan_expires_at, b.granted_plan_started_at
+     FROM users u
+     LEFT JOIN user_billing b ON b.user_id = u.id
+     LEFT JOIN user_preferences p ON p.user_id = u.id
+     WHERE u.id IN (${placeholders})`,
   ).bind(...userIds).all<AuthPlanRow>();
 
   for (const r of rows.results) {

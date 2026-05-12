@@ -33,7 +33,7 @@ export async function handleDeleteAccount(request: Request, env: Env): Promise<R
   // (e.g. in environments where billing isn't configured).
   if (env.STRIPE_SECRET_KEY) {
     const billingRow = await env.DB.prepare(
-      "SELECT stripe_customer_id FROM users WHERE id = ?",
+      "SELECT stripe_customer_id FROM user_billing WHERE user_id = ?",
     ).bind(session.userId).first<{ stripe_customer_id: string | null }>();
 
     if (billingRow?.stripe_customer_id) {

@@ -17,11 +17,10 @@ export async function handleUpdateTimezone(request: Request, env: Env): Promise<
     }
   }
 
-  const result = await env.DB.prepare(
-    "UPDATE users SET timezone = ? WHERE id = ?",
-  ).bind(body.timezone, session.userId).run();
-
-  if (!result.meta.changes) return errorResponse(Errors.NOT_FOUND);
+  await env.DB.prepare(
+    `INSERT INTO user_preferences (user_id, timezone) VALUES (?, ?)
+     ON CONFLICT(user_id) DO UPDATE SET timezone = excluded.timezone`,
+  ).bind(session.userId, body.timezone).run();
 
   return okResponse({ timezone: body.timezone });
 }

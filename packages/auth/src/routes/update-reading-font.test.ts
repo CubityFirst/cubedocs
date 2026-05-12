@@ -72,8 +72,9 @@ describe("handleUpdateReadingFont", () => {
     const json = await res.json() as { ok: boolean; data: { readingFont: string | null } };
     expect(json.ok).toBe(true);
     expect(json.data.readingFont).toBe("dyslexic");
-    expect(prepare).toHaveBeenCalledWith(expect.stringContaining("reading_font = ?"));
-    expect(bind).toHaveBeenCalledWith("dyslexic", "user-1");
+    expect(prepare).toHaveBeenCalledWith(expect.stringContaining("reading_font"));
+    // user_id leads (UPSERT key), then the column values
+    expect(bind).toHaveBeenCalledWith("user-1", "dyslexic");
     expect(run).toHaveBeenCalledOnce();
   });
 
@@ -82,17 +83,17 @@ describe("handleUpdateReadingFont", () => {
     const res = await handleUpdateReadingFont(req({ readingFont: "sans", editingFont: "mono" }), env);
     expect(res.status).toBe(200);
     const sql = prepare.mock.calls[0]?.[0] as string;
-    expect(sql).toContain("reading_font = ?");
-    expect(sql).toContain("editing_font = ?");
-    expect(bind).toHaveBeenCalledWith("sans", "mono", "user-1");
+    expect(sql).toContain("reading_font");
+    expect(sql).toContain("editing_font");
+    expect(bind).toHaveBeenCalledWith("user-1", "sans", "mono");
   });
 
   it("writes uiFont when present", async () => {
     const { env, prepare, bind } = makeEnv();
     const res = await handleUpdateReadingFont(req({ uiFont: "dyslexic" }), env);
     expect(res.status).toBe(200);
-    expect(prepare.mock.calls[0]?.[0]).toContain("ui_font = ?");
-    expect(bind).toHaveBeenCalledWith("dyslexic", "user-1");
+    expect(prepare.mock.calls[0]?.[0]).toContain("ui_font");
+    expect(bind).toHaveBeenCalledWith("user-1", "dyslexic");
   });
 
   it("rejects bogus uiFont value", async () => {
@@ -106,14 +107,14 @@ describe("handleUpdateReadingFont", () => {
     const { env, bind } = makeEnv();
     const res = await handleUpdateReadingFont(req({ readingFont: "sans", editingFont: "mono", uiFont: "dyslexic" }), env);
     expect(res.status).toBe(200);
-    expect(bind).toHaveBeenCalledWith("sans", "mono", "dyslexic", "user-1");
+    expect(bind).toHaveBeenCalledWith("user-1", "sans", "mono", "dyslexic");
   });
 
   it("treats null as a reset (NULL on the row)", async () => {
     const { env, bind } = makeEnv();
     const res = await handleUpdateReadingFont(req({ readingFont: null }), env);
     expect(res.status).toBe(200);
-    expect(bind).toHaveBeenCalledWith(null, "user-1");
+    expect(bind).toHaveBeenCalledWith("user-1", null);
   });
 
   it("does not consult plan / Ink gate — any user can change fonts", async () => {

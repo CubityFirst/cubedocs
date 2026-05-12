@@ -127,6 +127,17 @@ export function UserProfileCard({ userId, name, children, open: controlledOpen, 
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(false);
   const [isSelf, setIsSelf] = useState<boolean>(currentUserIdCache === userId);
+  // Single source of truth for which badge tooltip is open, so that moving
+  // the cursor from one badge to another forces the previous tooltip closed
+  // even if Radix hasn't fired its own mouseleave yet.
+  const [openBadge, setOpenBadge] = useState<"developer" | "beta" | "ink" | null>(null);
+  const badgeTooltipProps = (id: "developer" | "beta" | "ink") => ({
+    open: openBadge === id,
+    onOpenChange: (o: boolean) => {
+      if (o) setOpenBadge(id);
+      else setOpenBadge((curr) => (curr === id ? null : curr));
+    },
+  });
   const navigate = useNavigate();
   const location = useLocation();
   const showPublicView = forceViewAsPublic || !isSelf;
@@ -196,7 +207,7 @@ export function UserProfileCard({ userId, name, children, open: controlledOpen, 
               return (
                 <div className="mt-1 flex flex-wrap items-center">
                   {isDeveloper && (
-                    <Tooltip>
+                    <Tooltip {...badgeTooltipProps("developer")}>
                       <TooltipTrigger asChild>
                         <a
                           href="https://docs.cubityfir.st/s/help/872895fc-3990-451e-a3a5-1dedc7405c42"
@@ -212,7 +223,7 @@ export function UserProfileCard({ userId, name, children, open: controlledOpen, 
                     </Tooltip>
                   )}
                   {isBetaTester && (
-                    <Tooltip>
+                    <Tooltip {...badgeTooltipProps("beta")}>
                       <TooltipTrigger asChild>
                         <button
                           type="button"
@@ -226,7 +237,7 @@ export function UserProfileCard({ userId, name, children, open: controlledOpen, 
                     </Tooltip>
                   )}
                   {isInk && (
-                    <Tooltip>
+                    <Tooltip {...badgeTooltipProps("ink")}>
                       <TooltipTrigger asChild>
                         <button
                           type="button"

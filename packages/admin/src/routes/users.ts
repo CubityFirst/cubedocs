@@ -181,9 +181,10 @@ async function loadUserDetails(env: Env, id: string): Promise<UserDetails | null
         u.created_at,
         u.moderation,
         u.force_password_change,
-        u.badges,
+        p.badges,
         ${latestModerationFields("u")}
       FROM users u
+      LEFT JOIN user_preferences p ON p.user_id = u.id
       WHERE u.id = ?
     `,
   ).bind(id).first<UserRow>();
@@ -191,13 +192,16 @@ async function loadUserDetails(env: Env, id: string): Promise<UserDetails | null
   if (!profile) return null;
 
   const billingRow = await env.AUTH_DB.prepare(
-    `SELECT stripe_customer_id, stripe_subscription_id,
-            personal_plan, personal_plan_status, personal_plan_started_at,
-            personal_plan_cancel_at, personal_plan_style, personal_presence_color,
-            personal_crit_sparkles,
-            granted_plan, granted_plan_expires_at, granted_plan_started_at,
-            granted_plan_reason
-     FROM users WHERE id = ?`,
+    `SELECT p.personal_plan_style, p.personal_presence_color, p.personal_crit_sparkles,
+            b.stripe_customer_id, b.stripe_subscription_id,
+            b.personal_plan, b.personal_plan_status, b.personal_plan_started_at,
+            b.personal_plan_cancel_at,
+            b.granted_plan, b.granted_plan_expires_at, b.granted_plan_started_at,
+            b.granted_plan_reason
+     FROM users u
+     LEFT JOIN user_billing b ON b.user_id = u.id
+     LEFT JOIN user_preferences p ON p.user_id = u.id
+     WHERE u.id = ?`,
   ).bind(id).first<BillingRow>();
 
   const [totpRow, webauthn, backupCodeSummary, moderationHistory, ownedProjects, memberships] = await Promise.all([
@@ -370,10 +374,17 @@ usersRouter.patch("/:id/badges", async (c) => {
     return c.json({ ok: false, error: "Invalid badges value" }, 400);
   }
 
-  const result = await c.env.AUTH_DB.prepare("UPDATE users SET badges = ? WHERE id = ?")
-    .bind(badges, id)
-    .run();
-  if (result.meta.changes === 0) return c.json({ ok: false, error: "User not found" }, 404);
+  // Verify the user exists; we used to infer 404 from changes=0, but a fresh
+  // user with no preferences row would now also produce changes=0 even though
+  // they exist (the upsert creates the row).
+  const userRow = await c.env.AUTH_DB.prepare("SELECT 1 FROM users WHERE id = ?")
+    .bind(id).first<{ "1": number }>();
+  if (!userRow) return c.json({ ok: false, error: "User not found" }, 404);
+
+  await c.env.AUTH_DB.prepare(
+    `INSERT INTO user_preferences (user_id, badges) VALUES (?, ?)
+     ON CONFLICT(user_id) DO UPDATE SET badges = excluded.badges`,
+  ).bind(id, badges).run();
   return c.json({ ok: true });
 });
 
@@ -448,7 +459,7 @@ usersRouter.post("/:id/grant-ink", async (c) => {
       cancelStripeWarning = "STRIPE_SECRET_KEY is unset on the admin worker; paid sub was not cancelled";
     } else {
       const subRow = await c.env.AUTH_DB.prepare(
-        "SELECT stripe_subscription_id FROM users WHERE id = ?",
+        "SELECT stripe_subscription_id FROM user_billing WHERE user_id = ?",
       ).bind(id).first<{ stripe_subscription_id: string | null }>();
       const subId = subRow?.stripe_subscription_id;
       if (subId) {
@@ -469,17 +480,24 @@ usersRouter.post("/:id/grant-ink", async (c) => {
     }
   }
 
+  // Verify the user exists before upserting — UPSERT into user_billing
+  // would otherwise silently create a row for a non-existent id (well,
+  // the FK would reject it, but a cleaner error is nicer).
+  const userRow = await c.env.AUTH_DB.prepare("SELECT 1 FROM users WHERE id = ?")
+    .bind(id).first<{ "1": number }>();
+  if (!userRow) return c.json({ ok: false, error: "User not found" }, 404);
+
   // Preserve granted_plan_started_at across re-grants (admin re-grants
   // the same user shouldn't reset their "supporter since" date).
-  const result = await c.env.AUTH_DB.prepare(
-    `UPDATE users
-     SET granted_plan = 'ink',
-         granted_plan_expires_at = ?,
-         granted_plan_reason = ?,
-         granted_plan_started_at = COALESCE(granted_plan_started_at, ?)
-     WHERE id = ?`,
-  ).bind(expiresAt, reason, Date.now(), id).run();
-  if (result.meta.changes === 0) return c.json({ ok: false, error: "User not found" }, 404);
+  await c.env.AUTH_DB.prepare(
+    `INSERT INTO user_billing (user_id, granted_plan, granted_plan_expires_at, granted_plan_reason, granted_plan_started_at)
+     VALUES (?, 'ink', ?, ?, ?)
+     ON CONFLICT(user_id) DO UPDATE SET
+       granted_plan = 'ink',
+       granted_plan_expires_at = excluded.granted_plan_expires_at,
+       granted_plan_reason = excluded.granted_plan_reason,
+       granted_plan_started_at = COALESCE(user_billing.granted_plan_started_at, excluded.granted_plan_started_at)`,
+  ).bind(id, expiresAt, reason, Date.now()).run();
 
   return c.json({ ok: true, data: cancelStripeWarning ? { cancelStripeWarning } : undefined });
 });
@@ -503,7 +521,7 @@ usersRouter.post("/:id/gift-month", async (c) => {
 
   const id = c.req.param("id");
   const row = await c.env.AUTH_DB.prepare(
-    "SELECT stripe_customer_id, stripe_subscription_id FROM users WHERE id = ?",
+    "SELECT stripe_customer_id, stripe_subscription_id FROM user_billing WHERE user_id = ?",
   ).bind(id).first<{ stripe_customer_id: string | null; stripe_subscription_id: string | null }>();
   if (!row?.stripe_customer_id || !row.stripe_subscription_id) {
     return c.json({ ok: false, error: "User has no Stripe customer or subscription" }, 400);
@@ -580,7 +598,7 @@ usersRouter.post("/:id/cancel-subscription", async (c) => {
   const immediate = body.immediate === true;
 
   const subRow = await c.env.AUTH_DB.prepare(
-    "SELECT stripe_subscription_id FROM users WHERE id = ?",
+    "SELECT stripe_subscription_id FROM user_billing WHERE user_id = ?",
   ).bind(id).first<{ stripe_subscription_id: string | null }>();
   const subId = subRow?.stripe_subscription_id;
   if (!subId) return c.json({ ok: false, error: "User has no active Stripe subscription" }, 400);
@@ -617,18 +635,24 @@ usersRouter.delete("/:id/grant-ink", async (c) => {
   if (session instanceof Response) return session;
 
   const id = c.req.param("id");
+  // Verify the user exists; we used to infer 404 from changes=0 on the
+  // UPDATE, but a user without any billing row legitimately has nothing
+  // to clear, which is now changes=0 as well.
+  const userRow = await c.env.AUTH_DB.prepare("SELECT 1 FROM users WHERE id = ?")
+    .bind(id).first<{ "1": number }>();
+  if (!userRow) return c.json({ ok: false, error: "User not found" }, 404);
+
   // We clear granted_plan_started_at too, so the next grant gets a
   // fresh "supporter since" date — revoke is a hard reset of the
   // grant relationship, not just a pause.
-  const result = await c.env.AUTH_DB.prepare(
-    `UPDATE users
+  await c.env.AUTH_DB.prepare(
+    `UPDATE user_billing
      SET granted_plan = NULL,
          granted_plan_expires_at = NULL,
          granted_plan_started_at = NULL,
          granted_plan_reason = NULL
-     WHERE id = ?`,
+     WHERE user_id = ?`,
   ).bind(id).run();
-  if (result.meta.changes === 0) return c.json({ ok: false, error: "User not found" }, 404);
   return c.json({ ok: true });
 });
 
