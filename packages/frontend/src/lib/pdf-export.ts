@@ -11,6 +11,10 @@ export interface PdfExportOptions {
   pageSize: PdfPageSize;
   margins: boolean;
   theme: PdfTheme;
+  includeTitle: boolean;
+  hideAiSummary: boolean;
+  hideLastUpdated: boolean;
+  documentName?: string;
 }
 
 const STYLE_ID = "pdf-export-page-rule";
@@ -35,6 +39,9 @@ export function runPdfExport(opts: PdfExportOptions): void {
   clone.querySelectorAll<HTMLElement>(".pdf-print-mirror").forEach(el => {
     el.style.display = "block";
   });
+  if (!opts.includeTitle) clone.querySelectorAll("[data-pdf-title]").forEach(el => el.remove());
+  if (opts.hideAiSummary) clone.querySelectorAll("[data-pdf-ai-summary]").forEach(el => el.remove());
+  if (opts.hideLastUpdated) clone.querySelectorAll("[data-pdf-last-updated]").forEach(el => el.remove());
 
   const printRoot = document.createElement("div");
   printRoot.id = PRINT_ROOT_ID;
@@ -56,6 +63,13 @@ export function runPdfExport(opts: PdfExportOptions): void {
 
   document.body.classList.add(PRINT_CLASS);
 
+  // Browsers use document.title as the default "Save as PDF" filename, so
+  // override it with the document name for the duration of the print pass.
+  const originalTitle = document.title;
+  const desiredTitle = opts.documentName?.trim();
+  const titleChanged = !!desiredTitle && desiredTitle !== originalTitle;
+  if (titleChanged) document.title = desiredTitle;
+
   // Cleanup runs only on afterprint. We deliberately do NOT bind focus here:
   // Chromium's print preview steals/restores window focus while the user
   // adjusts settings, and a focus-based teardown would run partway through,
@@ -70,6 +84,7 @@ export function runPdfExport(opts: PdfExportOptions): void {
     document.getElementById(STYLE_ID)?.remove();
     document.getElementById(PRINT_ROOT_ID)?.remove();
     if (flipped) html.classList.toggle("dark", wasDark);
+    if (titleChanged) document.title = originalTitle;
     window.removeEventListener("afterprint", cleanup);
     clearTimeout(safetyTimer);
   };

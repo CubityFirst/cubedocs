@@ -27,7 +27,7 @@ export const visitInlineCode: Visitor = (args) => {
 
   const cursorOn = reveal && cursorTouches(sel, node.from, node.to);
   if (!cursorOn) {
-    decos.push(Decoration.replace({}).range(firstMark.from, firstMark.to));
-    decos.push(Decoration.replace({}).range(lastMark.from, lastMark.to));
+    decos.push(Decoration.replace({ atomicHide: true }).range(firstMark.from, firstMark.to));
+    decos.push(Decoration.replace({ atomicHide: true }).range(lastMark.from, lastMark.to));
   }
 };

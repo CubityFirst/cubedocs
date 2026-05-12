@@ -3,6 +3,39 @@ import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { decorationField } from "./decorations";
 import { rendererCtxFacet, type RendererCtx } from "./context/RendererContext";
 
+// Clicking at the visible end of inline markdown formatting (e.g. `**bold**`)
+// lands the cursor between the visible inner text and the hidden trailing
+// marker — so typing two trailing spaces lands them *inside* the formatting
+// (`**bold  **`) instead of after it. After every click, if the cursor sits at
+// the start of a contiguous chain of hidden inline markers, snap it past them.
+function snapPastTrailingHiddenMarkers(view: EditorView) {
+  const sel = view.state.selection.main;
+  if (!sel.empty) return;
+  const pos = sel.head;
+  const line = view.state.doc.lineAt(pos);
+  if (pos >= line.to) return;
+
+  const decos = view.state.field(decorationField, false);
+  if (!decos) return;
+
+  let covered = pos;
+  decos.between(pos, line.to, (from, to, deco) => {
+    if (!(deco.spec as { atomicHide?: boolean }).atomicHide) return;
+    if (from > covered) return;
+    if (to > covered) covered = to;
+  });
+
+  if (covered > pos) {
+    view.dispatch({ selection: { anchor: covered } });
+  }
+}
+
+const fixClickAtTrailingHidden = EditorView.domEventHandlers({
+  mouseup(_event, view) {
+    queueMicrotask(() => snapPastTrailingHiddenMarkers(view));
+  },
+});
+
 // In reading mode the editor flows inside the page (cm-scroller is height:auto,
 // overflow:visible) and the surrounding ScrollArea owns scrolling. That setup
 // breaks CodeMirror's viewport: without a real scroll container CM only renders
@@ -67,7 +100,7 @@ export function modeExtension(mode: WysiwygMode): Extension {
         enforceFullHeightInReadingMode,
       ];
     case "editing":
-      return [decorationField];
+      return [decorationField, fixClickAtTrailingHidden];
     case "raw":
       return [];
   }

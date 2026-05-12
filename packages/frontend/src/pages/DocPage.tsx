@@ -917,6 +917,7 @@ export function DocPage() {
                   <FileDown className="h-4 w-4" />
                 </Button>
               }
+              documentName={parseFrontmatter(viewingRevision ? viewingRevision.content : doc.content).title ?? doc.title}
             />
           {isEditor && (
             <>
@@ -1209,15 +1210,15 @@ export function DocPage() {
               const fm = parseFrontmatter(viewingRevision ? viewingRevision.content : doc.content);
               const showHeading = fm.hide_title !== undefined ? !fm.hide_title : doc.show_heading !== 0;
               const headingTitle = fm.title ?? doc.title;
-              return showHeading && <h1>{headingTitle}</h1>;
+              return showHeading && <h1 data-pdf-title>{headingTitle}</h1>;
             })()}
             {!viewingRevision && doc.show_last_updated !== 0 && (
-              <p className="not-prose -mt-2 mb-6 text-sm text-muted-foreground">
+              <p data-pdf-last-updated className="not-prose -mt-2 mb-6 text-sm text-muted-foreground">
                 Last updated {timeAgo(doc.updated_at)} · {calcReadingTime(doc.content)}
               </p>
             )}
             {!viewingRevision && aiEnabled && (aiSummaryLoading || doc.ai_summary) && (
-              <div className="not-prose mb-6 rounded-lg border border-violet-200 bg-violet-50 px-4 py-3 dark:border-violet-900 dark:bg-violet-950/30">
+              <div data-pdf-ai-summary className="not-prose mb-6 rounded-lg border border-violet-200 bg-violet-50 px-4 py-3 dark:border-violet-900 dark:bg-violet-950/30">
                 <p className="mb-1 flex items-center gap-1.5 text-xs font-medium text-violet-600 dark:text-violet-400">
                   <Sparkles className="h-3.5 w-3.5" />
                   AI Summary
