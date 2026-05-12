@@ -25,17 +25,20 @@ function readCssVar(name: string): string {
 }
 
 function useThemeTokens() {
-  const [tokens, setTokens] = useState({ fg: "", muted: "", border: "", accent: "" });
+  const [tokens, setTokens] = useState({ fg: "", muted: "", border: "", accent: "", uiFont: "" });
   useEffect(() => {
     const update = () => setTokens({
       fg: readCssVar("--foreground"),
       muted: readCssVar("--muted-foreground"),
       border: readCssVar("--border"),
       accent: readCssVar("--primary"),
+      uiFont: readCssVar("--ui-font"),
     });
     update();
+    // Watch class (theme) and style (font-var) on <html>; main.tsx/DocsLayout
+    // rewrite the font-var inline when the user picks a new UI font.
     const obs = new MutationObserver(update);
-    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "style"] });
     return () => obs.disconnect();
   }, []);
   return tokens;
@@ -134,6 +137,7 @@ export function GraphView({ data, onNodeClick }: GraphViewProps) {
   const fgColor = tokens.fg || "#111";
   const mutedColor = tokens.muted || "#888";
   const accentColor = tokens.accent || "#3b82f6";
+  const uiFontStack = tokens.uiFont || "ui-sans-serif, system-ui, sans-serif";
 
   return (
     <div ref={ref} className="relative h-full w-full overflow-hidden">
@@ -189,7 +193,7 @@ export function GraphView({ data, onNodeClick }: GraphViewProps) {
 
             if (showLabels || isHover) {
               const fontSize = Math.max(10 / globalScale, 2);
-              ctx.font = `${fontSize}px ui-sans-serif, system-ui, sans-serif`;
+              ctx.font = `${fontSize}px ${uiFontStack}`;
               ctx.textAlign = "center";
               ctx.textBaseline = "top";
               const label = n.title;

@@ -382,7 +382,10 @@ export function DiceRoll({ notation }: DiceRollProps) {
 
   if (result === "invalid") {
     return (
-      <span className="rounded bg-red-900/40 px-1.5 py-0.5 text-[0.875em] text-red-300 font-mono">
+      <span
+        className="rounded bg-red-900/40 px-1.5 py-0.5 text-[0.875em] text-red-300"
+        style={{ fontFamily: "var(--ui-font)" }}
+      >
         dice: {notation}
       </span>
     );
@@ -392,7 +395,8 @@ export function DiceRoll({ notation }: DiceRollProps) {
     return (
       <button
         onClick={doRoll}
-        className="inline-flex items-center gap-1 rounded bg-zinc-700/60 px-1.5 py-0.5 text-[0.875em] text-zinc-400 font-mono hover:text-zinc-200 hover:bg-zinc-700 transition-colors cursor-pointer"
+        className="inline-flex items-center gap-1 rounded bg-zinc-700/60 px-1.5 py-0.5 text-[0.875em] text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors cursor-pointer"
+        style={{ fontFamily: "var(--ui-font)" }}
       >
         <Dices className="h-3.5 w-3.5" />
         <span>{notation}</span>
@@ -423,7 +427,8 @@ export function DiceRoll({ notation }: DiceRollProps) {
           onClick={doRoll}
           onPointerDown={handlePointerDown}
           onPointerUp={handlePointerUp}
-          className="inline-flex items-center gap-1 rounded bg-zinc-700/60 px-1.5 py-0.5 text-[0.875em] text-zinc-200 font-mono select-none not-prose hover:bg-zinc-700 transition-colors cursor-pointer"
+          className="inline-flex items-center gap-1 rounded bg-zinc-700/60 px-1.5 py-0.5 text-[0.875em] text-zinc-200 select-none not-prose hover:bg-zinc-700 transition-colors cursor-pointer"
+          style={{ fontFamily: "var(--ui-font)" }}
           aria-label="Re-roll"
         >
           <Dices className="h-3.5 w-3.5 text-zinc-500" />
