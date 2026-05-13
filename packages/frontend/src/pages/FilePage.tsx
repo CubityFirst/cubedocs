@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useOutletContext, useLocation, useNavigate } from "react-router-dom";
 import { Image, FileCode, FileArchive, FileText, File, Music, Download, Link, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { AuthenticatedImage } from "@/components/AuthenticatedImage";
+import { AudioVisualizer } from "@/components/AudioVisualizer";
 import { apiFetch, apiFetchJson } from "@/lib/apiFetch";
 import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
 
@@ -50,6 +51,7 @@ export function FilePage() {
   const [downloading, setDownloading] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [audioBlobUrl, setAudioBlobUrl] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
     if (!fileId) return;
@@ -157,7 +159,8 @@ export function FilePage() {
 
       {file.mime_type.startsWith("audio/") && audioBlobUrl && (
         <div className="mt-6 rounded-lg border border-border bg-muted/30 p-4">
-          <audio controls src={audioBlobUrl} className="w-full" />
+          <AudioVisualizer audioRef={audioRef} className="mb-3 h-20 text-primary" />
+          <audio ref={audioRef} controls src={audioBlobUrl} className="w-full" />
         </div>
       )}
 

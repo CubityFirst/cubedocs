@@ -8,6 +8,7 @@ import { toHeadingId, findHeadingLine } from "@/lib/headingSlug";
 import { WysiwygEditor } from "@/components/wysiwyg/WysiwygEditor";
 import { GraphView, type GraphData } from "@/components/GraphView";
 import { LinkedDocsPanel } from "@/components/LinkedDocsPanel";
+import { AudioVisualizer } from "@/components/AudioVisualizer";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -257,6 +258,7 @@ function NavTree({
 
 function PublicFileView({ file, projectId }: { file: NavFile; projectId: string }) {
   const [downloading, setDownloading] = useState(false);
+  const audioRef = useRef<HTMLAudioElement>(null);
 
   async function handleDownload() {
     setDownloading(true);
@@ -306,7 +308,8 @@ function PublicFileView({ file, projectId }: { file: NavFile; projectId: string 
 
       {file.mime_type.startsWith("audio/") && (
         <div className="mt-8 rounded-xl border border-border bg-muted/30 p-4">
-          <audio controls src={`/api/public/files/${file.id}/content?projectId=${projectId}`} className="w-full" />
+          <AudioVisualizer audioRef={audioRef} className="mb-3 h-20 text-primary" />
+          <audio ref={audioRef} controls src={`/api/public/files/${file.id}/content?projectId=${projectId}`} className="w-full" />
         </div>
       )}
 
