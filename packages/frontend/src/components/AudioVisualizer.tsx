@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 interface AudioVisualizerProps extends Omit<React.HTMLAttributes<HTMLCanvasElement>, "color"> {
@@ -13,6 +13,14 @@ interface AudioVisualizerProps extends Omit<React.HTMLAttributes<HTMLCanvasEleme
   /** Fraction of FFT bins to sample, top-down trimmed. Default 0.75 (drops the
    *  uppermost quarter of the spectrum where most music has no energy). */
   maxBinRatio?: number;
+  /** Power-curve exponent for distance→bin mapping. Higher = more bars in the
+   *  low-frequency center. Default 1.6. */
+  lowEndBias?: number;
+  /** When true, low frequencies are at the center and expand symmetrically to
+   *  both edges. When false, freqs run linearly low→high, left→right. Default true. */
+  mirror?: boolean;
+  /** TEMPORARY: render tuning sliders below the canvas. */
+  showControls?: boolean;
   /** Tailwind class controls bar color via `currentColor` — defaults to text-primary. */
   className?: string;
 }
@@ -55,14 +63,26 @@ function getOrCreateWiring(audio: HTMLAudioElement, fftSize: number, smoothing: 
 
 export function AudioVisualizer({
   audioRef,
-  barCount = 128,
-  smoothing = 0.72,
-  fftSize = 1024,
-  maxBinRatio = 0.75,
+  barCount: barCountProp = 128,
+  smoothing: smoothingProp = 0.72,
+  fftSize: fftSizeProp = 1024,
+  maxBinRatio: maxBinRatioProp = 0.75,
+  lowEndBias: lowEndBiasProp = 1.6,
+  mirror: mirrorProp = true,
+  showControls = false,
   className,
   ...rest
 }: AudioVisualizerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Local tunable state — initialized from props, mutable via the temporary
+  // sliders. Effect reads these directly, not the props.
+  const [barCount, setBarCount] = useState(barCountProp);
+  const [smoothing, setSmoothing] = useState(smoothingProp);
+  const [fftSize, setFftSize] = useState(fftSizeProp);
+  const [maxBinRatio, setMaxBinRatio] = useState(maxBinRatioProp);
+  const [lowEndBias, setLowEndBias] = useState(lowEndBiasProp);
+  const [mirror, setMirror] = useState(mirrorProp);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -141,27 +161,29 @@ export function AudioVisualizer({
       // energy) and concentrate sampling on the lower bins. The power scale
       // then biases bars further toward the very low end.
       const usableBins = Math.max(1, Math.floor(bins * Math.min(1, Math.max(0.05, maxBinRatio))));
-      // Mirror: low freqs at the center, higher freqs expanding outward to
-      // both edges. distance-from-center → frequency index, with a strict
-      // monotonic step so successive central bars never share a bin (which
-      // would otherwise look like a fused, lockstep blob in the middle).
+      // Walk distance buckets (in mirror mode: from center outward; otherwise
+      // from leftmost bar rightward) and assign each one a frequency bin via
+      // the power curve, with a strict monotonic step so successive bars never
+      // share a bin (avoids a fused lockstep blob at the low end).
       const center = (barCount - 1) / 2;
-      const maxDist = Math.max(1, center);
-      const halfCount = Math.ceil(barCount / 2);
-      const distOffset = barCount % 2 === 0 ? 0.5 : 0;
-      const binByDist = new Int32Array(halfCount);
+      const stepCount = mirror ? Math.ceil(barCount / 2) : barCount;
+      const maxDist = mirror ? Math.max(1, center) : Math.max(1, barCount - 1);
+      const distOffset = mirror && barCount % 2 === 0 ? 0.5 : 0;
+      const binByStep = new Int32Array(stepCount);
       let prevIdx = -1;
-      for (let d = 0; d < halfCount; d++) {
+      for (let d = 0; d < stepCount; d++) {
         const t = (d + distOffset) / maxDist;
-        const raw = Math.floor(Math.pow(t, 1.6) * usableBins);
+        const raw = Math.floor(Math.pow(t, lowEndBias) * usableBins);
         const next = Math.min(usableBins - 1, Math.max(raw, prevIdx + 1));
-        binByDist[d] = next;
+        binByStep[d] = next;
         prevIdx = next;
       }
 
       for (let i = 0; i < barCount; i++) {
-        const d = Math.min(halfCount - 1, Math.floor(Math.abs(i - center)));
-        const idx = binByDist[d];
+        const d = mirror
+          ? Math.min(stepCount - 1, Math.floor(Math.abs(i - center)))
+          : i;
+        const idx = binByStep[d];
         const amp = dataArray[idx] / 255;
         const halfBarH = Math.max(0.5, amp * halfMax);
         const x = i * (barWidth + gap);
@@ -224,13 +246,168 @@ export function AudioVisualizer({
       // the wiring is keyed to the <audio> element and reused across remounts;
       // tearing it down would silence the audio if the parent re-renders.
     };
-  }, [audioRef, barCount, smoothing, fftSize, maxBinRatio]);
+  }, [audioRef, barCount, smoothing, fftSize, maxBinRatio, lowEndBias, mirror]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      className={cn("block h-16 w-full text-primary", className)}
-      {...rest}
-    />
+    <div>
+      <canvas
+        ref={canvasRef}
+        className={cn("block h-16 w-full text-primary", className)}
+        {...rest}
+      />
+      {showControls && (
+        <TuningControls
+          barCount={barCount} setBarCount={setBarCount}
+          smoothing={smoothing} setSmoothing={setSmoothing}
+          fftSize={fftSize} setFftSize={setFftSize}
+          maxBinRatio={maxBinRatio} setMaxBinRatio={setMaxBinRatio}
+          lowEndBias={lowEndBias} setLowEndBias={setLowEndBias}
+          mirror={mirror} setMirror={setMirror}
+        />
+      )}
+    </div>
+  );
+}
+
+// TEMPORARY: tuning UI for live-tweaking visualizer parameters. Remove this
+// component (and the `showControls` prop) once values are dialed in.
+interface TuningControlsProps {
+  barCount: number; setBarCount: (n: number) => void;
+  smoothing: number; setSmoothing: (n: number) => void;
+  fftSize: number; setFftSize: (n: number) => void;
+  maxBinRatio: number; setMaxBinRatio: (n: number) => void;
+  lowEndBias: number; setLowEndBias: (n: number) => void;
+  mirror: boolean; setMirror: (b: boolean) => void;
+}
+
+function TuningControls(p: TuningControlsProps) {
+  const fftOptions = [256, 512, 1024, 2048, 4096];
+  const [status, setStatus] = useState<string | null>(null);
+
+  function flash(msg: string) {
+    setStatus(msg);
+    window.setTimeout(() => setStatus(null), 1800);
+  }
+
+  async function handleExport() {
+    const payload = {
+      barCount: p.barCount,
+      smoothing: p.smoothing,
+      fftSize: p.fftSize,
+      maxBinRatio: p.maxBinRatio,
+      lowEndBias: p.lowEndBias,
+      mirror: p.mirror,
+    };
+    const json = JSON.stringify(payload, null, 2);
+    try {
+      await navigator.clipboard.writeText(json);
+      flash("Copied!");
+    } catch {
+      window.prompt("Copy these values:", json);
+    }
+  }
+
+  async function handleImport() {
+    let text: string;
+    try {
+      text = await navigator.clipboard.readText();
+    } catch {
+      const fallback = window.prompt("Paste exported values here:");
+      if (fallback == null) return;
+      text = fallback;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      flash("Invalid JSON");
+      return;
+    }
+    if (!parsed || typeof parsed !== "object") {
+      flash("Invalid format");
+      return;
+    }
+    const v = parsed as Record<string, unknown>;
+    if (typeof v.barCount === "number") p.setBarCount(v.barCount);
+    if (typeof v.smoothing === "number") p.setSmoothing(v.smoothing);
+    if (typeof v.fftSize === "number" && fftOptions.includes(v.fftSize)) p.setFftSize(v.fftSize);
+    if (typeof v.maxBinRatio === "number") p.setMaxBinRatio(v.maxBinRatio);
+    if (typeof v.lowEndBias === "number") p.setLowEndBias(v.lowEndBias);
+    if (typeof v.mirror === "boolean") p.setMirror(v.mirror);
+    flash("Applied!");
+  }
+
+  return (
+    <div className="mt-3 grid grid-cols-1 gap-2 rounded-md border border-dashed border-border bg-muted/40 p-3 text-xs sm:grid-cols-2">
+      <Slider label="barCount" value={p.barCount} min={16} max={256} step={2} onChange={p.setBarCount} />
+      <Slider label="smoothing" value={p.smoothing} min={0} max={0.99} step={0.01} onChange={p.setSmoothing} fixed={2} />
+      <Slider label="maxBinRatio" value={p.maxBinRatio} min={0.05} max={1} step={0.01} onChange={p.setMaxBinRatio} fixed={2} />
+      <Slider label="lowEndBias" value={p.lowEndBias} min={0.5} max={4} step={0.05} onChange={p.setLowEndBias} fixed={2} />
+      <label className="flex items-center justify-between gap-2">
+        <span className="font-mono text-muted-foreground">fftSize</span>
+        <select
+          value={p.fftSize}
+          onChange={e => p.setFftSize(Number(e.target.value))}
+          className="rounded border border-border bg-background px-2 py-1 font-mono"
+        >
+          {fftOptions.map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+      </label>
+      <label className="flex items-center justify-between gap-2">
+        <span className="font-mono text-muted-foreground">mirror</span>
+        <input
+          type="checkbox"
+          checked={p.mirror}
+          onChange={e => p.setMirror(e.target.checked)}
+          className="h-4 w-4 accent-primary"
+        />
+      </label>
+      <div className="flex items-center gap-2 sm:col-span-2">
+        <button
+          type="button"
+          onClick={handleExport}
+          className="rounded border border-border bg-background px-2 py-1 font-mono text-xs hover:bg-accent"
+        >
+          Export
+        </button>
+        <button
+          type="button"
+          onClick={handleImport}
+          className="rounded border border-border bg-background px-2 py-1 font-mono text-xs hover:bg-accent"
+        >
+          Import
+        </button>
+        {status && <span className="font-mono text-xs text-muted-foreground">{status}</span>}
+      </div>
+    </div>
+  );
+}
+
+interface SliderProps {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  fixed?: number;
+  onChange: (n: number) => void;
+}
+
+function Slider({ label, value, min, max, step, fixed, onChange }: SliderProps) {
+  const display = fixed != null ? value.toFixed(fixed) : String(value);
+  return (
+    <label className="flex items-center gap-2">
+      <span className="w-24 shrink-0 font-mono text-muted-foreground">{label}</span>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={e => onChange(Number(e.target.value))}
+        className="flex-1 accent-primary"
+      />
+      <span className="w-12 shrink-0 text-right font-mono tabular-nums">{display}</span>
+    </label>
   );
 }
