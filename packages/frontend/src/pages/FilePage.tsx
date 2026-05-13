@@ -159,7 +159,7 @@ export function FilePage() {
 
       {file.mime_type.startsWith("audio/") && audioBlobUrl && (
         <div className="mt-6 rounded-lg border border-border bg-muted/30 p-4">
-          <AudioVisualizer audioRef={audioRef} className="mb-3 h-20 text-primary" showControls />
+          <AudioVisualizer audioRef={audioRef} className="mb-3 h-20 text-primary" />
           <audio ref={audioRef} controls src={audioBlobUrl} className="w-full" />
         </div>
       )}

@@ -4,17 +4,16 @@ import { cn } from "@/lib/utils";
 interface AudioVisualizerProps extends Omit<React.HTMLAttributes<HTMLCanvasElement>, "color"> {
   /** Ref to the <audio> element whose output will drive the visualization. */
   audioRef: React.RefObject<HTMLAudioElement | null>;
-  /** Number of bars to render. Default 128. */
+  /** Number of bars to render. Default 140. */
   barCount?: number;
-  /** Smoothing 0–1, higher = smoother but slower decay. Default 0.72. */
+  /** Smoothing 0–1, higher = smoother but slower decay. Default 0.8. */
   smoothing?: number;
-  /** FFT size, must be a power of 2 in [32, 32768]. Default 1024. */
+  /** FFT size, must be a power of 2 in [32, 32768]. Default 4096. */
   fftSize?: number;
-  /** Fraction of FFT bins to sample, top-down trimmed. Default 0.75 (drops the
-   *  uppermost quarter of the spectrum where most music has no energy). */
+  /** Fraction of FFT bins to sample, top-down trimmed. Default 0.8. */
   maxBinRatio?: number;
   /** Power-curve exponent for distance→bin mapping. Higher = more bars in the
-   *  low-frequency center. Default 1.6. */
+   *  low-frequency center. Default 1.3. */
   lowEndBias?: number;
   /** When true, low frequencies are at the center and expand symmetrically to
    *  both edges. When false, freqs run linearly low→high, left→right. Default true. */
@@ -63,11 +62,11 @@ function getOrCreateWiring(audio: HTMLAudioElement, fftSize: number, smoothing: 
 
 export function AudioVisualizer({
   audioRef,
-  barCount: barCountProp = 128,
-  smoothing: smoothingProp = 0.72,
-  fftSize: fftSizeProp = 1024,
-  maxBinRatio: maxBinRatioProp = 0.75,
-  lowEndBias: lowEndBiasProp = 1.6,
+  barCount: barCountProp = 140,
+  smoothing: smoothingProp = 0.8,
+  fftSize: fftSizeProp = 4096,
+  maxBinRatio: maxBinRatioProp = 0.8,
+  lowEndBias: lowEndBiasProp = 1.3,
   mirror: mirrorProp = true,
   showControls = false,
   className,
@@ -92,6 +91,9 @@ export function AudioVisualizer({
     let raf: number | null = null;
     let cachedColor = "currentColor";
     let dataArray: Uint8Array<ArrayBuffer> | null = null;
+    let fadeData: Uint8Array<ArrayBuffer> | null = null;
+    let fadeStart: number | null = null;
+    const FADE_MS = 350;
 
     function refreshColor() {
       if (!canvas) return;
@@ -127,24 +129,10 @@ export function AudioVisualizer({
       }
     }
 
-    function draw() {
-      const wiring = wiringByElement.get(audio!);
-      if (!wiring || !canvas) {
-        raf = null;
-        return;
-      }
+    function paintBars(source: Uint8Array<ArrayBuffer>, scale: number) {
+      if (!canvas) return;
       const ctx2d = canvas.getContext("2d");
-      if (!ctx2d) {
-        raf = null;
-        return;
-      }
-      const analyser = wiring.analyser;
-      const bins = analyser.frequencyBinCount;
-      if (!dataArray || dataArray.length !== bins) {
-        dataArray = new Uint8Array(new ArrayBuffer(bins));
-      }
-      analyser.getByteFrequencyData(dataArray);
-
+      if (!ctx2d) return;
       const { w, h } = syncSize();
       ctx2d.clearRect(0, 0, w, h);
       ctx2d.fillStyle = cachedColor;
@@ -160,6 +148,7 @@ export function AudioVisualizer({
       // Drop the upper portion of the spectrum (where music has near-zero
       // energy) and concentrate sampling on the lower bins. The power scale
       // then biases bars further toward the very low end.
+      const bins = source.length;
       const usableBins = Math.max(1, Math.floor(bins * Math.min(1, Math.max(0.05, maxBinRatio))));
       // Walk distance buckets (in mirror mode: from center outward; otherwise
       // from leftmost bar rightward) and assign each one a frequency bin via
@@ -184,7 +173,7 @@ export function AudioVisualizer({
           ? Math.min(stepCount - 1, Math.floor(Math.abs(i - center)))
           : i;
         const idx = binByStep[d];
-        const amp = dataArray[idx] / 255;
+        const amp = (source[idx] / 255) * scale;
         const halfBarH = Math.max(0.5, amp * halfMax);
         const x = i * (barWidth + gap);
         const y = midY - halfBarH;
@@ -197,7 +186,42 @@ export function AudioVisualizer({
         }
         ctx2d.fill();
       }
+    }
+
+    function draw() {
+      const wiring = wiringByElement.get(audio!);
+      if (!wiring || !canvas) {
+        raf = null;
+        return;
+      }
+      const analyser = wiring.analyser;
+      const bins = analyser.frequencyBinCount;
+      if (!dataArray || dataArray.length !== bins) {
+        dataArray = new Uint8Array(new ArrayBuffer(bins));
+      }
+      analyser.getByteFrequencyData(dataArray);
+      paintBars(dataArray, 1);
       raf = requestAnimationFrame(draw);
+    }
+
+    function fadeStep() {
+      if (!canvas || fadeStart === null || !fadeData) {
+        raf = null;
+        return;
+      }
+      const elapsed = performance.now() - fadeStart;
+      const t = Math.min(1, elapsed / FADE_MS);
+      // Ease-out quad — fast initial collapse, soft landing at zero.
+      const scale = 1 - t * t;
+      paintBars(fadeData, scale);
+      if (t < 1) {
+        raf = requestAnimationFrame(fadeStep);
+      } else {
+        fadeData = null;
+        fadeStart = null;
+        raf = null;
+        paintFlat();
+      }
     }
 
     function start() {
@@ -208,7 +232,11 @@ export function AudioVisualizer({
         wiring.ctx.resume().catch(() => {});
       }
       refreshColor();
-      if (raf === null) raf = requestAnimationFrame(draw);
+      // Cancel any in-progress fade and resume live draw.
+      fadeData = null;
+      fadeStart = null;
+      if (raf !== null) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(draw);
     }
 
     function stop() {
@@ -216,7 +244,14 @@ export function AudioVisualizer({
         cancelAnimationFrame(raf);
         raf = null;
       }
-      paintFlat();
+      // If we have a recent snapshot, fade it inward; otherwise just flatten.
+      if (dataArray && dataArray.length > 0) {
+        fadeData = new Uint8Array(dataArray);
+        fadeStart = performance.now();
+        raf = requestAnimationFrame(fadeStep);
+      } else {
+        paintFlat();
+      }
     }
 
     refreshColor();

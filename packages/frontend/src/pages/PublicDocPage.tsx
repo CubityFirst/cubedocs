@@ -308,7 +308,7 @@ function PublicFileView({ file, projectId }: { file: NavFile; projectId: string 
 
       {file.mime_type.startsWith("audio/") && (
         <div className="mt-8 rounded-xl border border-border bg-muted/30 p-4">
-          <AudioVisualizer audioRef={audioRef} className="mb-3 h-20 text-primary" showControls />
+          <AudioVisualizer audioRef={audioRef} className="mb-3 h-20 text-primary" />
           <audio ref={audioRef} controls src={`/api/public/files/${file.id}/content?projectId=${projectId}`} className="w-full" />
         </div>
       )}

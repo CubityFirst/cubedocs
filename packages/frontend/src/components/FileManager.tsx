@@ -465,10 +465,10 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
   const uploadFileAndCreateDoc = useCallback(async (file: File) => {
     setUploadingCount(c => c + 1);
     try {
-      // .md files → import content as a new document
-      if (file.name.endsWith(".md")) {
+      // .md / .txt files → import content as a new document
+      if (file.name.endsWith(".md") || file.name.endsWith(".txt")) {
         const content = await file.text();
-        const title = file.name.slice(0, -3) || "Untitled";
+        const title = file.name.replace(/\.(md|txt)$/i, "") || "Untitled";
         const docResult = await apiFetchJson<DocItem & { id: string }>("/api/docs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
