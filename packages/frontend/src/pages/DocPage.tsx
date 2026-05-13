@@ -34,6 +34,7 @@ import { Pencil, X, Save, Settings, Globe, Lock, Link, History, ChevronLeft, Che
 import { ExportPdfDialog } from "@/components/ExportPdfDialog";
 import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
 import { apiFetchJson } from "@/lib/apiFetch";
+import { pushRecentItem } from "@/lib/recentDocs";
 import { useToast } from "@/hooks/use-toast";
 import { toast as sonnerToast } from "sonner";
 
@@ -343,6 +344,7 @@ export function DocPage() {
           setDoc(result.data);
           setMyRole(result.data.myRole ?? null);
           setMyPermission(result.data.myPermission ?? null);
+          if (projectId) pushRecentItem(projectId, { id: result.data.id, title: result.data.title, kind: "doc" });
           if (location.state?.isNew) {
             setTitleDraft(result.data.title);
             setDraft(result.data.content);
@@ -383,12 +385,10 @@ export function DocPage() {
       name: projectName,
       onClick: () => navigate(`/projects/${projectId}`),
     };
-    const folderCrumbs: BreadcrumbItem[] = folderAncestry.map((crumb, i) => ({
+    const folderCrumbs: BreadcrumbItem[] = folderAncestry.map(crumb => ({
       id: crumb.id,
       name: crumb.name,
-      onClick: () => navigate(`/projects/${projectId}`, {
-        state: { restorePath: [{ id: null, name: projectName }, ...folderAncestry.slice(0, i + 1)] },
-      }),
+      onClick: () => navigate(crumb.id ? `/projects/${projectId}/folders/${crumb.id}` : `/projects/${projectId}`),
     }));
     setBreadcrumbs([projectCrumb, ...folderCrumbs, { id: docId, name: doc.title }]);
   }, [doc, docId, allFolders, projectId, projectName, navigate, location.state, setBreadcrumbs]);

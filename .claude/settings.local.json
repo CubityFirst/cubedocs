@@ -23,7 +23,12 @@
       "Bash(pnpm --filter frontend typecheck)",
       "Bash(pnpm -r typecheck)",
       "Bash(pnpm --filter frontend exec tsc --noEmit)",
-      "Bash(pnpm --filter @annex/frontend exec tsc --noEmit)"
+      "Bash(pnpm --filter @annex/frontend exec tsc --noEmit)",
+      "Bash(pnpm -r --filter frontend --filter api typecheck)",
+      "Bash(pnpm --filter cubedocs-frontend exec tsc --noEmit)",
+      "Bash(pnpm --filter @annex/frontend typecheck)",
+      "Bash(pnpm --filter api typecheck)",
+      "Bash(pnpm --version)"
     ]
   }
 }

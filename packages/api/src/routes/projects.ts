@@ -242,17 +242,41 @@ export async function handleProjects(
           GROUP BY s.ancestor_id
         `).bind(projectId, projectId, projectId);
 
+    // Ancestor chain for the current folder (root → current), so the frontend
+    // can rebuild breadcrumbs on a direct folder-URL load. Only fetched when a
+    // folderId was supplied; root view doesn't need it.
+    const ancestorsQuery = folderFilter
+      ? env.DB.prepare(`
+          WITH RECURSIVE chain(id, name, parent_id, depth) AS (
+            SELECT id, name, parent_id, 0
+              FROM folders WHERE id = ? AND project_id = ? AND type = 'docs'
+            UNION ALL
+            SELECT f.id, f.name, f.parent_id, c.depth + 1
+              FROM folders f JOIN chain c ON f.id = c.parent_id
+             WHERE f.project_id = ? AND f.type = 'docs'
+          )
+          SELECT id, name FROM chain ORDER BY depth DESC
+        `).bind(folderFilter, projectId, projectId)
+      : null;
+
+    type AncestorRow = { id: string; name: string };
+
     // db.batch runs all statements in a single round-trip to D1 instead of N
     // separate RPCs. Limited members skip files + counts (they have no access
-    // to either), so the statement list shrinks accordingly.
-    const stmts = isLimited
+    // to either), so the statement list shrinks accordingly. The ancestors
+    // query is appended last when a folderId is supplied.
+    const stmts: D1PreparedStatement[] = isLimited
       ? [foldersQuery, docsQuery]
       : [foldersQuery, docsQuery, filesQuery!, countsQuery!];
+    if (ancestorsQuery) stmts.push(ancestorsQuery);
     const batchResults = await env.DB.batch(stmts);
     const foldersRes = batchResults[0] as D1Result<FolderRow>;
     const docsRes = batchResults[1] as D1Result<DocWithAuthor>;
     const filesRes = isLimited ? { results: [] as FileRow[] } : batchResults[2] as D1Result<FileRow>;
     const countsRes = isLimited ? { results: [] as CountRow[] } : batchResults[3] as D1Result<CountRow>;
+    const ancestorsRes = ancestorsQuery
+      ? batchResults[batchResults.length - 1] as D1Result<AncestorRow>
+      : { results: [] as AncestorRow[] };
 
     const folderCounts: Record<string, { docs: number; folders: number }> = {};
     for (const r of countsRes.results) folderCounts[r.folder_id] = { docs: r.docs, folders: r.folders };
@@ -262,6 +286,7 @@ export async function handleProjects(
       docs: docsRes.results,
       files: filesRes.results,
       folderCounts,
+      ancestors: ancestorsRes.results,
     });
   }
 

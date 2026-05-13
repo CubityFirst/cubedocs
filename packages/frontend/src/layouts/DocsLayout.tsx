@@ -28,7 +28,13 @@ import {
   Check,
   Network,
   Search,
+  Image,
+  Music,
+  FileCode,
+  FileArchive,
+  File,
 } from "lucide-react";
+import { readRecentItems, onRecentItemsUpdated, type RecentItem } from "@/lib/recentDocs";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { UserAvatar } from "@/components/UserAvatar";
 import { UserProfileCard } from "@/components/UserProfileCard";
@@ -66,6 +72,17 @@ type Section = { id: "documents" | "graph"; label: string; icon: typeof FileText
 
 const DOCUMENTS_SECTION: Section = { id: "documents", label: "Documents", icon: FileText };
 const GRAPH_SECTION: Section = { id: "graph", label: "Graph", icon: Network };
+
+function RecentItemIcon({ item, className }: { item: RecentItem; className?: string }) {
+  if (item.kind === "doc") return <FileText className={className} />;
+  const mime = item.mime ?? "";
+  if (mime.startsWith("image/")) return <Image className={className} />;
+  if (mime.startsWith("audio/")) return <Music className={className} />;
+  if (mime === "application/pdf") return <FileText className={className} />;
+  if (mime === "application/json" || mime.startsWith("text/")) return <FileCode className={className} />;
+  if (mime.includes("zip") || mime.includes("tar") || mime.includes("gzip") || mime.includes("archive")) return <FileArchive className={className} />;
+  return <File className={className} />;
+}
 
 export interface BreadcrumbItem {
   id: string | null;
@@ -240,6 +257,20 @@ export function DocsLayout() {
   const projectMatch = useMatch("/projects/:projectId/*");
   const projectId = projectMatch?.params.projectId ?? null;
   const currentProject = projectId ? projects.find(p => p.id === projectId) ?? null : null;
+
+  // Recently accessed docs/files for the current project. Re-read on route
+  // change AND when DocPage / FilePage push a new entry — pushes happen
+  // after the fetch resolves, so they land later than the pathname change.
+  const [recentItems, setRecentItems] = useState<RecentItem[]>([]);
+  useEffect(() => {
+    setRecentItems(projectId ? readRecentItems(projectId) : []);
+  }, [projectId, location.pathname]);
+  useEffect(() => {
+    if (!projectId) return;
+    return onRecentItemsUpdated(updatedProjectId => {
+      if (updatedProjectId === projectId) setRecentItems(readRecentItems(projectId));
+    });
+  }, [projectId]);
 
   // full-text search palette
   const [searchOpen, setSearchOpen] = useState(false);
@@ -484,7 +515,7 @@ export function DocsLayout() {
                   }
                 >
                   <FileText className="h-3.5 w-3.5 shrink-0" />
-                  Documents
+                  File Manager
                 </NavLink>
                 {currentProject?.graph_enabled ? (
                   <NavLink
@@ -499,6 +530,31 @@ export function DocsLayout() {
                 ) : null}
               </div>
             </nav>
+
+            {recentItems.length > 0 && (
+              <div className="mt-4">
+                <p className="px-2 pb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Recently accessed
+                </p>
+                <nav className="flex flex-col gap-0.5">
+                  {recentItems.map(item => (
+                    <NavLink
+                      key={`${item.kind}:${item.id}`}
+                      to={item.kind === "doc"
+                        ? `/projects/${projectId}/docs/${item.id}`
+                        : `/projects/${projectId}/files/${item.id}`}
+                      className={({ isActive }) =>
+                        cn(buttonVariants({ variant: "ghost", size: "sm" }), "w-full justify-start", isActive ? "bg-accent text-foreground" : "text-muted-foreground")
+                      }
+                      title={item.title}
+                    >
+                      <RecentItemIcon item={item} className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">{item.title}</span>
+                    </NavLink>
+                  ))}
+                </nav>
+              </div>
+            )}
           </ScrollArea>
         ) : (
           /* ── Overview sidebar ── */

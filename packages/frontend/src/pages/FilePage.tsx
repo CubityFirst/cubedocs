@@ -6,6 +6,7 @@ import { Separator } from "@/components/ui/separator";
 import { AuthenticatedImage } from "@/components/AuthenticatedImage";
 import { AudioVisualizer } from "@/components/AudioVisualizer";
 import { apiFetch, apiFetchJson } from "@/lib/apiFetch";
+import { pushRecentItem } from "@/lib/recentDocs";
 import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
 
 interface FileRecord {
@@ -59,6 +60,7 @@ export function FilePage() {
       .then(result => {
         if (result.ok && result.data) {
           setFile(result.data);
+          if (projectId) pushRecentItem(projectId, { id: result.data.id, title: result.data.name, kind: "file", mime: result.data.mime_type });
           const rawPath: { id: string | null; name: string }[] = location.state?.folderPath ?? [];
           const basePath = location.state?.basePath ?? `/projects/${projectId}`;
           // Folder ancestry without the project crumb. FileManager prefixes it; direct nav doesn't.
@@ -68,12 +70,10 @@ export function FilePage() {
             name: projectName,
             onClick: () => navigate(basePath),
           };
-          const folderCrumbs: BreadcrumbItem[] = folderAncestry.map((crumb, i) => ({
+          const folderCrumbs: BreadcrumbItem[] = folderAncestry.map(crumb => ({
             id: crumb.id,
             name: crumb.name,
-            onClick: () => navigate(basePath, {
-              state: { restorePath: [{ id: null, name: projectName }, ...folderAncestry.slice(0, i + 1)] },
-            }),
+            onClick: () => navigate(crumb.id ? `/projects/${projectId}/folders/${crumb.id}` : basePath),
           }));
           setBreadcrumbs([projectCrumb, ...folderCrumbs, { id: fileId ?? null, name: result.data.name }]);
           if (result.data.mime_type.startsWith("audio/")) {

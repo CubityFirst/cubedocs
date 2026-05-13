@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useNavigate, useLocation, useOutletContext } from "react-router-dom";
+import { useNavigate, useOutletContext } from "react-router-dom";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
 import { Folder, FileText, House, Plus, FolderPlus, Search, X, Download, Upload, Image, FileCode, FileArchive, File, Music, Trash2, Pencil, Link, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -106,30 +106,25 @@ function RoleBadge({ role }: { role: Role }) {
 interface Props {
   projectId: string;
   projectName: string;
+  folderId: string | null;
   myRole?: string | null;
   aiEnabled?: boolean;
   onDocCreated: (doc: DocItem) => void;
 }
 
-export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCreated }: Props) {
+export function FileManager({ projectId, projectName, folderId, myRole, aiEnabled, onDocCreated }: Props) {
   const canEdit = myRole === "editor" || myRole === "admin" || myRole === "owner";
   const navigate = useNavigate();
   const { toast } = useToast();
-  const location = useLocation();
   const { setBreadcrumbs } = useOutletContext<DocsLayoutContext>();
 
   const [folders, setFolders] = useState<FolderItem[]>([]);
   const [docs, setDocs] = useState<DocItem[]>([]);
   const [files, setFiles] = useState<FileItem[]>([]);
-  const initialPath: BreadcrumbEntry[] = location.state?.restorePath ?? [{ id: null, name: projectName }];
-  const [path, setPath] = useState<BreadcrumbEntry[]>(initialPath);
-  const currentFolderId = path[path.length - 1].id;
-
-  // Sync path from browser history (handles back/forward navigation)
-  useEffect(() => {
-    const restored = location.state?.restorePath;
-    setPath(restored ?? [{ id: null, name: projectName }]);
-  }, [location.state]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Breadcrumb path is rebuilt from the API ancestors response on every load.
+  // URL (folderId prop) is the source of truth for the current folder.
+  const [path, setPath] = useState<BreadcrumbEntry[]>([{ id: null, name: projectName }]);
+  const currentFolderId = folderId;
 
   const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
@@ -217,6 +212,7 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
       docs: DocItem[];
       files: FileItem[];
       folderCounts: Record<string, { docs: number; folders: number }>;
+      ancestors: { id: string; name: string }[];
     }>(`/api/projects/${projectId}/contents${folderParam}`);
 
     if (loadingTimerRef.current) { clearTimeout(loadingTimerRef.current); loadingTimerRef.current = null; }
@@ -229,18 +225,23 @@ export function FileManager({ projectId, projectName, myRole, aiEnabled, onDocCr
         counts.set(id, { files: c.docs, folders: c.folders });
       }
       setFolderCounts(counts);
+      const ancestorCrumbs: BreadcrumbEntry[] = (result.data.ancestors ?? []).map(a => ({ id: a.id, name: a.name }));
+      setPath([{ id: null, name: projectName }, ...ancestorCrumbs]);
     }
     setLoading(false);
   }
 
+  function folderUrl(id: string | null) {
+    return id ? `/projects/${projectId}/folders/${id}` : `/projects/${projectId}`;
+  }
+
   function enterFolder(folder: FolderItem) {
-    const newPath = [...path, { id: folder.id, name: folder.name }];
-    navigate(location.pathname, { state: { restorePath: newPath } });
+    navigate(folderUrl(folder.id));
   }
 
   function navigateToCrumb(index: number) {
-    const newPath = path.slice(0, index + 1);
-    navigate(location.pathname, { state: { restorePath: newPath } });
+    const target = path[index];
+    navigate(folderUrl(target.id));
   }
 
   async function handleCreateFolder(e: React.FormEvent) {

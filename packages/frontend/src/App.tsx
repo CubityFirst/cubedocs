@@ -40,6 +40,7 @@ export function App() {
         <Route element={<DocsLayout />}>
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/projects/:projectId" element={<ProjectPage />} />
+          <Route path="/projects/:projectId/folders/:folderId" element={<ProjectPage />} />
           <Route path="/projects/:projectId/docs/:docId" element={<DocPage />} />
           <Route path="/projects/:projectId/files/:fileId" element={<FilePage />} />
           <Route path="/projects/:projectId/settings" element={<SiteSettingsPage />} />
