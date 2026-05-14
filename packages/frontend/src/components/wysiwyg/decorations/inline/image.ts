@@ -1,7 +1,9 @@
 import { Decoration } from "@codemirror/view";
 import { cursorTouches, type Visitor } from "../types";
 import { ImageWidget } from "../../widgets/ImageWidget";
+import { AudioWidget } from "../../widgets/AudioWidget";
 import { ATTR_BLOCK_RE, PARTIAL_ATTR_BLOCK_RE, parseImageAttrs, styleFromAttrs } from "@/lib/imageAttrs";
+import { isAudioUrl, parseAudioSize } from "@/lib/audioUrl";
 
 const IMG_RE = /^!\[([^\]]*)\]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)$/;
 
@@ -48,6 +50,27 @@ export const visitImage: Visitor = ({ node, state, sel, reveal, decos }) => {
   const revealTo = inline ? consumeTo : line.to;
   const cursorOn = reveal && cursorTouches(sel, revealFrom, revealTo);
   if (cursorOn) return;
+
+  if (isAudioUrl(url)) {
+    // Inline placement forces the compact variant — the full player needs a
+    // row to itself. Stand-alone lines honor the author's choice (default full).
+    const size = inline ? "small" : parseAudioSize(attrs.size);
+    if (inline) {
+      decos.push(
+        Decoration.replace({
+          widget: new AudioWidget({ src: url, alt, size, style, inline: true }),
+        }).range(node.from, consumeTo),
+      );
+    } else {
+      decos.push(
+        Decoration.replace({
+          widget: new AudioWidget({ src: url, alt, size, style, inline: false }),
+          block: true,
+        }).range(line.from, line.to),
+      );
+    }
+    return;
+  }
 
   if (inline) {
     decos.push(

@@ -16,8 +16,9 @@ export const ATTR_BLOCK_RE = /^\{([^}\n]*)\}/;
 // matches end-of-line within the lookahead slice.
 export const PARTIAL_ATTR_BLOCK_RE = /^\{[^}\n]*$/m;
 
-// Matches a single key="value" or key=value pair
-const KV_RE = /(\w+)=(?:"([^"]*)"|'([^']*)'|(\S+))/g;
+// Matches a single key=value or key:value pair (both separators accepted so
+// {size:small} reads naturally alongside Pandoc's existing {width=50%}).
+const KV_RE = /(\w+)[=:](?:"([^"]*)"|'([^']*)'|(\S+))/g;
 
 // Bare numeric value (integer or decimal) — defaults to px so `width=200`
 // behaves the same as `width=200px`.

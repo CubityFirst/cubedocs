@@ -1,5 +1,8 @@
 // Remark plugin adding support for Pandoc-style image attribute syntax:
 //   ![alt](url){width=50% height=200px}
+//
+// Audio extensions also flow through ![](…); the {size=full|small} attr is
+// forwarded as `data-size` so the rendering layer can pick a player variant.
 
 import { ATTR_BLOCK_RE, parseImageAttrs, styleFromAttrs } from "./imageAttrs";
 
@@ -10,6 +13,8 @@ type MdastNode = {
   children?: MdastNode[];
   data?: { hProperties?: Record<string, string> };
 };
+
+const KNOWN_ATTRS = new Set(["width", "height", "align", "size"]);
 
 function processParagraph(node: MdastNode) {
   const children = node.children;
@@ -26,12 +31,16 @@ function processParagraph(node: MdastNode) {
     if (!match) continue;
 
     const attrs = parseImageAttrs(match[1]);
+    const hasKnown = Object.keys(attrs).some(k => KNOWN_ATTRS.has(k));
+    if (!hasKnown) continue;
+
     const style = styleFromAttrs(attrs);
-    if (!style) continue;
+    const size = attrs.size;
 
     child.data = child.data ?? {};
     child.data.hProperties = child.data.hProperties ?? {};
-    child.data.hProperties["style"] = style;
+    if (style) child.data.hProperties["style"] = style;
+    if (size === "full" || size === "small") child.data.hProperties["data-size"] = size;
 
     const remainder = next.value.slice(match[0].length);
     if (remainder) {

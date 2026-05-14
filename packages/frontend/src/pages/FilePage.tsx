@@ -169,7 +169,7 @@ export function FilePage() {
           <Download className="h-4 w-4" />
           {downloading ? "Downloading…" : "Download"}
         </Button>
-        {file.mime_type.startsWith("image/") && (
+        {(file.mime_type.startsWith("image/") || file.mime_type.startsWith("audio/")) && (
           <Button
             variant="outline"
             className="gap-2"

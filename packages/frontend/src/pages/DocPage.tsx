@@ -13,6 +13,8 @@ import { parseFrontmatter } from "@/lib/frontmatter";
 import { Callout, type CalloutType } from "@/components/Callout";
 import { MarkdownCode } from "@/components/CodeBlock";
 import { AuthenticatedImage } from "@/components/AuthenticatedImage";
+import { AudioEmbed } from "@/components/AudioEmbed";
+import { isAudioUrl, parseAudioSize } from "@/lib/audioUrl";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -147,7 +149,16 @@ function Code({ children }: { children: string }) {
 const remarkPlugins = [remarkFrontmatter, remarkWikilinks, remarkGfm, remarkBreaks, remarkCallouts, remarkImageAttrs, remarkUnderline];
 
 function makeAuthenticatedImage(projectId: string) {
-  return function AuthImg(props: React.ComponentPropsWithoutRef<"img">) {
+  return function AuthImg(props: React.ComponentPropsWithoutRef<"img"> & { node?: { properties?: Record<string, unknown> }; "data-size"?: string }) {
+    const src = typeof props.src === "string" ? props.src : "";
+    if (isAudioUrl(src)) {
+      const alt = typeof props.alt === "string" ? props.alt : undefined;
+      // remark-image-attrs stamps data-size onto hProperties; react-markdown
+      // surfaces it both as a direct prop and via node.properties depending on
+      // version, so check both for resilience.
+      const rawSize = props["data-size"] ?? (props.node?.properties?.["dataSize"] as string | undefined);
+      return <AudioEmbed src={src} alt={alt} size={parseAudioSize(rawSize)} projectId={projectId} />;
+    }
     return <AuthenticatedImage {...props} projectId={projectId} />;
   };
 }

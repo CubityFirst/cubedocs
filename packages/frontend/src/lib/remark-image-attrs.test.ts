@@ -19,6 +19,14 @@ function imageStyle(tree: Node): string | undefined {
   return (tree.children![0].children![0] as Node).data?.hProperties?.style as string | undefined;
 }
 
+function imageDataSize(tree: Node): string | undefined {
+  return (tree.children![0].children![0] as Node).data?.hProperties?.["data-size"] as string | undefined;
+}
+
+function paraChildren(tree: Node): Node[] {
+  return (tree.children![0] as Node).children!;
+}
+
 describe("remarkImageAttrs", () => {
   it("applies width from {width=50%}", () => {
     const tree = makePara("img.png", "{width=50%}");
@@ -117,5 +125,50 @@ describe("remarkImageAttrs", () => {
     const tree = makePara("img.png", "{align=bogus}");
     run(tree);
     expect(imageStyle(tree)).toBeUndefined();
+  });
+
+  it("surfaces size=full as data-size", () => {
+    const tree = makePara("song.mp3", "{size=full}");
+    run(tree);
+    expect(imageDataSize(tree)).toBe("full");
+  });
+
+  it("surfaces size=small as data-size", () => {
+    const tree = makePara("song.mp3", "{size=small}");
+    run(tree);
+    expect(imageDataSize(tree)).toBe("small");
+  });
+
+  it("accepts colon separator: size:small", () => {
+    const tree = makePara("song.mp3", "{size:small}");
+    run(tree);
+    expect(imageDataSize(tree)).toBe("small");
+  });
+
+  it("strips the {size=…} block from the trailing text", () => {
+    const tree = makePara("song.mp3", "{size=small}");
+    run(tree);
+    expect(paraChildren(tree)).toHaveLength(1);
+  });
+
+  it("ignores unknown size values", () => {
+    const tree = makePara("song.mp3", "{size=jumbo}");
+    run(tree);
+    expect(imageDataSize(tree)).toBeUndefined();
+  });
+
+  it("combines size with width", () => {
+    const tree = makePara("song.mp3", "{size=full width=50%}");
+    run(tree);
+    expect(imageStyle(tree)).toBe("width: 50%");
+    expect(imageDataSize(tree)).toBe("full");
+  });
+
+  it("leaves the trailing block in place when no attribute is recognized", () => {
+    const tree = makePara("img.png", "{.class #id}");
+    run(tree);
+    const children = paraChildren(tree);
+    expect(children).toHaveLength(2);
+    expect(children[1].value).toBe("{.class #id}");
   });
 });
