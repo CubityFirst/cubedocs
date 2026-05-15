@@ -14,7 +14,7 @@ import { Callout, type CalloutType } from "@/components/Callout";
 import { MarkdownCode } from "@/components/CodeBlock";
 import { AuthenticatedImage } from "@/components/AuthenticatedImage";
 import { AudioEmbed } from "@/components/AudioEmbed";
-import { isAudioUrl, parseAudioSize } from "@/lib/audioUrl";
+import { looksLikeAudio, parseAudioSize } from "@/lib/audioUrl";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -151,8 +151,8 @@ const remarkPlugins = [remarkFrontmatter, remarkWikilinks, remarkGfm, remarkBrea
 function makeAuthenticatedImage(projectId: string) {
   return function AuthImg(props: React.ComponentPropsWithoutRef<"img"> & { node?: { properties?: Record<string, unknown> }; "data-size"?: string }) {
     const src = typeof props.src === "string" ? props.src : "";
-    if (isAudioUrl(src)) {
-      const alt = typeof props.alt === "string" ? props.alt : undefined;
+    const alt = typeof props.alt === "string" ? props.alt : undefined;
+    if (looksLikeAudio(src, alt)) {
       // remark-image-attrs stamps data-size onto hProperties; react-markdown
       // surfaces it both as a direct prop and via node.properties depending on
       // version, so check both for resilience.
@@ -818,6 +818,10 @@ export function DocPage() {
                 <Section title="Links & images">
                   <Code>{`[link text](https://example.com)\n[email me](mailto:hello@example.com)\n[call](tel:+15551234567)\n![alt text](https://example.com/img.png)\n![alt](img.png){width=300}             fixed width (px)\n![alt](img.png){width=50%}             percentage width\n![alt](img.png){width=400 height=200}  width and height`}</Code>
                   <p className="text-xs text-muted-foreground mt-1">Allowed URL schemes: <span className="font-mono">http</span>, <span className="font-mono">https</span>, <span className="font-mono">mailto</span>, <span className="font-mono">tel</span>. Other schemes are stripped.</p>
+                </Section>
+                <Section title="Audio embeds">
+                  <Code>{`![song.mp3](song.mp3)                         full player (default)\n![song.mp3](song.mp3){size=full}              same as default\n![song.mp3](song.mp3){size=small}             inline chip\n![song.mp3](/api/files/<id>/content)          uploaded file`}</Code>
+                  <p className="text-xs text-muted-foreground mt-1">Recognized extensions: <span className="font-mono">mp3</span>, <span className="font-mono">wav</span>, <span className="font-mono">ogg</span>, <span className="font-mono">oga</span>, <span className="font-mono">m4a</span>, <span className="font-mono">aac</span>, <span className="font-mono">flac</span>, <span className="font-mono">opus</span>. For uploaded files the extension is read from the alt text. <span className="font-mono">{`{size:small}`}</span> works too. Mid-paragraph embeds always render as <span className="font-mono">small</span>. In small mode: click/drag the waveform to seek, hover the volume icon for the slider. Use the <span className="font-mono">Copy markdown</span> button on an audio file's page to paste a ready-to-use embed.</p>
                 </Section>
                 <Section title="Document links">
                   <Code>{`[[My Document]]                   link by title\n[[My Document|custom label]]      link with display text\n[[My Document#section]]           link to a heading anchor\n[[My Document#section|see this]]  anchor link with label`}</Code>

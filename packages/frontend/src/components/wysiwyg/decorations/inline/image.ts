@@ -3,7 +3,7 @@ import { cursorTouches, type Visitor } from "../types";
 import { ImageWidget } from "../../widgets/ImageWidget";
 import { AudioWidget } from "../../widgets/AudioWidget";
 import { ATTR_BLOCK_RE, PARTIAL_ATTR_BLOCK_RE, parseImageAttrs, styleFromAttrs } from "@/lib/imageAttrs";
-import { isAudioUrl, parseAudioSize } from "@/lib/audioUrl";
+import { looksLikeAudio, parseAudioSize } from "@/lib/audioUrl";
 
 const IMG_RE = /^!\[([^\]]*)\]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)$/;
 
@@ -51,7 +51,7 @@ export const visitImage: Visitor = ({ node, state, sel, reveal, decos }) => {
   const cursorOn = reveal && cursorTouches(sel, revealFrom, revealTo);
   if (cursorOn) return;
 
-  if (isAudioUrl(url)) {
+  if (looksLikeAudio(url, alt)) {
     // Inline placement forces the compact variant — the full player needs a
     // row to itself. Stand-alone lines honor the author's choice (default full).
     const size = inline ? "small" : parseAudioSize(attrs.size);

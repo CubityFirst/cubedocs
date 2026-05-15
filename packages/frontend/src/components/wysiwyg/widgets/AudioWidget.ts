@@ -51,12 +51,11 @@ export class AudioWidget extends ReactWidget {
   }
 
   protected revealOnClick(): boolean {
-    // Audio widgets host interactive controls (play/pause, the native audio
-    // element). Letting CM steal pointerdown to move the cursor + focus would
-    // race with those clicks, so we keep events inside the widget like the
-    // dice and wikilink widgets do — reveal markdown by clicking the text
-    // around it instead.
-    return false;
+    // Clicks on the preview surface (border, visualizer canvas) reveal the
+    // raw markdown like images do. Interactive children — the small play
+    // button and the native <audio controls> — call stopPropagation on
+    // pointerdown so transport keeps working without revealing.
+    return true;
   }
 
   eq(other: WidgetType): boolean {

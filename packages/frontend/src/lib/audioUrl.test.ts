@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isAudioUrl, parseAudioSize } from "./audioUrl";
+import { isAudioUrl, looksLikeAudio, parseAudioSize } from "./audioUrl";
 
 describe("isAudioUrl", () => {
   it("returns true for common audio extensions", () => {
@@ -40,6 +40,29 @@ describe("isAudioUrl", () => {
   it("handles full URLs", () => {
     expect(isAudioUrl("https://example.com/path/song.mp3")).toBe(true);
     expect(isAudioUrl("https://example.com/song")).toBe(false);
+  });
+});
+
+describe("looksLikeAudio", () => {
+  it("returns true when the URL itself has an audio extension", () => {
+    expect(looksLikeAudio("https://x.com/song.mp3")).toBe(true);
+  });
+
+  it("falls back to the alt text when the URL has no extension", () => {
+    // Copy-markdown emits ![filename.mp3](/api/files/UUID/content) — the URL
+    // path has no extension because /content is the route suffix.
+    expect(looksLikeAudio("/api/files/abc/content", "track.mp3")).toBe(true);
+  });
+
+  it("returns false when neither URL nor alt looks like audio", () => {
+    expect(looksLikeAudio("/api/files/abc/content", "screenshot.png")).toBe(false);
+    expect(looksLikeAudio("/api/files/abc/content")).toBe(false);
+  });
+
+  it("does not promote an image URL to audio because of an audio-named alt", () => {
+    // The URL has an unambiguous image extension — trust it over the alt.
+    expect(looksLikeAudio("photo.png", "song.mp3")).toBe(false);
+    expect(looksLikeAudio("photo.png", "caption")).toBe(false);
   });
 });
 
