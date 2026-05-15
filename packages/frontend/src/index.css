@@ -350,3 +350,17 @@ body {
 .public-doc-scroller [data-radix-scroll-area-viewport] > div {
   display: block !important;
 }
+
+/* Mermaid diagrams (```mermaid fenced blocks, rendered by MermaidDiagram.tsx).
+   mermaid emits an SVG with intrinsic px width/height; constrain it so wide
+   diagrams scale down to the container instead of forcing horizontal page
+   overflow, and stay un-clipped when printing to PDF. */
+.cm-mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+@media print {
+  .cm-mermaid {
+    overflow: visible !important;
+  }
+}

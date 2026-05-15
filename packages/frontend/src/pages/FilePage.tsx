@@ -51,7 +51,7 @@ export function FilePage() {
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
-  const [audioBlobUrl, setAudioBlobUrl] = useState<string | null>(null);
+  const [contentBlobUrl, setContentBlobUrl] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
@@ -76,10 +76,10 @@ export function FilePage() {
             onClick: () => navigate(crumb.id ? `/projects/${projectId}/folders/${crumb.id}` : basePath),
           }));
           setBreadcrumbs([projectCrumb, ...folderCrumbs, { id: fileId ?? null, name: result.data.name }]);
-          if (result.data.mime_type.startsWith("audio/")) {
+          if (result.data.mime_type.startsWith("audio/") || result.data.mime_type === "application/pdf") {
             apiFetch(`/api/files/${fileId}/content`)
               .then(r => r.blob())
-              .then(blob => setAudioBlobUrl(URL.createObjectURL(blob)))
+              .then(blob => setContentBlobUrl(URL.createObjectURL(blob)))
               .catch(() => {});
           }
         }
@@ -87,7 +87,7 @@ export function FilePage() {
       .catch(() => {})
       .finally(() => setLoading(false));
     return () => {
-      setAudioBlobUrl(prev => { if (prev) URL.revokeObjectURL(prev); return null; });
+      setContentBlobUrl(prev => { if (prev) URL.revokeObjectURL(prev); return null; });
     };
   }, [fileId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -157,10 +157,16 @@ export function FilePage() {
         </div>
       )}
 
-      {file.mime_type.startsWith("audio/") && audioBlobUrl && (
+      {file.mime_type.startsWith("audio/") && contentBlobUrl && (
         <div className="mt-6 rounded-lg border border-border bg-muted/30 p-4">
           <AudioVisualizer audioRef={audioRef} className="mb-3 h-20 text-primary" />
-          <audio ref={audioRef} controls src={audioBlobUrl} className="w-full" />
+          <audio ref={audioRef} controls src={contentBlobUrl} className="w-full" />
+        </div>
+      )}
+
+      {file.mime_type === "application/pdf" && contentBlobUrl && (
+        <div className="mt-6 overflow-hidden rounded-lg border border-border bg-muted/30">
+          <iframe src={contentBlobUrl} title={file.name} className="h-[75vh] w-full" />
         </div>
       )}
 

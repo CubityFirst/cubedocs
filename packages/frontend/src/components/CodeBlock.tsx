@@ -3,6 +3,7 @@ import { Check, Copy } from "lucide-react";
 import { getHighlighter, highlighterReady } from "@/lib/shiki";
 import { Button } from "@/components/ui/button";
 import { DiceRoll } from "@/components/DiceRoll";
+import { MermaidDiagram } from "@/components/MermaidDiagram";
 
 const THEME = "github-dark-dimmed";
 
@@ -22,8 +23,20 @@ interface CodeBlockProps {
   code: string;
 }
 
-/** Highlighted fenced code block using Shiki (github-dark-dimmed theme). */
+/**
+ * Fenced code block entry point. Routes ```mermaid blocks to a rendered
+ * diagram and everything else to the Shiki highlighter. Kept hook-free so the
+ * routing branch can't reorder hooks across renders.
+ */
 export function CodeBlock({ lang, code }: CodeBlockProps) {
+  if (lang === "mermaid") {
+    return <MermaidDiagram code={code} />;
+  }
+  return <ShikiCodeBlock lang={lang} code={code} />;
+}
+
+/** Highlighted fenced code block using Shiki (github-dark-dimmed theme). */
+function ShikiCodeBlock({ lang, code }: CodeBlockProps) {
   const [html, setHtml] = useState<string | null>(() => highlight(code, lang));
   const [copied, setCopied] = useState(false);
 
