@@ -7,7 +7,7 @@ import { AuthForm } from "@/components/AuthForm";
 import { Turnstile } from "@/components/Turnstile";
 import { getToken, setToken } from "@/lib/auth";
 
-const annexWordmark = <img src="/annexwordmark.svg" alt="Annex" className="h-10 w-auto invert" />;
+const annexWordmark = <img src="/annexwordmark.svg" alt="Annex" className="h-10 w-auto dark:invert" />;
 
 const STRENGTH_LABELS = ["Very weak", "Weak", "Fair", "Strong", "Very strong"];
 const STRENGTH_COLORS = [

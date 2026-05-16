@@ -33,6 +33,9 @@ export async function authenticate(request: Request, env: Env): Promise<Session 
       readingFont: result.session.readingFont ?? null,
       editingFont: result.session.editingFont ?? null,
       uiFont: result.session.uiFont ?? null,
+      isAdmin: result.session.isAdmin ?? false,
+      themeMode: result.session.themeMode ?? null,
+      themeCustomColor: result.session.themeCustomColor ?? null,
     };
   }
   if (result.kind === "invalid") return null;

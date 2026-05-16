@@ -49,7 +49,7 @@ function adminHandoffErrorMessage(error?: string): string {
   return "Could not continue to the admin panel. Please try again.";
 }
 
-const annexWordmark = <img src="/annexwordmark.svg" alt="Annex" className="h-10 w-auto invert" />;
+const annexWordmark = <img src="/annexwordmark.svg" alt="Annex" className="h-10 w-auto dark:invert" />;
 
 // Accept only same-origin relative paths. Rejects protocol-relative (`//evil`),
 // schemed (`https://…`), and anything that doesn't start with a single slash.

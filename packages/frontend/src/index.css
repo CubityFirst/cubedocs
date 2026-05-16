@@ -346,8 +346,14 @@ body {
    vertical scrolling and that wrapper collapses to ~32px regardless of how
    tall the WysiwygEditor inside is — which breaks scroll-to-heading by
    making the viewport think there's nothing to scroll. Force a block layout
-   on the public-doc scroller only. */
-.public-doc-scroller [data-radix-scroll-area-viewport] > div {
+   on the public-doc scroller only.
+
+   The app sidebar hits the same wrapper: with display:table it sizes to
+   max-content, so the Search row's Kbd and the Graph icon bleed a few px past
+   the w-64 sidebar and get clipped by its overflow-hidden (only visible once
+   the border has contrast, i.e. in light/custom). Vertical-only there too. */
+.public-doc-scroller [data-radix-scroll-area-viewport] > div,
+.app-sidebar-scroller [data-radix-scroll-area-viewport] > div {
   display: block !important;
 }
 

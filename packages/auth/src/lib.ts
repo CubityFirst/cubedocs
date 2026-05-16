@@ -26,6 +26,11 @@ export interface Session {
   readingFont?: string | null;
   editingFont?: string | null;
   uiFont?: string | null;
+  // Per-user site theme. themeMode ∈ {dark,light,custom}; NULL = dark default.
+  // themeCustomColor is the #rrggbb base for 'custom'. Admin-gated (set via
+  // routes/update-theme.ts). Not gated on plan.
+  themeMode?: string | null;
+  themeCustomColor?: string | null;
 }
 
 export const Errors = {

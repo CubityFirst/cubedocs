@@ -12,6 +12,12 @@ export interface Session {
   readingFont?: string | null;
   editingFont?: string | null;
   uiFont?: string | null;
+  // Global site admin flag. Propagated from the auth session so admin-only
+  // features (e.g. the theme picker) can be gated server- and client-side.
+  isAdmin?: boolean;
+  // Per-user site theme. themeMode ∈ {dark,light,custom}; NULL = dark default.
+  themeMode?: string | null;
+  themeCustomColor?: string | null;
 }
 
 export interface Folder {

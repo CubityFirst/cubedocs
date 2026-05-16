@@ -221,6 +221,9 @@ export default {
             readingFont: session.readingFont ?? null,
             editingFont: session.editingFont ?? null,
             uiFont: session.uiFont ?? null,
+            isAdmin: session.isAdmin ?? false,
+            themeMode: session.themeMode ?? null,
+            themeCustomColor: session.themeCustomColor ?? null,
           },
         }));
       }
@@ -282,6 +285,23 @@ export default {
         const body = await request.json<unknown>();
         const authHeader = request.headers.get("Authorization");
         const updateRes = await env.AUTH.fetch("https://auth/update-reading-font", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
+          body: JSON.stringify(body),
+        });
+        return addCorsHeaders(updateRes);
+      }
+
+      // PATCH /me/theme — set site theme (dark/light/custom). Admin-only:
+      // the auth worker is authoritative on the admin check; we re-check here
+      // (cheap, defense in depth) now that the API session carries isAdmin.
+      if (url.pathname === "/me/theme" && request.method === "PATCH") {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        if (!session.isAdmin) return addCorsHeaders(errorResponse(Errors.FORBIDDEN));
+        const body = await request.json<unknown>();
+        const authHeader = request.headers.get("Authorization");
+        const updateRes = await env.AUTH.fetch("https://auth/update-theme", {
           method: "POST",
           headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
           body: JSON.stringify(body),

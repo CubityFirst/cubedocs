@@ -15,6 +15,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { clearToken, getToken } from "@/lib/auth";
 import { apiFetch, apiFetchJson } from "@/lib/apiFetch";
 import { type FontChoice, DEFAULT_READING_FONT, DEFAULT_EDITING_FONT, DEFAULT_UI_FONT, resolveFontChoice, readFontPrefsCookie, writeFontPrefsCookie, applyFontVarsToRoot } from "@/lib/fonts";
+import { type ThemeMode, resolveThemeMode, readThemePrefsCookie, writeThemePrefsCookie, applyThemeToRoot } from "@/lib/theme";
 import {
   BookOpen,
   Settings,
@@ -102,7 +103,7 @@ export interface DocsLayoutContext {
   aiEnabled: boolean;
   aiSummarizationType: string;
   projectFeatures: number;
-  currentUser: { id: string; name: string; personalPlan: "free" | "ink"; personalPlanStyle: string | null; personalPresenceColor: string | null; personalCritSparkles: boolean } | null;
+  currentUser: { id: string; name: string; personalPlan: "free" | "ink"; personalPlanStyle: string | null; personalPresenceColor: string | null; personalCritSparkles: boolean; isAdmin: boolean } | null;
   // Lets nested routes (e.g. UserSettingsPage) push Ink cosmetic changes
   // back into the layout so the sidebar avatar updates without a reload.
   updateInkAppearance: (patch: { personalPlanStyle?: string | null; personalPresenceColor?: string | null; personalCritSparkles?: boolean }) => void;
@@ -112,6 +113,12 @@ export interface DocsLayoutContext {
   editingFont: FontChoice;
   uiFont: FontChoice;
   updateFontAppearance: (patch: { readingFont?: FontChoice; editingFont?: FontChoice; uiFont?: FontChoice }) => void;
+  // Site theme (admin-only to change; the settings section is hidden unless
+  // currentUser.isAdmin). Setter applies instantly via inline CSS vars on
+  // <html> without waiting for a refetch.
+  theme: ThemeMode;
+  customColor: string | null;
+  updateTheme: (patch: { mode?: ThemeMode; customColor?: string | null }) => void;
   docs: { id: string; title: string; display_title?: string | null; folder_id?: string | null; tags?: string | null }[];
   folders: { id: string; name: string; parent_id: string | null }[];
   addDoc: (doc: { id: string; title: string; display_title?: string | null; folder_id?: string | null; tags?: string | null }) => void;
@@ -244,6 +251,10 @@ export function DocsLayout() {
   const [readingFont, setReadingFont] = useState<FontChoice>(() => readFontPrefsCookie().readingFont);
   const [editingFont, setEditingFont] = useState<FontChoice>(() => readFontPrefsCookie().editingFont);
   const [uiFont, setUiFont] = useState<FontChoice>(() => readFontPrefsCookie().uiFont);
+  const [isAdmin, setIsAdmin] = useState(false);
+  // Same cookie-seed-then-/api/me-override pattern as the fonts above.
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => readThemePrefsCookie().mode);
+  const [themeCustomColor, setThemeCustomColor] = useState<string | null>(() => readThemePrefsCookie().customColor);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -287,7 +298,7 @@ export function DocsLayout() {
 
   useEffect(() => {
     if (!getToken()) return;
-    apiFetchJson<{ name: string; userId: string; personalPlan: "free" | "ink"; personalPlanStyle: string | null; personalPresenceColor: string | null; personalCritSparkles: boolean; readingFont: string | null; editingFont: string | null; uiFont: string | null }>("/api/me")
+    apiFetchJson<{ name: string; userId: string; personalPlan: "free" | "ink"; personalPlanStyle: string | null; personalPresenceColor: string | null; personalCritSparkles: boolean; readingFont: string | null; editingFont: string | null; uiFont: string | null; isAdmin: boolean; themeMode: string | null; themeCustomColor: string | null }>("/api/me")
       .then(result => {
         if (result.ok && result.data) {
           setUserName(result.data.name);
@@ -299,6 +310,9 @@ export function DocsLayout() {
           setReadingFont(resolveFontChoice(result.data.readingFont, DEFAULT_READING_FONT));
           setEditingFont(resolveFontChoice(result.data.editingFont, DEFAULT_EDITING_FONT));
           setUiFont(resolveFontChoice(result.data.uiFont, DEFAULT_UI_FONT));
+          setIsAdmin(result.data.isAdmin ?? false);
+          setThemeMode(resolveThemeMode(result.data.themeMode));
+          setThemeCustomColor(result.data.themeCustomColor ?? null);
         }
       })
       .catch(() => {});
@@ -315,6 +329,14 @@ export function DocsLayout() {
     applyFontVarsToRoot(prefs);
     writeFontPrefsCookie(prefs);
   }, [readingFont, editingFont, uiFont]);
+
+  // Same pattern for the theme: sync the .dark class + inline CSS vars and
+  // persist the cookie so the next pre-/api/me boot applies it without a flash.
+  useEffect(() => {
+    const prefs = { mode: themeMode, customColor: themeCustomColor };
+    applyThemeToRoot(prefs);
+    writeThemePrefsCookie(prefs);
+  }, [themeMode, themeCustomColor]);
 
   useEffect(() => {
     if (!getToken()) return;
@@ -410,7 +432,7 @@ export function DocsLayout() {
     aiEnabled: !!(currentProject?.ai_enabled),
     aiSummarizationType: currentProject?.ai_summarization_type ?? "manual",
     projectFeatures: currentProject?.features ?? 0,
-    currentUser: userId && userName ? { id: userId, name: userName, personalPlan, personalPlanStyle, personalPresenceColor, personalCritSparkles } : null,
+    currentUser: userId && userName ? { id: userId, name: userName, personalPlan, personalPlanStyle, personalPresenceColor, personalCritSparkles, isAdmin } : null,
     updateInkAppearance: (patch) => {
       if ("personalPlanStyle" in patch) setPersonalPlanStyle(patch.personalPlanStyle ?? null);
       if ("personalPresenceColor" in patch) setPersonalPresenceColor(patch.personalPresenceColor ?? null);
@@ -423,6 +445,12 @@ export function DocsLayout() {
       if (patch.readingFont) setReadingFont(patch.readingFont);
       if (patch.editingFont) setEditingFont(patch.editingFont);
       if (patch.uiFont) setUiFont(patch.uiFont);
+    },
+    theme: themeMode,
+    customColor: themeCustomColor,
+    updateTheme: (patch) => {
+      if (patch.mode !== undefined) setThemeMode(patch.mode);
+      if (patch.customColor !== undefined) setThemeCustomColor(patch.customColor);
     },
     docs,
     folders,
@@ -483,14 +511,17 @@ export function DocsLayout() {
               className="flex items-center cursor-pointer"
               aria-label="Go to dashboard"
             >
-              <img src="/annexwordmark.svg" alt="Annex" className="h-5 w-auto invert" />
+              {/* Wordmark artwork is black. dark:invert flips it white only
+                  when the effective theme is dark — .dark now tracks the true
+                  polarity, incl. custom-dark (see applyThemeToRoot). */}
+              <img src="/annexwordmark.svg" alt="Annex" className="h-5 w-auto dark:invert" />
             </button>
           )}
         </div>
 
         {projectId ? (
           /* ── Project sidebar ── */
-          <ScrollArea className="flex-1 px-2 py-3">
+          <ScrollArea className="flex-1 px-2 py-3 app-sidebar-scroller">
             {/* Sections */}
             <nav className="flex flex-col gap-1">
               <button
@@ -557,7 +588,7 @@ export function DocsLayout() {
           </ScrollArea>
         ) : (
           /* ── Overview sidebar ── */
-          <ScrollArea className="flex-1 px-2 py-3">
+          <ScrollArea className="flex-1 px-2 py-3 app-sidebar-scroller">
             <nav className="flex flex-col gap-1">
               {projects.map(p => (
                 <Button

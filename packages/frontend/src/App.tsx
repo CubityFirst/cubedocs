@@ -1,4 +1,6 @@
+import { useLayoutEffect } from "react";
 import { Routes, Route, useLocation, type Location } from "react-router-dom";
+import { applyThemeToRoot, pathUsesUserTheme, DEFAULT_THEME_PREFS } from "@/lib/theme";
 import { DocsLayout } from "./layouts/DocsLayout";
 import { LandingPage } from "./pages/LandingPage";
 import { LoginPage } from "./pages/LoginPage";
@@ -30,6 +32,16 @@ export function App() {
   // stays mounted underneath the modal route.
   const state = location.state as { backgroundLocation?: Location } | null;
   const backgroundLocation = state?.backgroundLocation;
+
+  // Keep the landing/auth routes on the default (dark) brand look even when a
+  // user with a saved light/custom theme navigates here client-side (the theme
+  // applied by DocsLayout would otherwise linger on the <html>). App routes are
+  // left alone — DocsLayout owns applying the saved theme there.
+  useLayoutEffect(() => {
+    if (!pathUsesUserTheme(location.pathname)) {
+      applyThemeToRoot(DEFAULT_THEME_PREFS);
+    }
+  }, [location.pathname]);
   return (
     <>
       <Routes location={backgroundLocation ?? location}>

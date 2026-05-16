@@ -39,6 +39,7 @@ import { Switch } from "@/components/ui/switch";
 import { TIMEZONE_GROUPS, detectTimezoneGroup, getTimezoneGroup, formatTimezoneLabel, formatTimeInZone } from "@/lib/timezone";
 import { formatInkSince } from "@/lib/inkDate";
 import { FONT_CHOICES, FONT_LABELS, FONT_STACKS, DEFAULT_READING_FONT, DEFAULT_EDITING_FONT, DEFAULT_UI_FONT, type FontChoice } from "@/lib/fonts";
+import { type ThemeMode, DEFAULT_CUSTOM_COLOR } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { useAvatarVariant } from "@/lib/avatarVariant";
 import { toast as sonnerToast } from "sonner";
@@ -106,8 +107,9 @@ function formatRelative(timestampMs: number): string {
 export function UserSettingsPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { updateInkAppearance, readingFont, editingFont, uiFont, updateFontAppearance } = useOutletContext<DocsLayoutContext>();
+  const { updateInkAppearance, readingFont, editingFont, uiFont, updateFontAppearance, currentUser, theme, customColor, updateTheme } = useOutletContext<DocsLayoutContext>();
   const [fontPrefsBusy, setFontPrefsBusy] = useState(false);
+  const [themePrefsBusy, setThemePrefsBusy] = useState(false);
   useEffect(() => {
     if (!location.hash) return;
     const id = location.hash.slice(1);
@@ -889,6 +891,48 @@ export function UserSettingsPage() {
       sonnerToast.error("Couldn't reset", { description: "Please try again in a moment." });
     } finally {
       setFontPrefsBusy(false);
+    }
+  }
+
+  // Persists the site theme. Admin-only (the section is hidden otherwise and
+  // the route is 403-guarded). Optimistic via DocsLayout's updateTheme — that
+  // owns the .dark class + inline CSS vars, so the UI reskins immediately and
+  // rolls back the same way on failure. Switching to Custom with no colour yet
+  // falls back to the current/seed colour.
+  async function saveTheme(next: { mode: ThemeMode; customColor?: string | null }) {
+    if (themePrefsBusy) return;
+    setThemePrefsBusy(true);
+    const prev = { mode: theme, customColor };
+    const optimistic = {
+      mode: next.mode,
+      customColor: next.mode === "custom"
+        ? (next.customColor ?? customColor ?? DEFAULT_CUSTOM_COLOR)
+        : null,
+    };
+    updateTheme(optimistic);
+    try {
+      const token = getToken();
+      if (!token) return;
+      const res = await fetch("/api/me/theme", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(
+          optimistic.mode === "custom"
+            ? { theme: "custom", customColor: optimistic.customColor }
+            : { theme: optimistic.mode },
+        ),
+      });
+      if (!res.ok) {
+        updateTheme(prev);
+        sonnerToast.error("Couldn't save", { description: "Please try again in a moment." });
+        return;
+      }
+      sonnerToast.success("Theme updated");
+    } catch {
+      updateTheme(prev);
+      sonnerToast.error("Couldn't save", { description: "Please try again in a moment." });
+    } finally {
+      setThemePrefsBusy(false);
     }
   }
 
@@ -1809,6 +1853,60 @@ export function UserSettingsPage() {
           </section>
 
           <Separator className="my-6" />
+
+          {/* Theme — global-site-admin only. Dark is the default for everyone;
+              Light drops the .dark class; Custom derives a full palette from
+              one colour. Gated on currentUser.isAdmin (server also 403s). */}
+          {currentUser?.isAdmin && (
+            <>
+              <section id="theme">
+                <h2 className="text-base font-semibold">Theme</h2>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  Choose how the app looks. Custom derives a full palette — surfaces, borders and accents — from a single colour. Admin only.
+                </p>
+                <div className="mt-5 flex flex-wrap gap-2">
+                  {([
+                    { mode: "dark", label: "Dark", icon: Moon },
+                    { mode: "light", label: "Light", icon: Sun },
+                    { mode: "custom", label: "Custom", icon: null },
+                  ] as const).map(opt => {
+                    const active = theme === opt.mode;
+                    const Icon = opt.icon;
+                    return (
+                      <button
+                        key={opt.mode}
+                        type="button"
+                        disabled={themePrefsBusy}
+                        onClick={() => saveTheme({ mode: opt.mode })}
+                        aria-pressed={active}
+                        className={cn(
+                          "flex items-center gap-2 rounded-md border px-4 py-2 text-sm transition-colors disabled:opacity-50",
+                          active ? "border-foreground bg-accent" : "border-border hover:bg-accent",
+                        )}
+                      >
+                        {Icon && <Icon className="size-4" />}
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                {theme === "custom" && (
+                  <div className="mt-4 flex flex-wrap items-center gap-3">
+                    <ColorPicker
+                      value={customColor ?? DEFAULT_CUSTOM_COLOR}
+                      disabled={themePrefsBusy}
+                      onChange={(next) => updateTheme({ mode: "custom", customColor: next })}
+                      onCommit={(next) => saveTheme({ mode: "custom", customColor: next })}
+                    />
+                    <span className="text-xs text-muted-foreground tabular-nums">{customColor ?? DEFAULT_CUSTOM_COLOR}</span>
+                    <span className="text-xs text-muted-foreground">Lighter/darker shades are derived from this for the whole site.</span>
+                  </div>
+                )}
+              </section>
+
+              <Separator className="my-6" />
+            </>
+          )}
 
           {/* Security section */}
           <section id="two-factor">

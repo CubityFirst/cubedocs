@@ -21,6 +21,8 @@ interface SessionUserRow {
   reading_font: string | null;
   editing_font: string | null;
   ui_font: string | null;
+  theme_mode: string | null;
+  theme_custom_color: string | null;
 }
 
 interface SessionStateRow {
@@ -69,6 +71,7 @@ export async function loadCurrentSession(
       `SELECT u.id, u.email, u.moderation, u.force_password_change, u.is_admin,
               p.personal_plan_style, p.personal_presence_color, p.personal_crit_sparkles,
               p.reading_font, p.editing_font, p.ui_font,
+              p.theme_mode, p.theme_custom_color,
               b.personal_plan, b.personal_plan_status, b.personal_plan_started_at,
               b.personal_plan_cancel_at,
               b.granted_plan, b.granted_plan_expires_at, b.granted_plan_started_at
@@ -143,6 +146,8 @@ export async function loadCurrentSession(
       readingFont: user.reading_font,
       editingFont: user.editing_font,
       uiFont: user.ui_font,
+      themeMode: user.theme_mode,
+      themeCustomColor: user.theme_custom_color,
     },
   };
 }
