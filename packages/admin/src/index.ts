@@ -52,7 +52,10 @@ app.get("/api/verify", async (c) => {
 
 app.get("/api/avatar/:userId", async (c) => {
   const userId = c.req.param("userId");
-  const obj = await c.env.ASSETS.get(`avatars/${userId}`);
+  // Admin only ever shows the dark variant. Read-only: fall back to a legacy
+  // object but do NOT migrate/delete here — the API worker owns that.
+  const obj = (await c.env.ASSETS.get(`avatars/${userId}-dark`))
+    ?? (await c.env.ASSETS.get(`avatars/${userId}`));
   if (!obj) return new Response(null, { status: 404 });
   const contentType = obj.httpMetadata?.contentType ?? "application/octet-stream";
   return new Response(await obj.arrayBuffer(), {

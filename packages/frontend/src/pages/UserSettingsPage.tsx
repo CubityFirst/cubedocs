@@ -29,7 +29,7 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { AvatarCropDialog } from "@/components/AvatarCropDialog";
 import { InlineSaveControls } from "@/components/InlineSaveControls";
 import { InkSparkle } from "@/components/InkSparkle";
-import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertCircle, Camera, Smartphone, Tablet, Laptop, Monitor, Upload, Sparkles, ChevronDown, Globe, X, Search, Plus, Info } from "lucide-react";
+import { LockOpen, LockKeyhole, Key, Trash2, Loader2, Copy, CheckCircle2, AlertCircle, Camera, Smartphone, Tablet, Laptop, Monitor, Upload, Sparkles, ChevronDown, Globe, X, Search, Plus, Info, Sun, Moon } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ColorPicker } from "@/components/ui/color-picker";
@@ -40,6 +40,7 @@ import { TIMEZONE_GROUPS, detectTimezoneGroup, getTimezoneGroup, formatTimezoneL
 import { formatInkSince } from "@/lib/inkDate";
 import { FONT_CHOICES, FONT_LABELS, FONT_STACKS, DEFAULT_READING_FONT, DEFAULT_EDITING_FONT, DEFAULT_UI_FONT, type FontChoice } from "@/lib/fonts";
 import { cn } from "@/lib/utils";
+import { useAvatarVariant } from "@/lib/avatarVariant";
 import { toast as sonnerToast } from "sonner";
 
 // Mirrors INK_RING_STYLES in packages/auth/src/plan.ts. Order is the
@@ -133,6 +134,8 @@ export function UserSettingsPage() {
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarPopoverOpen, setAvatarPopoverOpen] = useState(false);
   const [cropFile, setCropFile] = useState<File | null>(null);
+  // Which avatar slot the toggle is viewing/editing (app-wide, per-browser).
+  const [avatarVariant, setAvatarVariant] = useAvatarVariant();
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
@@ -305,7 +308,7 @@ export function UserSettingsPage() {
     const token = getToken();
     const form = new FormData();
     form.append("file", new File([blob], "avatar.webp", { type: blob.type }));
-    const res = await fetch("/api/avatar", {
+    const res = await fetch(`/api/avatar?variant=${avatarVariant}`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
       body: form,
@@ -324,7 +327,7 @@ export function UserSettingsPage() {
     setAvatarUploading(true);
     try {
       const token = getToken();
-      await fetch("/api/avatar", { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+      await fetch(`/api/avatar?variant=${avatarVariant}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
       setAvatarKey(k => k + 1);
       toast({ title: "Avatar removed" });
     } catch {
@@ -1058,6 +1061,7 @@ export function UserSettingsPage() {
                       className="hidden"
                       onChange={handleAvatarChange}
                     />
+                    <div className="flex flex-col items-center gap-2 shrink-0">
                     <Popover open={avatarPopoverOpen} onOpenChange={setAvatarPopoverOpen}>
                       <PopoverTrigger asChild>
                         <button type="button" className="relative group rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0">
@@ -1094,6 +1098,26 @@ export function UserSettingsPage() {
                         </Button>
                       </PopoverContent>
                     </Popover>
+
+                      <div className="flex flex-col items-center gap-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+                          onClick={() => setAvatarVariant(avatarVariant === "dark" ? "light" : "dark")}
+                          title="Switch which avatar variant you view and edit (dark vs light backgrounds)"
+                        >
+                          {avatarVariant === "dark"
+                            ? <Moon className="size-3.5" />
+                            : <Sun className="size-3.5" />}
+                          {avatarVariant === "dark" ? "Dark" : "Light"}
+                        </Button>
+                        <span className="text-[11px] leading-tight text-muted-foreground">
+                          Editing {avatarVariant} variant
+                        </span>
+                      </div>
+                    </div>
 
                     {cropFile && (
                       <AvatarCropDialog

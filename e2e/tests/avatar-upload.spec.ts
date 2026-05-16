@@ -64,6 +64,8 @@ function buildAnimatedGif(): Buffer {
 
 let context: BrowserContext;
 let page: Page;
+// Set by the upload test, reused by the variant tests below (serial mode).
+let userId = "";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -152,7 +154,7 @@ test("uploading an animated GIF stores it as animated WebP", async () => {
   // token that the app dropped into localStorage on login. We can't use
   // page.request directly here because it doesn't share localStorage, only
   // cookies — and we mint JWTs, not cookies.
-  const userId = await page.evaluate(async () => {
+  userId = await page.evaluate(async () => {
     const token = localStorage.getItem("token");
     const r = await fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } });
     const j = await r.json() as { ok: boolean; data?: { userId: string } };
@@ -179,4 +181,60 @@ test("uploading an animated GIF stores it as animated WebP", async () => {
   expect(asString).toContain("VP8X");
   expect(asString).toContain("ANIM");
   expect(asString).toContain("ANMF");
+});
+
+// ── Light/dark variants ──────────────────────────────────────────────────────
+
+test("a light request falls back to the dark variant when no light exists", async () => {
+  const res = await page.request.get(`/api/avatar/${userId}?variant=light&v=${Date.now()}`);
+  expect(res.status()).toBe(200);
+  expect(res.headers()["content-type"]).toBe("image/webp");
+});
+
+test("uploading with the toggle on Light stores an independent light variant", async () => {
+  await page.goto("/settings");
+
+  // The sun/moon toggle sits directly below the avatar. It starts on "Dark"
+  // (Moon); clicking it switches the slot that Upload/Remove targets to Light.
+  const toggle = page.getByRole("button", { name: "Dark", exact: true });
+  await expect(toggle).toBeVisible({ timeout: 5000 });
+  await toggle.click();
+  await expect(page.getByRole("button", { name: "Light", exact: true })).toBeVisible();
+
+  const fileInput = page.locator('input[type="file"][accept*="image/gif"]');
+  await fileInput.setInputFiles({
+    name: "tiny.gif",
+    mimeType: "image/gif",
+    buffer: buildAnimatedGif(),
+  });
+  const dialog = page.getByRole("dialog", { name: "Edit Image" });
+  await expect(dialog).toBeVisible({ timeout: 5000 });
+  const applyButton = dialog.getByRole("button", { name: /^Apply$/ });
+  await expect(applyButton).toBeEnabled({ timeout: 15000 });
+  await applyButton.click();
+  await expect(page.getByText("Avatar updated")).toBeVisible({ timeout: 15000 });
+
+  // Both variants now resolve independently.
+  const light = await page.request.get(`/api/avatar/${userId}?variant=light&v=${Date.now()}`);
+  expect(light.status()).toBe(200);
+  expect(light.headers()["content-type"]).toBe("image/webp");
+  const dark = await page.request.get(`/api/avatar/${userId}?variant=dark&v=${Date.now()}`);
+  expect(dark.status()).toBe(200);
+  expect(dark.headers()["content-type"]).toBe("image/webp");
+});
+
+test("deleting only the light variant falls back to dark; dark is untouched", async () => {
+  const status = await page.evaluate(async (uid) => {
+    const token = localStorage.getItem("token");
+    await fetch("/api/avatar?variant=light", {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const l = await fetch(`/api/avatar/${uid}?variant=light&v=${Date.now()}`);
+    const d = await fetch(`/api/avatar/${uid}?variant=dark&v=${Date.now()}`);
+    return { light: l.status, dark: d.status };
+  }, userId);
+  // Light now resolves via fallback to the still-present dark variant.
+  expect(status.light).toBe(200);
+  expect(status.dark).toBe(200);
 });

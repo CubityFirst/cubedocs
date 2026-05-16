@@ -1,4 +1,5 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useAvatarVariant } from "@/lib/avatarVariant";
 
 function initials(name: string): string {
   return name
@@ -31,9 +32,13 @@ interface UserAvatarProps {
 }
 
 export function UserAvatar({ userId, name, className, cacheBust, personalPlan, personalPlanStyle }: UserAvatarProps) {
-  const src = cacheBust !== undefined
-    ? `/api/avatar/${userId}?v=${cacheBust}`
-    : `/api/avatar/${userId}`;
+  // Variant is derived from the app-wide light/dark signal; the server falls
+  // back to dark when the requested variant isn't uploaded, so we always send it.
+  const [variant] = useAvatarVariant();
+  const params = new URLSearchParams();
+  if (cacheBust !== undefined) params.set("v", String(cacheBust));
+  params.set("variant", variant);
+  const src = `/api/avatar/${userId}?${params.toString()}`;
   const inner = (
     <Avatar className={className}>
       <AvatarImage src={src} alt={name} />

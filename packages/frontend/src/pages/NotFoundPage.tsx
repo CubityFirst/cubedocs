@@ -1,11 +1,12 @@
+import { NotFound404 } from "./NotFound404";
+
 export function NotFoundPage() {
   return (
-    <div className="flex h-screen flex-col items-center justify-center gap-4 text-center">
-      <h1 className="text-6xl font-bold tracking-tight">404</h1>
-      <p className="text-lg text-muted-foreground">Page not found</p>
-      <a href="/" className="text-primary underline-offset-4 hover:underline text-sm">
-        Go home
-      </a>
-    </div>
+    <NotFound404
+      subtitle="The page you requested does not exist in this workspace. Check the URL, or head back to where you started."
+      primaryLabel="Go home"
+      primaryHref="/"
+      secondary={{ label: "report a broken link", href: "mailto:cubity@cubityfir.st?subject=Annex%20Broken%20Link" }}
+    />
   );
 }

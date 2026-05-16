@@ -8,6 +8,7 @@ import { toHeadingId, findHeadingLine } from "@/lib/headingSlug";
 import { WysiwygEditor } from "@/components/wysiwyg/WysiwygEditor";
 import { GraphView, type GraphData } from "@/components/GraphView";
 import { LinkedDocsPanel } from "@/components/LinkedDocsPanel";
+import { NotFound404 } from "./NotFound404";
 import { AudioVisualizer } from "@/components/AudioVisualizer";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -603,12 +604,12 @@ export function PublicDocPage() {
 
   if (notFound || !data) {
     return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="text-center">
-          <p className="text-lg font-semibold">Not found</p>
-          <p className="mt-1 text-sm text-muted-foreground">No published document exists at this location.</p>
-        </div>
-      </div>
+      <NotFound404
+        subtitle="No published document exists at this location. The document may be unpublished, moved, or the link mistyped."
+        primaryLabel="Go home"
+        primaryHref="/"
+        secondary={{ label: "report a broken link", href: "mailto:cubity@cubityfir.st?subject=Annex%20Broken%20Link" }}
+      />
     );
   }
 

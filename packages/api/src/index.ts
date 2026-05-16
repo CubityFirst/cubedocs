@@ -15,6 +15,7 @@ import { handleProjectExport } from "./routes/export";
 import { handleSearch, handlePublicSearch } from "./routes/search";
 import { DocCollabRoom } from "./collab/DocCollabRoom";
 import { resolvePersonalPlan } from "../../auth/src/plan";
+import { resolveAvatar, parseVariant, avatarKey, deleteAllAvatarVariants } from "./avatar";
 
 export { DocCollabRoom };
 
@@ -407,17 +408,19 @@ export default {
         }
       }
 
-      // GET /avatar/:userId — public, serve avatar from R2
+      // GET /avatar/:userId — public, serve avatar from R2.
+      // ?variant=light|dark (default dark). light falls back to dark; a legacy
+      // avatars/{id} object is migrated to -dark on first fetch (see avatar.ts).
       if (url.pathname.startsWith("/avatar/") && request.method === "GET") {
         const userId = url.pathname.slice("/avatar/".length);
         if (!userId) return addCorsHeaders(errorResponse(Errors.NOT_FOUND));
-        const obj = await env.ASSETS.get(`avatars/${userId}`);
-        if (!obj) return new Response(null, { status: 404 });
-        const contentType = obj.httpMetadata?.contentType ?? "application/octet-stream";
-        return new Response(await obj.arrayBuffer(), {
+        const variant = parseVariant(url.searchParams.get("variant"));
+        const resolved = await resolveAvatar(env.ASSETS, userId, variant);
+        if (!resolved) return new Response(null, { status: 404 });
+        return new Response(resolved.body, {
           status: 200,
           headers: {
-            "Content-Type": contentType,
+            "Content-Type": resolved.contentType,
             "Cache-Control": "public, max-age=300",
             ...corsHeaders(),
           },
@@ -440,17 +443,27 @@ export default {
         if (file.size > 5 * 1024 * 1024) {
           return addCorsHeaders(Response.json({ ok: false, error: "File too large. Maximum size is 5MB." }, { status: 400 }));
         }
-        await env.ASSETS.put(`avatars/${session.userId}`, await file.arrayBuffer(), {
+        const variant = parseVariant(url.searchParams.get("variant"));
+        await env.ASSETS.put(avatarKey(session.userId, variant), await file.arrayBuffer(), {
           httpMetadata: { contentType: file.type },
         });
+        // Drop any never-fetched legacy object so it can't be orphaned now that
+        // the user has a variant-keyed avatar.
+        await env.ASSETS.delete(`avatars/${session.userId}`);
         return addCorsHeaders(Response.json({ ok: true }));
       }
 
-      // DELETE /avatar — authenticated, remove avatar
+      // DELETE /avatar — authenticated. ?variant=light|dark removes only that
+      // slot; no variant removes every avatar object for the user.
       if (url.pathname === "/avatar" && request.method === "DELETE") {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
-        await env.ASSETS.delete(`avatars/${session.userId}`);
+        const rawVariant = url.searchParams.get("variant");
+        if (rawVariant === "light" || rawVariant === "dark") {
+          await env.ASSETS.delete(avatarKey(session.userId, rawVariant));
+        } else {
+          await deleteAllAvatarVariants(env.ASSETS, session.userId);
+        }
         return addCorsHeaders(Response.json({ ok: true }));
       }
 
@@ -487,8 +500,8 @@ export default {
         // Remove user from any remaining project memberships
         await env.DB.prepare("DELETE FROM project_members WHERE user_id = ?").bind(session.userId).run();
 
-        // Delete avatar
-        await env.ASSETS.delete(`avatars/${session.userId}`);
+        // Delete avatar (both variants + any legacy object)
+        await deleteAllAvatarVariants(env.ASSETS, session.userId);
 
         return addCorsHeaders(Response.json({ ok: true }));
       }

@@ -419,7 +419,8 @@ usersRouter.delete("/:id/avatar", async (c) => {
   if (session instanceof Response) return session;
 
   const id = c.req.param("id");
-  await c.env.ASSETS.delete(`avatars/${id}`);
+  // Remove both variants and any legacy object.
+  await c.env.ASSETS.delete([`avatars/${id}-dark`, `avatars/${id}-light`, `avatars/${id}`]);
   return c.json({ ok: true });
 });
 
