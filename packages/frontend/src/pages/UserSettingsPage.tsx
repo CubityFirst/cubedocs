@@ -1113,9 +1113,6 @@ export function UserSettingsPage() {
                             : <Sun className="size-3.5" />}
                           {avatarVariant === "dark" ? "Dark" : "Light"}
                         </Button>
-                        <span className="text-[11px] leading-tight text-muted-foreground">
-                          Editing {avatarVariant} variant
-                        </span>
                       </div>
                     </div>
 
