@@ -12,7 +12,8 @@ export default defineConfig(({ mode }) => {
       react(),
       tailwindcss(),
       VitePWA({
-        registerType: "autoUpdate",
+        registerType: "prompt",
+        injectRegister: null,
         manifest: {
           name: isDev ? "Annex (Dev)" : "Annex",
           short_name: isDev ? "Annex Dev" : "Annex",
@@ -38,6 +39,7 @@ export default defineConfig(({ mode }) => {
           navigateFallback: "/index.html",
           navigateFallbackDenylist: [/^\/api\//],
           maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
+          cleanupOutdatedCaches: true,
         },
         devOptions: {
           enabled: true,

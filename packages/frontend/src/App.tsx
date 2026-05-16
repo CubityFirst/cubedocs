@@ -21,6 +21,7 @@ import { TagPage } from "./pages/TagPage";
 import { PrivacyPage } from "./pages/PrivacyPage";
 import { TermsPage } from "./pages/TermsPage";
 import { TestAudioPage } from "./pages/TestAudioPage";
+import { Toaster } from "@/components/ui/sonner";
 
 export function App() {
   const location = useLocation();
@@ -63,6 +64,7 @@ export function App() {
           <Route path="/u/:userId" element={<UserProfilePage />} />
         </Routes>
       )}
+      <Toaster />
     </>
   );
 }

@@ -1,0 +1,17 @@
+# Content-hashed bundles never change for a given URL — cache hard.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Never cache the service worker or the HTML/registration shell, so the
+# browser always revalidates and detects a new deploy. Without this the
+# browser's byte-comparison SW update check can get a stale sw.js and
+# never register the new worker, leaving the precache stale until a
+# manual hard refresh.
+/sw.js
+  Cache-Control: no-cache
+/manifest.webmanifest
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+/
+  Cache-Control: no-cache
