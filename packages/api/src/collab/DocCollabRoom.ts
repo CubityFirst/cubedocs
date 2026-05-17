@@ -49,6 +49,12 @@ export class DocCollabRoom implements DurableObject {
   private lastAlarmSetAt = 0;
   private frozen = false;
   private pendingDeltaBytes = 0;
+  // True once the room has a known content baseline — either a snapshot was
+  // restored from storage or a client synced content in. Until then the
+  // Y.Doc is empty only because nothing has loaded yet, so persist() must
+  // NOT write that emptiness over the real content in R2. Once true, an
+  // empty doc is a genuine delete-all and MUST be persisted.
+  private contentLoaded = false;
 
   constructor(ctx: DurableObjectState, env: Env) {
     this.ctx = ctx;
@@ -65,6 +71,9 @@ export class DocCollabRoom implements DurableObject {
       const stored = toUint8Array(raw);
       if (stored) {
         Y.applyUpdate(ydoc, stored);
+        // We have a real baseline from storage — applyUpdate ran before the
+        // "update" handler below was attached, so set the flag explicitly.
+        this.contentLoaded = true;
         if (stored.byteLength > MAX_DOC_STATE_BYTES) {
           // Persisted snapshot is already over the cap. Freeze immediately so persist() is a
           // no-op — refusing to write the bloat back to R2 is the only useful response here.
@@ -92,6 +101,9 @@ export class DocCollabRoom implements DurableObject {
     this.awareness = awareness;
 
     ydoc.on("update", (update: Uint8Array, origin: unknown) => {
+      // A client synced content in (seed or edit, including a delete-all).
+      // The room now has a real baseline that persist() must reflect.
+      this.contentLoaded = true;
       this.pendingDeltaBytes += update.byteLength;
       const encoder = encoding.createEncoder();
       encoding.writeVarUint(encoder, MSG_SYNC);
@@ -135,6 +147,7 @@ export class DocCollabRoom implements DurableObject {
     this.editors = null;
     this.frozen = false;
     this.pendingDeltaBytes = 0;
+    this.contentLoaded = false;
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -350,7 +363,14 @@ export class DocCollabRoom implements DurableObject {
 
   async alarm(): Promise<void> {
     try {
-      const lastActivity = await this.ctx.storage.get<number>("lastActivity") ?? 0;
+      // `lastActivity` is only ever written by persist(). If it is unset, the
+      // room has edits from a session that never persisted (e.g. persist-on-
+      // close didn't run) — defaulting to 0 would make `now - 0 >= 7d` true
+      // and evict (deleteAll) those unsaved edits, reverting the doc to its
+      // stale R2 body. Default to "now" so an unpersisted room persists here
+      // instead of being wiped; only a genuinely 7-day-idle (already
+      // persisted) room is evicted.
+      const lastActivity = await this.ctx.storage.get<number>("lastActivity") ?? Date.now();
       const sevenDays = 7 * 24 * 60 * 60 * 1000;
       if (Date.now() - lastActivity >= sevenDays) {
         // No activity for 7 days — evict the room entirely
@@ -369,14 +389,21 @@ export class DocCollabRoom implements DurableObject {
     // Refuse to write bloated state back to R2. The previously-good snapshot already in
     // storage is what we want a future load to restore from.
     if (this.frozen) return;
+    // No baseline yet — the doc is empty only because nothing has loaded.
+    // Persisting now would clobber the real content in R2/storage with "".
+    if (!this.contentLoaded) return;
 
     const bytes = Y.encodeStateAsUpdate(this.ydoc);
     await this.ctx.storage.put("ydoc", bytes);
     await this.ctx.storage.put("lastActivity", Date.now());
 
+    // Mirror current state to R2 unconditionally — including empty content.
+    // A collaborative delete-all produces an empty doc that MUST overwrite
+    // the old R2 body, otherwise the deletion silently reverts once the DO
+    // is evicted and a future load re-seeds from the stale R2 object.
     const text = this.ydoc.getText("content").toString();
     const docKey = await this.ctx.storage.get<string>("docKey");
-    if (docKey && text.trim()) {
+    if (docKey) {
       await this.env.ASSETS.put(docKey, text);
     }
   }
