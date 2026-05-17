@@ -1,8 +1,14 @@
 import React, { useRef, useCallback, useMemo, useState } from "react";
-import { GripVerticalIcon } from "lucide-react";
+import { GripVerticalIcon, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import type { Layout } from "react-resizable-panels";
+import type { SortDir } from "@/lib/fileSort";
+
+interface SortSpec {
+  colIdx: number;
+  dir: SortDir;
+}
 
 export interface ColumnDef {
   label: string;
@@ -10,6 +16,7 @@ export interface ColumnDef {
   minSize?: number;    // % minimum for resizable columns
   minWidth?: number;   // px — if set, column becomes a standalone fixed-width segment
   maxWidth?: number;   // px — maximum width for constrained columns (only used with minWidth)
+  sortable?: boolean;  // when true (with onSort), the header is a clickable sort toggle
 }
 
 export interface CellDef {
@@ -22,7 +29,58 @@ interface ResizableTableProps {
   columns: ColumnDef[];
   checkboxColumn?: boolean;
   storageKey?: string;
+  /** Active sort (column index + direction), or null for none. */
+  sort?: SortSpec | null;
+  /** Called with the clicked column index when a sortable header is clicked. */
+  onSort?: (colIdx: number) => void;
   children: React.ReactNode;
+}
+
+// Header cell — a plain label, or a clickable sort toggle when the column is
+// sortable and an onSort handler is provided. Used by both header branches
+// (constrained segment and resizable-panel segment) so they stay consistent.
+function HeaderCell({
+  col,
+  idx,
+  sort,
+  onSort,
+}: {
+  col: ColumnDef;
+  idx: number;
+  sort?: SortSpec | null;
+  onSort?: (colIdx: number) => void;
+}) {
+  const base = "flex items-center h-full w-full px-3 text-xs font-medium text-muted-foreground";
+
+  if (!col.sortable || !onSort) {
+    return <div className={base}>{col.label}</div>;
+  }
+
+  const active = sort?.colIdx === idx;
+  const dir = active ? sort!.dir : undefined;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(idx)}
+      title={`Sort by ${col.label}`}
+      aria-label={
+        active
+          ? `${col.label}, sorted ${dir === "asc" ? "ascending" : "descending"}`
+          : `Sort by ${col.label}`
+      }
+      className={cn(base, "group gap-1 select-none text-left cursor-pointer hover:text-foreground transition-colors")}
+    >
+      <span className="truncate">{col.label}</span>
+      {active ? (
+        dir === "asc"
+          ? <ArrowUp className="size-3 shrink-0" />
+          : <ArrowDown className="size-3 shrink-0" />
+      ) : (
+        <ArrowUpDown className="size-3 shrink-0 opacity-0 group-hover:opacity-50 transition-opacity" />
+      )}
+    </button>
+  );
 }
 
 interface ResizableTableRowProps {
@@ -95,7 +153,7 @@ function buildSegments(columns: ColumnDef[]): Segment[] {
 
 // ── ResizableTable ────────────────────────────────────────────────────────────
 
-export function ResizableTable({ columns, checkboxColumn = true, storageKey, children }: ResizableTableProps) {
+export function ResizableTable({ columns, checkboxColumn = true, storageKey, sort, onSort, children }: ResizableTableProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const segments = useMemo(() => buildSegments(columns), [columns]);
 
@@ -215,9 +273,7 @@ export function ResizableTable({ columns, checkboxColumn = true, storageKey, chi
               <div data-seg={seg.segIdx} style={wrapperStyle} className="h-full flex">
                 {seg.constrained ? (
                   // Constrained (standalone) segment — no internal panel group needed
-                  <div className="flex items-center h-full px-3 text-xs font-medium text-muted-foreground w-full">
-                    {seg.cols[0].col.label}
-                  </div>
+                  <HeaderCell col={seg.cols[0].col} idx={seg.cols[0].idx} sort={sort} onSort={onSort} />
                 ) : (
                   <ResizablePanelGroup
                     className="flex-1 h-full"
@@ -232,9 +288,7 @@ export function ResizableTable({ columns, checkboxColumn = true, storageKey, chi
                         defaultSize={col.defaultSize}
                         minSize={col.minSize ?? 8}
                       >
-                        <div className="flex items-center h-full px-3 text-xs font-medium text-muted-foreground">
-                          {col.label}
-                        </div>
+                        <HeaderCell col={col} idx={idx} sort={sort} onSort={onSort} />
                       </ResizablePanel>,
                     ])}
                   </ResizablePanelGroup>

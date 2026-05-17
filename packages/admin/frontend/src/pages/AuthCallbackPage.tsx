@@ -34,6 +34,13 @@ export function AuthCallbackPage({ onAuthenticated }: AuthCallbackPageProps) {
 
     const handoffCode = code;
     const callbackUrl = buildNormalizedCallbackUrl(window.location);
+
+    // Strip the one-time code from the address bar / history / referrer
+    // immediately on mount — before (and regardless of) the exchange —
+    // so it can't leak to subresources or be replayed from history on
+    // the error path.
+    window.history.replaceState(null, "", callbackUrl);
+
     let cancelled = false;
 
     async function exchange() {

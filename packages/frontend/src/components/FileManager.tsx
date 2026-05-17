@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { useToast } from "@/hooks/use-toast";
 import { apiFetch, apiFetchJson } from "@/lib/apiFetch";
+import { sortFolders, sortDocs, sortFiles, type SortDir } from "@/lib/fileSort";
 import { UserProfileCard } from "@/components/UserProfileCard";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -141,6 +142,15 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
 
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<DocItem[] | null>(null);
+
+  // Column sort for the listing — applied within each group (folders, docs,
+  // files). Defaults to Name ascending; clicking the active column toggles dir.
+  const [sort, setSort] = useState<{ colIdx: number; dir: SortDir }>({ colIdx: 0, dir: "asc" });
+  const handleSort = useCallback((colIdx: number) => {
+    setSort(prev => prev.colIdx === colIdx
+      ? { colIdx, dir: prev.dir === "asc" ? "desc" : "asc" }
+      : { colIdx, dir: "asc" });
+  }, []);
 
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
@@ -537,17 +547,21 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
   }
 
   const FILE_COLUMNS = [
-    { label: "Name", defaultSize: 0, minWidth: 200, maxWidth: 500 },
-    { label: "Created by", defaultSize: 0, minWidth: 150, maxWidth: 400 },
-    { label: "Size", defaultSize: 15, minSize: 8 },
-    { label: "Last updated", defaultSize: 25, minSize: 12 },
+    { label: "Name", defaultSize: 0, minWidth: 200, maxWidth: 500, sortable: true },
+    { label: "Created by", defaultSize: 0, minWidth: 150, maxWidth: 400, sortable: true },
+    { label: "Size", defaultSize: 15, minSize: 8, sortable: true },
+    { label: "Last updated", defaultSize: 25, minSize: 12, sortable: true },
   ];
 
   function renderTable(folderRows: FolderItem[], docRows: DocItem[], fileRows: FileItem[] = []) {
+    // Sort within each group; folders stay pinned above docs above files.
+    const sortedFolders = sortFolders(folderRows, sort);
+    const sortedDocs = sortDocs(docRows, sort);
+    const sortedFiles = sortFiles(fileRows, sort);
     return (
-      <ResizableTable columns={FILE_COLUMNS} checkboxColumn={canEdit} storageKey="file-columns">
+      <ResizableTable columns={FILE_COLUMNS} checkboxColumn={canEdit} storageKey="file-columns" sort={sort} onSort={handleSort}>
         <>
-          {folderRows.map(folder => {
+          {sortedFolders.map(folder => {
             const isDropTarget = dropTarget === folder.id;
             const folderRow = (
               <ResizableTableRow
@@ -625,7 +639,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
               </ContextMenu>
             );
             })}
-          {docRows.map((doc, docIdx) => {
+          {sortedDocs.map((doc, docIdx) => {
             const isHome = doc.is_home === 1;
             const navToDoc = () => navigate(`/projects/${projectId}/docs/${doc.id}`, { state: { folderPath: path } });
             const docRow = (
@@ -645,9 +659,9 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                           setSelectedDocs(prev => {
                             const next = new Set(prev);
                             for (let i = from; i <= to; i++) {
-                              if (docRows[i].is_home === 1) continue;
-                              if (willBeChecked) next.add(docRows[i].id);
-                              else next.delete(docRows[i].id);
+                              if (sortedDocs[i].is_home === 1) continue;
+                              if (willBeChecked) next.add(sortedDocs[i].id);
+                              else next.delete(sortedDocs[i].id);
                             }
                             return next;
                           });
@@ -759,7 +773,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
               </ContextMenu>
             );
           })}
-          {fileRows.map((file, fileIdx) => {
+          {sortedFiles.map((file, fileIdx) => {
             const fileRow = (
               <ResizableTableRow
                 columns={FILE_COLUMNS}
@@ -777,8 +791,8 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                         setSelectedFiles(prev => {
                           const next = new Set(prev);
                           for (let i = from; i <= to; i++) {
-                            if (willBeChecked) next.add(fileRows[i].id);
-                            else next.delete(fileRows[i].id);
+                            if (willBeChecked) next.add(sortedFiles[i].id);
+                            else next.delete(sortedFiles[i].id);
                           }
                           return next;
                         });

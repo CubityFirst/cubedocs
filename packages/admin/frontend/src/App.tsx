@@ -9,6 +9,7 @@ import { AuthCallbackPage } from "./pages/AuthCallbackPage";
 import { LoginPage } from "./pages/LoginPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
 import { UsersPage } from "./pages/UsersPage";
+import { AuditPage } from "./pages/AuditPage";
 
 function AdminLayout({
   session,
@@ -42,6 +43,13 @@ function AdminLayout({
           >
             <Link to="/projects">Projects</Link>
           </Button>
+          <Button
+            variant={location.pathname === "/audit" ? "secondary" : "ghost"}
+            size="sm"
+            asChild
+          >
+            <Link to="/audit">Audit</Link>
+          </Button>
         </nav>
 
         <div className="ml-auto flex items-center gap-3">
@@ -56,6 +64,7 @@ function AdminLayout({
         <Routes>
           <Route path="/" element={<UsersPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
+          <Route path="/audit" element={<AuditPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
@@ -69,7 +78,7 @@ export function App() {
   const [session, setSession] = useState<AdminAuthSession | null>(null);
   const [checking, setChecking] = useState(true);
 
-  const refreshSession = useCallback(async () => {
+  const refreshSession = useCallback(async (silent = false) => {
     const token = getToken();
 
     if (!token) {
@@ -78,20 +87,44 @@ export function App() {
       return;
     }
 
-    setChecking(true);
+    // `silent` re-checks (tab refocus) must not flash the full-screen
+    // "Checking..." takeover; the initial mount check still shows it.
+    if (!silent) setChecking(true);
 
     try {
-      setSession(await verifyAdminSession());
+      const next = await verifyAdminSession();
+      // Defense-in-depth: the server already rejects expired sessions,
+      // but enforce the token's own expiry client-side too so a stale
+      // token can never leave the admin shell rendered.
+      if (next.expiresAt <= Date.now()) {
+        clearToken();
+        setSession(null);
+      } else {
+        setSession(next);
+      }
     } catch {
       clearToken();
       setSession(null);
     } finally {
-      setChecking(false);
+      if (!silent) setChecking(false);
     }
   }, []);
 
   useEffect(() => {
     void refreshSession();
+  }, [refreshSession]);
+
+  // Re-validate when the operator returns to the tab: a session can
+  // expire or be revoked while the tab is backgrounded, and we don't
+  // want the admin UI to stay usable until the next API call 401s.
+  useEffect(() => {
+    function onVisibility() {
+      if (document.visibilityState === "visible" && getToken()) {
+        void refreshSession(true);
+      }
+    }
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
   }, [refreshSession]);
 
   useEffect(() => {

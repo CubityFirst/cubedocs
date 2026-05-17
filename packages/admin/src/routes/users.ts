@@ -1,11 +1,11 @@
 import { Hono } from "hono";
 import { zipSync, strToU8 } from "fflate";
-import { requireAdminSession } from "../auth";
 import { resolvePersonalPlan, type PersonalPlan } from "../../../auth/src/plan";
 import { ALL_BADGE_BITS } from "../../../auth/src/badges";
-import type { Env } from "../index";
+import { writeAdminAudit } from "../audit";
+import type { AppEnv, Env } from "../index";
 
-const usersRouter = new Hono<{ Bindings: Env }>();
+const usersRouter = new Hono<AppEnv>();
 
 type ModerationAction = "disabled" | "suspended" | "re_enabled";
 
@@ -105,13 +105,13 @@ interface UserDetails {
   billing: BillingDetails;
 }
 
-function getModerationAction(moderation: number): ModerationAction {
+export function getModerationAction(moderation: number): ModerationAction {
   if (moderation === 0) return "re_enabled";
   if (moderation === -1) return "disabled";
   return "suspended";
 }
 
-function getCurrentStatus(moderation: number): CurrentStatus {
+export function getCurrentStatus(moderation: number): CurrentStatus {
   const nowSeconds = Math.floor(Date.now() / 1000);
   if (moderation === -1) return "disabled";
   if (moderation > 0 && nowSeconds < moderation) return "suspended";
@@ -126,7 +126,7 @@ function latestModerationFields(tableAlias = "u"): string {
   `;
 }
 
-interface BillingRow {
+export interface BillingRow {
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
   personal_plan: string | null;
@@ -142,7 +142,7 @@ interface BillingRow {
   granted_plan_reason: string | null;
 }
 
-function buildBillingDetails(row: BillingRow): BillingDetails {
+export function buildBillingDetails(row: BillingRow): BillingDetails {
   const resolved = resolvePersonalPlan({
     granted_plan: row.granted_plan,
     granted_plan_expires_at: row.granted_plan_expires_at,
@@ -294,9 +294,6 @@ async function loadUserDetails(env: Env, id: string): Promise<UserDetails | null
 
 // GET /api/users/search?q=
 usersRouter.get("/search", async (c) => {
-  const session = await requireAdminSession(c.req.raw, c.env);
-  if (session instanceof Response) return session;
-
   const q = c.req.query("q") ?? "";
   const rows = await c.env.AUTH_DB.prepare(
     `
@@ -320,8 +317,7 @@ usersRouter.get("/search", async (c) => {
 
 // PATCH /api/users/:id - { moderation: 0 | -1 | unix timestamp, reason?: string }
 usersRouter.patch("/:id", async (c) => {
-  const session = await requireAdminSession(c.req.raw, c.env);
-  if (session instanceof Response) return session;
+  const session = c.get("session");
 
   const id = c.req.param("id");
   const body = await c.req.json<{ moderation: number; reason?: string }>();
@@ -364,8 +360,7 @@ usersRouter.patch("/:id", async (c) => {
 
 // PATCH /api/users/:id/badges - { badges: number } (bitmask)
 usersRouter.patch("/:id/badges", async (c) => {
-  const session = await requireAdminSession(c.req.raw, c.env);
-  if (session instanceof Response) return session;
+  const session = c.get("session");
 
   const id = c.req.param("id");
   const body = await c.req.json<{ badges: number }>().catch(() => ({} as { badges?: number }));
@@ -385,26 +380,24 @@ usersRouter.patch("/:id/badges", async (c) => {
     `INSERT INTO user_preferences (user_id, badges) VALUES (?, ?)
      ON CONFLICT(user_id) DO UPDATE SET badges = excluded.badges`,
   ).bind(id, badges).run();
+  await writeAdminAudit(c.env, session, "user.badges.update", "user", id, { badges });
   return c.json({ ok: true });
 });
 
 // POST /api/users/:id/force-password-change
 usersRouter.post("/:id/force-password-change", async (c) => {
-  const session = await requireAdminSession(c.req.raw, c.env);
-  if (session instanceof Response) return session;
+  const session = c.get("session");
 
   const id = c.req.param("id");
   await c.env.AUTH_DB.prepare("UPDATE users SET force_password_change = 1 WHERE id = ?")
     .bind(id)
     .run();
+  await writeAdminAudit(c.env, session, "user.force_password_change", "user", id);
   return c.json({ ok: true });
 });
 
 // GET /api/users/:id
 usersRouter.get("/:id", async (c) => {
-  const session = await requireAdminSession(c.req.raw, c.env);
-  if (session instanceof Response) return session;
-
   const id = c.req.param("id");
   const details = await loadUserDetails(c.env, id);
 
@@ -415,12 +408,12 @@ usersRouter.get("/:id", async (c) => {
 
 // DELETE /api/users/:id/avatar
 usersRouter.delete("/:id/avatar", async (c) => {
-  const session = await requireAdminSession(c.req.raw, c.env);
-  if (session instanceof Response) return session;
+  const session = c.get("session");
 
   const id = c.req.param("id");
   // Remove both variants and any legacy object.
   await c.env.ASSETS.delete([`avatars/${id}-dark`, `avatars/${id}-light`, `avatars/${id}`]);
+  await writeAdminAudit(c.env, session, "user.avatar.delete", "user", id);
   return c.json({ ok: true });
 });
 
@@ -437,8 +430,7 @@ usersRouter.delete("/:id/avatar", async (c) => {
 // also flip Stripe's cancel_at_period_end so they stop being billed
 // after the current cycle. The grant keeps them on Ink either way.
 usersRouter.post("/:id/grant-ink", async (c) => {
-  const session = await requireAdminSession(c.req.raw, c.env);
-  if (session instanceof Response) return session;
+  const session = c.get("session");
 
   const id = c.req.param("id");
   const body = await c.req.json<{ reason?: string; expires_at?: number | null; cancel_existing_paid_sub?: boolean }>()
@@ -500,6 +492,13 @@ usersRouter.post("/:id/grant-ink", async (c) => {
        granted_plan_started_at = COALESCE(user_billing.granted_plan_started_at, excluded.granted_plan_started_at)`,
   ).bind(id, expiresAt, reason, Date.now()).run();
 
+  await writeAdminAudit(c.env, session, "user.ink.grant", "user", id, {
+    expiresAt,
+    reason,
+    cancelExisting,
+    cancelStripeWarning,
+  });
+
   return c.json({ ok: true, data: cancelStripeWarning ? { cancelStripeWarning } : undefined });
 });
 
@@ -513,8 +512,7 @@ usersRouter.post("/:id/grant-ink", async (c) => {
 // Doesn't work for cancel-at-period-end subs (no future invoice to
 // apply credit to) or for users without a paid sub.
 usersRouter.post("/:id/gift-month", async (c) => {
-  const session = await requireAdminSession(c.req.raw, c.env);
-  if (session instanceof Response) return session;
+  const session = c.get("session");
 
   if (!c.env.STRIPE_SECRET_KEY) {
     return c.json({ ok: false, error: "STRIPE_SECRET_KEY is unset on the admin worker" }, 500);
@@ -573,6 +571,8 @@ usersRouter.post("/:id/gift-month", async (c) => {
     return c.json({ ok: false, error: `Stripe returned ${balanceRes.status} creating credit` }, 502);
   }
 
+  await writeAdminAudit(c.env, session, "user.gift_month", "user", id, { amount, currency });
+
   return c.json({ ok: true, data: { amount, currency } });
 });
 
@@ -586,8 +586,7 @@ usersRouter.post("/:id/gift-month", async (c) => {
 // scheduled) fires asynchronously and updates the user row via the
 // existing handler — no direct DB write here.
 usersRouter.post("/:id/cancel-subscription", async (c) => {
-  const session = await requireAdminSession(c.req.raw, c.env);
-  if (session instanceof Response) return session;
+  const session = c.get("session");
 
   if (!c.env.STRIPE_SECRET_KEY) {
     return c.json({ ok: false, error: "STRIPE_SECRET_KEY is unset on the admin worker" }, 500);
@@ -626,14 +625,15 @@ usersRouter.post("/:id/cancel-subscription", async (c) => {
     return c.json({ ok: false, error: `Stripe returned ${res.status}` }, 502);
   }
 
+  await writeAdminAudit(c.env, session, "user.subscription.cancel", "user", id, { immediate });
+
   return c.json({ ok: true, data: { immediate } });
 });
 
 // DELETE /api/users/:id/grant-ink — clears the manual grant. Doesn't
 // touch Stripe-managed columns (so a paid sub stays intact).
 usersRouter.delete("/:id/grant-ink", async (c) => {
-  const session = await requireAdminSession(c.req.raw, c.env);
-  if (session instanceof Response) return session;
+  const session = c.get("session");
 
   const id = c.req.param("id");
   // Verify the user exists; we used to infer 404 from changes=0 on the
@@ -654,18 +654,20 @@ usersRouter.delete("/:id/grant-ink", async (c) => {
          granted_plan_reason = NULL
      WHERE user_id = ?`,
   ).bind(id).run();
+  await writeAdminAudit(c.env, session, "user.ink.revoke", "user", id);
   return c.json({ ok: true });
 });
 
 // GET /api/users/:id/export - GDPR-style data export as .zip
 usersRouter.get("/:id/export", async (c) => {
-  const session = await requireAdminSession(c.req.raw, c.env);
-  if (session instanceof Response) return session;
+  const session = c.get("session");
 
   const id = c.req.param("id");
   const details = await loadUserDetails(c.env, id);
 
   if (!details) return c.json({ ok: false, error: "User not found" }, 404);
+
+  await writeAdminAudit(c.env, session, "user.data.export", "user", id);
 
   const zip = zipSync({
     "profile.json": strToU8(JSON.stringify(details.profile, null, 2)),

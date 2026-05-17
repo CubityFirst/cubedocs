@@ -88,6 +88,22 @@ export interface AdminProject {
   created_at: string;
 }
 
+export interface AdminAuditEntry {
+  id: string;
+  actor_user_id: string;
+  actor_email: string;
+  action: string;
+  target_type: string;
+  target_id: string | null;
+  detail: string | null;
+  created_at: string;
+}
+
+export interface AuditPageResult {
+  entries: AdminAuditEntry[];
+  nextCursor: string | null;
+}
+
 export interface AdminAuthSession {
   userId: string;
   email: string;
@@ -112,24 +128,50 @@ async function authFetch(input: string, init: RequestInit = {}): Promise<Respons
     headers,
   });
 
+  // Only tear down the whole admin session for genuine session-level
+  // failures: a 401 (token missing/expired/invalid) or a 403 whose code
+  // says the *account* is gone or not an admin. A generic/unknown 403
+  // (e.g. a future per-object "not allowed") must NOT log the operator
+  // out of the entire dashboard — the caller surfaces it instead.
   if (token && (response.status === 401 || response.status === 403)) {
-    invalidateAdminSession();
+    let code: string | undefined;
+    if (response.status === 403) {
+      try {
+        code = ((await response.clone().json()) as { error?: string }).error;
+      } catch {
+        /* non-JSON 403 body — treat as a non-session failure */
+      }
+    }
+    const sessionFailure =
+      response.status === 401 ||
+      code === "Forbidden" ||
+      code === "account_disabled" ||
+      code === "account_suspended";
+    if (sessionFailure) invalidateAdminSession();
   }
 
   return response;
 }
 
-export async function searchUsers(q: string): Promise<AdminUser[]> {
-  const res = await authFetch(`/api/users/search?q=${encodeURIComponent(q)}`);
-  const json = (await res.json()) as { ok: boolean; data?: AdminUser[] };
-  if (!json.ok || !json.data) throw new Error("Failed to search users");
+// Pulls `{ ok, error }` off a JSON response, falling back to a static
+// message. Centralizes the "surface the server's error string" handling
+// so every endpoint reports the real reason instead of a generic throw.
+async function readOk(res: Response, fallback: string): Promise<void> {
+  const json = (await res.json()) as { ok: boolean; error?: string };
+  if (!json.ok) throw new Error(json.error ?? fallback);
+}
+
+export async function searchUsers(q: string, signal?: AbortSignal): Promise<AdminUser[]> {
+  const res = await authFetch(`/api/users/search?q=${encodeURIComponent(q)}`, { signal });
+  const json = (await res.json()) as { ok: boolean; data?: AdminUser[]; error?: string };
+  if (!json.ok || !json.data) throw new Error(json.error ?? "Failed to search users");
   return json.data;
 }
 
 export async function getUserDetails(id: string): Promise<AdminUserDetails> {
   const res = await authFetch(`/api/users/${id}`);
-  const json = (await res.json()) as { ok: boolean; data?: AdminUserDetails };
-  if (!json.ok || !json.data) throw new Error("Failed to load user details");
+  const json = (await res.json()) as { ok: boolean; data?: AdminUserDetails; error?: string };
+  if (!json.ok || !json.data) throw new Error(json.error ?? "Failed to load user details");
   return json.data;
 }
 
@@ -139,14 +181,12 @@ export async function updateUserBadges(id: string, badges: number): Promise<void
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ badges }),
   });
-  const json = (await res.json()) as { ok: boolean; error?: string };
-  if (!json.ok) throw new Error(json.error ?? "Failed to update badges");
+  await readOk(res, "Failed to update badges");
 }
 
 export async function forceUserPasswordChange(id: string): Promise<void> {
   const res = await authFetch(`/api/users/${id}/force-password-change`, { method: "POST" });
-  const json = (await res.json()) as { ok: boolean };
-  if (!json.ok) throw new Error("Failed to force password change");
+  await readOk(res, "Failed to force password change");
 }
 
 export async function updateUserModeration(id: string, moderation: number, reason?: string): Promise<void> {
@@ -155,14 +195,13 @@ export async function updateUserModeration(id: string, moderation: number, reaso
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ moderation, reason }),
   });
-  const json = (await res.json()) as { ok: boolean };
-  if (!json.ok) throw new Error("Failed to update user");
+  await readOk(res, "Failed to update user");
 }
 
-export async function listProjects(q: string): Promise<AdminProject[]> {
-  const res = await authFetch(`/api/projects?q=${encodeURIComponent(q)}`);
-  const json = (await res.json()) as { ok: boolean; data?: AdminProject[] };
-  if (!json.ok || !json.data) throw new Error("Failed to list projects");
+export async function listProjects(q: string, signal?: AbortSignal): Promise<AdminProject[]> {
+  const res = await authFetch(`/api/projects?q=${encodeURIComponent(q)}`, { signal });
+  const json = (await res.json()) as { ok: boolean; data?: AdminProject[]; error?: string };
+  if (!json.ok || !json.data) throw new Error(json.error ?? "Failed to list projects");
   return json.data;
 }
 
@@ -172,20 +211,29 @@ export async function updateProjectFeatures(id: string, features: number): Promi
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ features }),
   });
-  const json = (await res.json()) as { ok: boolean };
-  if (!json.ok) throw new Error("Failed to update project features");
+  await readOk(res, "Failed to update project features");
 }
 
 export async function deleteProject(id: string): Promise<void> {
   const res = await authFetch(`/api/projects/${id}`, { method: "DELETE" });
-  const json = (await res.json()) as { ok: boolean };
-  if (!json.ok) throw new Error("Failed to delete project");
+  await readOk(res, "Failed to delete project");
 }
 
 export async function reindexProjectFts(id: string): Promise<{ indexed: number }> {
   const res = await authFetch(`/api/projects/${id}/reindex`, { method: "POST" });
-  const json = (await res.json()) as { ok: boolean; data?: { indexed: number } };
-  if (!json.ok || !json.data) throw new Error("Failed to reindex project");
+  const json = (await res.json()) as { ok: boolean; data?: { indexed: number }; error?: string };
+  if (!json.ok || !json.data) throw new Error(json.error ?? "Failed to reindex project");
+  return json.data;
+}
+
+export async function listAuditLog(
+  cursor?: string,
+  signal?: AbortSignal,
+): Promise<AuditPageResult> {
+  const qs = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
+  const res = await authFetch(`/api/audit${qs}`, { signal });
+  const json = (await res.json()) as { ok: boolean; data?: AuditPageResult; error?: string };
+  if (!json.ok || !json.data) throw new Error(json.error ?? "Failed to load audit log");
   return json.data;
 }
 
@@ -213,8 +261,7 @@ export async function grantInk(
 
 export async function revokeGrantedInk(id: string): Promise<void> {
   const res = await authFetch(`/api/users/${id}/grant-ink`, { method: "DELETE" });
-  const json = (await res.json()) as { ok: boolean; error?: string };
-  if (!json.ok) throw new Error(json.error ?? "Failed to revoke Ink grant");
+  await readOk(res, "Failed to revoke Ink grant");
 }
 
 export async function giftFreeMonth(id: string): Promise<{ amount: number; currency: string }> {
@@ -230,19 +277,25 @@ export async function cancelUserSubscription(id: string, opts: { immediate?: boo
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ immediate: opts.immediate === true }),
   });
-  const json = (await res.json()) as { ok: boolean; error?: string };
-  if (!json.ok) throw new Error(json.error ?? "Failed to cancel subscription");
+  await readOk(res, "Failed to cancel subscription");
 }
 
 export async function deleteUserAvatar(id: string): Promise<void> {
   const res = await authFetch(`/api/users/${id}/avatar`, { method: "DELETE" });
-  const json = (await res.json()) as { ok: boolean };
-  if (!json.ok) throw new Error("Failed to delete avatar");
+  await readOk(res, "Failed to delete avatar");
 }
 
 export async function exportUserData(id: string, email: string): Promise<void> {
   const res = await authFetch(`/api/users/${id}/export`);
-  if (!res.ok) throw new Error("Failed to export user data");
+  if (!res.ok) {
+    let msg = "Failed to export user data";
+    try {
+      msg = ((await res.json()) as { error?: string }).error ?? msg;
+    } catch {
+      /* non-JSON error body */
+    }
+    throw new Error(msg);
+  }
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -255,8 +308,8 @@ export async function exportUserData(id: string, email: string): Promise<void> {
 
 export async function verifyAdminSession(): Promise<AdminAuthSession> {
   const res = await authFetch("/api/verify");
-  const json = (await res.json()) as { ok: boolean; data?: AdminAuthSession };
-  if (!json.ok || !json.data) throw new Error("Failed to verify admin session");
+  const json = (await res.json()) as { ok: boolean; data?: AdminAuthSession; error?: string };
+  if (!json.ok || !json.data) throw new Error(json.error ?? "Failed to verify admin session");
   return json.data;
 }
 

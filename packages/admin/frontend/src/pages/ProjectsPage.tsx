@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { ChevronDown, ChevronRight, RefreshCw, Search, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -96,8 +96,8 @@ function ProjectRow({ project, onSaved, onDeleted }: ProjectRowProps) {
       onSaved(project.id, pendingFeatures);
       setSheetOpen(false);
       toast.success("Feature flags saved");
-    } catch {
-      toast.error("Failed to save features");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to save features");
     } finally {
       setSaving(false);
     }
@@ -109,8 +109,9 @@ function ProjectRow({ project, onSaved, onDeleted }: ProjectRowProps) {
       await deleteProject(project.id);
       onDeleted(project.id);
       toast.success("Project deleted");
-    } catch {
-      toast.error("Failed to delete project");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to delete project");
+    } finally {
       setDeleting(false);
     }
   }
@@ -120,8 +121,8 @@ function ProjectRow({ project, onSaved, onDeleted }: ProjectRowProps) {
     try {
       const result = await reindexProjectFts(project.id);
       toast.success(`Search index rebuilt (${result.indexed} docs)`);
-    } catch {
-      toast.error("Failed to reindex search");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to reindex search");
     } finally {
       setReindexing(false);
     }
@@ -131,7 +132,19 @@ function ProjectRow({ project, onSaved, onDeleted }: ProjectRowProps) {
 
   return (
     <>
-      <TableRow className="cursor-pointer" onClick={() => setExpanded(e => !e)}>
+      <TableRow
+        className="cursor-pointer"
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        onClick={() => setExpanded(e => !e)}
+        onKeyDown={e => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setExpanded(v => !v);
+          }
+        }}
+      >
         <TableCell className="w-8 pr-0">
           {expanded
             ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
@@ -226,20 +239,30 @@ export function ProjectsPage() {
   const [query, setQuery] = useState("");
   const [projects, setProjects] = useState<AdminProject[]>([]);
   const [loading, setLoading] = useState(true);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     load("");
+    return () => abortRef.current?.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function load(q: string) {
+    // Cancel any in-flight search so a slow earlier response can't
+    // clobber a newer one (or set state after unmount).
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setLoading(true);
     try {
-      const results = await listProjects(q);
+      const results = await listProjects(q, controller.signal);
+      if (controller.signal.aborted) return;
       setProjects(results);
-    } catch {
-      toast.error("Failed to load projects");
+    } catch (e) {
+      if (controller.signal.aborted || (e instanceof DOMException && e.name === "AbortError")) return;
+      toast.error(e instanceof Error ? e.message : "Failed to load projects");
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }
 

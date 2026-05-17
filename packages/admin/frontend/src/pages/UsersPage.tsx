@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { format } from "date-fns";
 import { CalendarDays, ChevronDown, ChevronRight, Download, Gift, Search, Sparkles, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
@@ -20,6 +20,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Dialog,
   DialogContent,
@@ -369,32 +370,36 @@ function InkBillingCard({ userId, userName, details, onChanged }: InkBillingCard
                     webhook arrives. If they have an active Ink grant, that overrides regardless and they keep Ink.
                   </DialogDescription>
                 </DialogHeader>
-                <div className="flex flex-col gap-3">
-                  <label className="flex cursor-pointer items-start gap-3 rounded-md border p-3">
-                    <Checkbox
-                      checked={cancelMode === "period_end"}
-                      onCheckedChange={() => setCancelMode("period_end")}
-                    />
+                <RadioGroup
+                  value={cancelMode}
+                  onValueChange={v => setCancelMode(v as "period_end" | "immediate")}
+                  className="flex flex-col gap-3"
+                >
+                  <Label
+                    htmlFor="cancel-mode-period-end"
+                    className="flex cursor-pointer items-start gap-3 rounded-md border p-3 font-normal"
+                  >
+                    <RadioGroupItem id="cancel-mode-period-end" value="period_end" className="mt-0.5" />
                     <div className="flex flex-col gap-1">
                       <span className="text-sm font-medium">At period end <span className="text-muted-foreground">(recommended)</span></span>
                       <span className="text-sm text-muted-foreground">
                         They keep access through the cycle they already paid for. Stripe stops billing after.
                       </span>
                     </div>
-                  </label>
-                  <label className="flex cursor-pointer items-start gap-3 rounded-md border p-3">
-                    <Checkbox
-                      checked={cancelMode === "immediate"}
-                      onCheckedChange={() => setCancelMode("immediate")}
-                    />
+                  </Label>
+                  <Label
+                    htmlFor="cancel-mode-immediate"
+                    className="flex cursor-pointer items-start gap-3 rounded-md border p-3 font-normal"
+                  >
+                    <RadioGroupItem id="cancel-mode-immediate" value="immediate" className="mt-0.5" />
                     <div className="flex flex-col gap-1">
                       <span className="text-sm font-medium">Immediately</span>
                       <span className="text-sm text-muted-foreground">
                         Access cuts off now. Useful for chargebacks / TOS violations. Stripe doesn't auto-refund the partial period.
                       </span>
                     </div>
-                  </label>
-                </div>
+                  </Label>
+                </RadioGroup>
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => setCancelOpen(false)} disabled={pending}>
                     Keep subscription
@@ -522,6 +527,14 @@ function BadgesCard({ userId, badges, onChanged }: { userId: string; badges: num
   const [pendingBadges, setPendingBadges] = useState(badges);
   const [rawInput, setRawInput] = useState(String(badges));
   const [saving, setSaving] = useState(false);
+
+  // Keep local edit state in sync when the parent refetches after a save
+  // (mirrors ProjectRow's effect on project.features). The closed card
+  // would otherwise show a stale value until the sheet is reopened.
+  useEffect(() => {
+    setPendingBadges(badges);
+    setRawInput(String(badges));
+  }, [badges]);
 
   function handleSheetOpen(open: boolean) {
     setSheetOpen(open);
@@ -993,7 +1006,19 @@ function UserRow({ user, onUpdated }: UserRowProps) {
 
   return (
     <>
-      <TableRow className="cursor-pointer" onClick={() => setExpanded(e => !e)}>
+      <TableRow
+        className="cursor-pointer"
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        onClick={() => setExpanded(e => !e)}
+        onKeyDown={e => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setExpanded(v => !v);
+          }
+        }}
+      >
         <TableCell className="w-8 pr-0">
           {expanded
             ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
@@ -1147,10 +1172,19 @@ function UserRow({ user, onUpdated }: UserRowProps) {
                       </DialogHeader>
 
                       <div className="flex flex-col gap-4">
-                        <label className="flex cursor-pointer items-start gap-3 rounded-md border p-3">
-                          <Checkbox
-                            checked={disableMode === "indefinitely"}
-                            onCheckedChange={() => setDisableMode("indefinitely")}
+                      <RadioGroup
+                        value={disableMode}
+                        onValueChange={v => setDisableMode(v as DisableMode)}
+                        className="flex flex-col gap-4"
+                      >
+                        <Label
+                          htmlFor={`disable-mode-indefinitely-${user.id}`}
+                          className="flex cursor-pointer items-start gap-3 rounded-md border p-3 font-normal"
+                        >
+                          <RadioGroupItem
+                            id={`disable-mode-indefinitely-${user.id}`}
+                            value="indefinitely"
+                            className="mt-0.5"
                           />
                           <div className="flex flex-col gap-1">
                             <span className="text-sm font-medium">Indefinitely</span>
@@ -1158,23 +1192,28 @@ function UserRow({ user, onUpdated }: UserRowProps) {
                               Keep the account disabled until an administrator re-enables it.
                             </span>
                           </div>
-                        </label>
+                        </Label>
 
-                        <label className="flex cursor-pointer items-start gap-3 rounded-md border p-3">
-                          <Checkbox
-                            checked={disableMode === "until"}
-                            onCheckedChange={() => setDisableMode("until")}
-                          />
-                          <div className="flex w-full flex-col gap-3">
+                        <div className="flex flex-col gap-3 rounded-md border p-3">
+                          <Label
+                            htmlFor={`disable-mode-until-${user.id}`}
+                            className="flex cursor-pointer items-start gap-3 font-normal"
+                          >
+                            <RadioGroupItem
+                              id={`disable-mode-until-${user.id}`}
+                              value="until"
+                              className="mt-0.5"
+                            />
                             <div className="flex flex-col gap-1">
                               <span className="text-sm font-medium">Until X time</span>
                               <span className="text-sm text-muted-foreground">
                                 Re-enable the account automatically at a specific date and time.
                               </span>
                             </div>
+                          </Label>
 
-                            {disableMode === "until" && (
-                              <div className="flex flex-col gap-3 rounded-md border bg-muted/20 p-3">
+                          {disableMode === "until" && (
+                            <div className="flex flex-col gap-3 rounded-md border bg-muted/20 p-3">
                                 <div className="flex flex-col gap-2">
                                   <Label>Date</Label>
                                   <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
@@ -1219,7 +1258,7 @@ function UserRow({ user, onUpdated }: UserRowProps) {
                               </div>
                             )}
                           </div>
-                        </label>
+                        </RadioGroup>
 
                         <div className="flex flex-col gap-2">
                           <Label htmlFor={`disable-reason-${user.id}`}>
@@ -1267,18 +1306,28 @@ export function UsersPage() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
+    // Cancel any in-flight search so a slower earlier response can't
+    // overwrite the newest one (last-submitted wins, not last-resolved).
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setLoading(true);
     setSearched(true);
     try {
-      const results = await searchUsers(query);
+      const results = await searchUsers(query, controller.signal);
+      if (controller.signal.aborted) return;
       setUsers(results);
-    } catch {
-      toast.error("Failed to search users");
+    } catch (err) {
+      if (controller.signal.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
+      toast.error(err instanceof Error ? err.message : "Failed to search users");
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }
 
