@@ -8,12 +8,28 @@ if (!import.meta.env.DEV) {
   const updateSW = registerSW({
     onRegisteredSW(_swUrl, registration) {
       if (!registration) return;
-      // Long-lived tabs never reload on their own, so poll for a new
-      // deploy roughly once a minute. _headers serves sw.js no-cache, so
-      // this update() reliably sees a fresh worker.
-      setInterval(() => {
+      // _headers serves sw.js no-cache, so update() reliably sees a fresh
+      // worker. The cold load already triggers a check via the SW lifecycle;
+      // these two cover long-lived tabs.
+      let lastCheck = Date.now();
+      const STALE_MS = 60_000;
+      const check = () => {
+        lastCheck = Date.now();
         void registration.update();
-      }, 60_000);
+      };
+      // Poll only while the tab is foregrounded — background timers are
+      // throttled/frozen anyway, and this avoids needless requests.
+      setInterval(() => {
+        if (document.visibilityState === "visible") check();
+      }, STALE_MS);
+      // Returning to a tab that's been idle/backgrounded for a while: the
+      // interval was throttled, so check right away — but debounce so rapid
+      // tab-switching doesn't fire a burst.
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible" && Date.now() - lastCheck > STALE_MS) {
+          check();
+        }
+      });
     },
     onNeedRefresh() {
       // A surprise reload would lose in-progress WYSIWYG/collab editing
