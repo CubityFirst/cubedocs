@@ -5,15 +5,18 @@ import type { Env } from "../index";
 
 // POST /stripe/webhook
 //
-// Public endpoint, signature-verified. Stripe retries on non-2xx so we
-// always return 200 once the signature is valid; logical failures (event
-// references an unknown user, etc.) get logged and 200'd to break the
-// retry loop. Bad-signature requests get 400 — that's a real problem
-// worth surfacing.
+// Public endpoint, signature-verified. Bad-signature requests get 400.
+// Logical no-ops (event references an unknown user, unsubscribed event
+// type, etc.) are acknowledged with 200 — retrying won't help and the
+// event is genuinely unprocessable. A *thrown* handler error returns 500
+// so Stripe redelivers; transient failures (a D1 blip) must not be
+// silently dropped.
 //
-// Idempotency: we INSERT OR IGNORE into webhook_events keyed on event.id
-// and bail out early when the row already exists. Stripe replays events
-// during outages; this stops a duplicate from double-applying state.
+// Idempotency: we record event.id in webhook_events only AFTER the
+// handler succeeds, and skip early when that row already exists. Stripe
+// replays events during outages: a replay after a successful handle is a
+// no-op, while a replay after a FAILED handle still reprocesses because
+// the marker was never written.
 export async function handleStripeWebhook(request: Request, env: Env): Promise<Response> {
   if (!env.STRIPE_SECRET_KEY || !env.STRIPE_WEBHOOK_SECRET) {
     console.error("Stripe webhook reached but STRIPE_SECRET_KEY or STRIPE_WEBHOOK_SECRET is unset");
@@ -41,11 +44,13 @@ export async function handleStripeWebhook(request: Request, env: Env): Promise<R
     return errorResponse(Errors.BAD_REQUEST);
   }
 
-  // Idempotency: skip if we've already handled this event id.
-  const insert = await env.DB.prepare(
-    "INSERT OR IGNORE INTO webhook_events (event_id, type, processed_at) VALUES (?, ?, ?)",
-  ).bind(event.id, event.type, Date.now()).run();
-  if (insert.meta.changes === 0) {
+  // Idempotency: skip if we've already fully processed this event id.
+  // The marker is written only after the handler succeeds (below), so a
+  // failed attempt leaves no row and Stripe's redelivery reprocesses.
+  const alreadyProcessed = await env.DB.prepare(
+    "SELECT 1 FROM webhook_events WHERE event_id = ?",
+  ).bind(event.id).first();
+  if (alreadyProcessed) {
     return new Response("ok", { status: 200 });
   }
 
@@ -73,13 +78,20 @@ export async function handleStripeWebhook(request: Request, env: Env): Promise<R
         break;
     }
   } catch (err) {
-    // Always 200 on handler errors. A buggy handler won't be fixed by
-    // a Stripe retry, so 500'ing just creates noise. The idempotency
-    // row stays in place; to force a reprocess after a code fix,
-    // delete the row from webhook_events manually. Bad signatures
-    // still 400 above (caught earlier).
+    // Most handler failures are transient (a D1 hiccup, a brief blip).
+    // We have NOT recorded this event as processed, so 500 and let Stripe
+    // redeliver — the retry reprocesses cleanly. A deterministic handler
+    // bug will retry uselessly for Stripe's retry window then give up,
+    // which is still far better than silently and permanently dropping a
+    // billing state change.
     console.error(`Stripe webhook handler for ${event.type} failed:`, err);
+    return errorResponse(Errors.INTERNAL);
   }
+
+  // Handler succeeded — record the event so any later replay is a no-op.
+  await env.DB.prepare(
+    "INSERT OR IGNORE INTO webhook_events (event_id, type, processed_at) VALUES (?, ?, ?)",
+  ).bind(event.id, event.type, Date.now()).run();
 
   return new Response("ok", { status: 200 });
 }

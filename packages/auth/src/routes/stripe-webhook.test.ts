@@ -10,14 +10,20 @@ import { getStripe } from "../stripe-client";
 
 interface MockDB {
   prepare: ReturnType<typeof vi.fn>;
-  _runResults: Array<{ meta: { changes: number } }>;
+  _runResults: Array<{ meta: { changes: number } } | Error>;
   _bindCalls: unknown[][];
   _statements: string[];
 }
 
-// Returns a sequence-aware D1 mock. Each call to .run() returns the
-// next object from `runResults` (default: { meta: { changes: 1 } }).
-function makeDB(runResults: Array<{ meta: { changes: number } }> = []): MockDB {
+// Returns a sequence-aware D1 mock. Each call to .run() returns the next
+// object from `runResults` (default: { meta: { changes: 1 } }); an Error
+// entry makes that .run() reject (simulates a transient D1 failure).
+// `.first()` always resolves to `firstResult` — used by the idempotency
+// dedup check (null/undefined = not yet processed, truthy = duplicate).
+function makeDB(
+  runResults: Array<{ meta: { changes: number } } | Error> = [],
+  firstResult: unknown = null,
+): MockDB {
   const _runResults = runResults;
   const _bindCalls: unknown[][] = [];
   const _statements: string[] = [];
@@ -32,8 +38,10 @@ function makeDB(runResults: Array<{ meta: { changes: number } }> = []): MockDB {
           run: vi.fn().mockImplementation(() => {
             const result = _runResults[runIndex] ?? { meta: { changes: 1 } };
             runIndex += 1;
+            if (result instanceof Error) return Promise.reject(result);
             return Promise.resolve(result);
           }),
+          first: vi.fn().mockImplementation(() => Promise.resolve(firstResult)),
         };
       },
     };
@@ -96,13 +104,13 @@ describe("handleStripeWebhook — signature + idempotency", () => {
 
   it("acknowledges duplicate events without processing", async () => {
     mockConstructEvent({ id: "evt_1", type: "customer.subscription.updated", data: { object: { id: "sub_1", metadata: {} } } });
-    // INSERT OR IGNORE returns changes: 0 → already processed
-    const db = makeDB([{ meta: { changes: 0 } }]);
+    // dedup SELECT returns a row → already processed
+    const db = makeDB([], { seen: 1 });
     const res = await handleStripeWebhook(makeRequest("{}"), makeEnv(db));
     expect(res.status).toBe(200);
-    // Only the idempotency insert should have run
+    // Only the dedup lookup should have run — no handler, no marker write
     expect(db._statements.length).toBe(1);
-    expect(db._statements[0]).toContain("INSERT OR IGNORE INTO webhook_events");
+    expect(db._statements[0]).toContain("SELECT 1 FROM webhook_events");
   });
 });
 
@@ -124,12 +132,14 @@ describe("handleStripeWebhook — checkout.session.completed", () => {
     const res = await handleStripeWebhook(makeRequest("{}"), makeEnv(db));
     expect(res.status).toBe(200);
 
-    expect(db._statements[0]).toContain("INSERT OR IGNORE INTO webhook_events");
+    expect(db._statements[0]).toContain("SELECT 1 FROM webhook_events");
     expect(db._statements[1]).toContain("INSERT INTO user_billing");
     expect(db._statements[1]).toContain("stripe_customer_id");
     expect(db._statements[1]).toContain("stripe_subscription_id");
     // bind args for the user_billing upsert: userId, customerId, subId
     expect(db._bindCalls[1]).toEqual(["user-1", "cus_abc", "sub_xyz"]);
+    // marker recorded only after the handler succeeded
+    expect(db._statements[2]).toContain("INSERT OR IGNORE INTO webhook_events");
   });
 
   it("ignores events missing client_reference_id", async () => {
@@ -141,8 +151,10 @@ describe("handleStripeWebhook — checkout.session.completed", () => {
     const db = makeDB();
     const res = await handleStripeWebhook(makeRequest("{}"), makeEnv(db));
     expect(res.status).toBe(200);
-    // Only idempotency insert; no user update
-    expect(db._statements.length).toBe(1);
+    // dedup lookup + post-success marker; no user_billing write (no-op)
+    expect(db._statements.length).toBe(2);
+    expect(db._statements[0]).toContain("SELECT 1 FROM webhook_events");
+    expect(db._statements[1]).toContain("INSERT OR IGNORE INTO webhook_events");
   });
 });
 
@@ -211,8 +223,10 @@ describe("handleStripeWebhook — customer.subscription.created/updated", () => 
     const db = makeDB();
     const res = await handleStripeWebhook(makeRequest("{}"), makeEnv(db));
     expect(res.status).toBe(200);
-    // Only idempotency insert
-    expect(db._statements.length).toBe(1);
+    // dedup lookup + post-success marker; no user_billing write (no-op)
+    expect(db._statements.length).toBe(2);
+    expect(db._statements[0]).toContain("SELECT 1 FROM webhook_events");
+    expect(db._statements[1]).toContain("INSERT OR IGNORE INTO webhook_events");
   });
 });
 
@@ -266,5 +280,33 @@ describe("handleStripeWebhook — invoice events", () => {
 
     expect(db._statements[1]).toContain("'active'");
     expect(db._bindCalls[1]).toEqual([1_800_000_000_000, "sub_1"]);
+  });
+});
+
+describe("handleStripeWebhook — idempotency ordering on failure", () => {
+  const deletedEvent = {
+    id: "evt_fail",
+    type: "customer.subscription.deleted",
+    data: { object: { id: "sub_1", customer: "cus_1", metadata: { userId: "user-1" } } },
+  };
+
+  it("returns 500 and does NOT record the event when the handler throws", async () => {
+    mockConstructEvent(deletedEvent);
+    // The handler's UPDATE rejects (transient D1 failure).
+    const db = makeDB([new Error("d1 unavailable")]);
+    const res = await handleStripeWebhook(makeRequest("{}"), makeEnv(db));
+    expect(res.status).toBe(500);
+    // No idempotency marker written → Stripe's redelivery will reprocess.
+    expect(db._statements.some(s => s.includes("INSERT OR IGNORE INTO webhook_events"))).toBe(false);
+  });
+
+  it("records the marker only after the handler succeeds", async () => {
+    mockConstructEvent({ ...deletedEvent, id: "evt_ok" });
+    const db = makeDB();
+    const res = await handleStripeWebhook(makeRequest("{}"), makeEnv(db));
+    expect(res.status).toBe(200);
+    expect(db._statements[0]).toContain("SELECT 1 FROM webhook_events");
+    // Last statement is the post-success idempotency marker.
+    expect(db._statements[db._statements.length - 1]).toContain("INSERT OR IGNORE INTO webhook_events");
   });
 });
