@@ -1,11 +1,13 @@
 import { createElement, type ReactElement } from "react";
-import { WidgetType } from "@codemirror/view";
+import { WidgetType, type EditorView } from "@codemirror/view";
 import { ReactWidget } from "./ReactWidget";
 import {
   Pencil, ClipboardList, Info, CheckSquare, Flame, CheckCircle,
-  HelpCircle, AlertTriangle, XCircle, Zap, Bug, List, Quote,
+  HelpCircle, AlertTriangle, XCircle, Zap, Bug, List, Quote, ChevronDown,
 } from "lucide-react";
 import type { FC, SVGProps } from "react";
+import { parseCalloutHeader } from "@/lib/callout";
+import { isCalloutCollapsed, toggleCalloutFold } from "../decorations/calloutFold";
 
 interface CalloutTypeConfig {
   label: string;
@@ -33,13 +35,29 @@ interface Props {
   type: string;
   /** Whether the title is empty in the source — when empty, we render the canonical label after the icon. */
   showLabel: boolean;
+  /** True for `> [!type]+` / `> [!type]-` callouts — renders a clickable collapse chevron. */
+  foldable: boolean;
+  /** Current effective collapsed state — drives the chevron rotation. */
+  collapsed: boolean;
 }
 
-function CalloutIconInner({ type, showLabel }: Props) {
+function CalloutIconInner({ type, showLabel, foldable, collapsed }: Props) {
   const cfg = CALLOUT_CONFIG[type] ?? CALLOUT_CONFIG.note!;
   return createElement(
     "span",
     { className: "cm-callout-icon" },
+    foldable
+      ? createElement(
+          "span",
+          {
+            className: "cm-callout-chevron",
+            "data-collapsed": collapsed ? "true" : "false",
+            role: "button",
+            "aria-label": collapsed ? "Expand callout" : "Collapse callout",
+          },
+          createElement(ChevronDown, { "aria-hidden": true } as SVGProps<SVGSVGElement>),
+        )
+      : null,
     createElement(cfg.Icon, { className: "cm-callout-icon__svg", "aria-hidden": true } as SVGProps<SVGSVGElement>),
     showLabel ? createElement("span", { className: "cm-callout-icon__label" }, cfg.label) : null,
   );
@@ -56,15 +74,44 @@ export class CalloutIconWidget extends ReactWidget {
     return createElement(CalloutIconInner, this.props);
   }
 
+  // Foldable callouts own their click (chevron toggles fold). Non-foldable
+  // callouts keep the default block-widget behaviour: a click falls through to
+  // CM so the cursor lands in the range and the raw markdown reveals.
   protected revealOnClick(): boolean {
-    return true;
+    return !this.props.foldable;
+  }
+
+  toDOM(view: EditorView): HTMLElement {
+    const el = super.toDOM(view);
+    if (this.props.foldable) {
+      el.addEventListener("mousedown", (event) => {
+        const target = event.target as HTMLElement | null;
+        if (!target || !target.closest(".cm-callout-chevron")) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const pos = view.posAtDOM(el);
+        const line = view.state.doc.lineAt(pos);
+        const stripped = view.state.doc
+          .sliceString(line.from, line.to)
+          .replace(/^>\s?/, "");
+        const parsed = parseCalloutHeader(stripped);
+        if (!parsed) return;
+        const collapsed = isCalloutCollapsed(view.state, line.from, parsed.fold);
+        view.dispatch({
+          effects: toggleCalloutFold.of({ from: line.from, collapsed: !collapsed }),
+        });
+      });
+    }
+    return el;
   }
 
   eq(other: WidgetType): boolean {
     return (
       other instanceof CalloutIconWidget &&
       other.props.type === this.props.type &&
-      other.props.showLabel === this.props.showLabel
+      other.props.showLabel === this.props.showLabel &&
+      other.props.foldable === this.props.foldable &&
+      other.props.collapsed === this.props.collapsed
     );
   }
 }

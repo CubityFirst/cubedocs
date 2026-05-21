@@ -19,6 +19,7 @@ interface AuthFormProps {
   // signed out because your account was disabled." Distinct from `error`,
   // which uses destructive styling for action failures.
   header?: React.ReactNode;
+  devPanel?: React.ReactNode;
 }
 
 export function AuthForm({
@@ -34,10 +35,11 @@ export function AuthForm({
   hideSubmit,
   wordmark,
   header,
+  devPanel,
 }: AuthFormProps) {
   return (
     <div className="flex min-h-screen bg-background text-foreground">
-      <div className="flex w-full max-w-md flex-col items-center justify-center px-10">
+      <div className="relative flex w-full max-w-md flex-col items-center justify-center px-10">
         <div className="w-full max-w-sm space-y-6">
           <div className="flex flex-col items-center gap-2 text-center">
             {wordmark ?? (
@@ -68,6 +70,11 @@ export function AuthForm({
 
           <p className="text-center text-sm text-muted-foreground">{footer}</p>
         </div>
+        {devPanel && (
+          <div className="absolute bottom-4 left-10 right-10">
+            {devPanel}
+          </div>
+        )}
       </div>
 
       <div className="relative hidden flex-1 lg:block" aria-hidden="true">

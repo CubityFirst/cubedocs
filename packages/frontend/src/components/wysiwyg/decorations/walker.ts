@@ -89,8 +89,7 @@ function buildDecorationsInner(state: EditorState): DecorationSet {
           visitHr(args);
           return;
         case "Blockquote":
-          visitBlockquote(args);
-          return;
+          return visitBlockquote(args);
         case "ListItem":
           visitListItem(args);
           return; // descend so inline marks inside list items still apply

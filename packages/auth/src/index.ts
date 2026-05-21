@@ -34,6 +34,7 @@ import { handleSessionsRevokeOthers } from "./routes/sessions-revoke-others";
 import { handleSessionsLogout } from "./routes/sessions-logout";
 import { handleBillingCheckout, handleBillingPortal } from "./routes/billing";
 import { handleStripeWebhook } from "./routes/stripe-webhook";
+import { handleDevQuickLogin } from "./routes/dev-quick-login";
 
 export interface Env {
   DB: D1Database;
@@ -60,6 +61,7 @@ export interface Env {
   RATE_LIMITER_EMAIL_VERIFY: { limit(opts: { key: string }): Promise<{ success: boolean }> };
   STRIPE_SECRET_KEY: string;
   STRIPE_WEBHOOK_SECRET: string;
+  DEV_QUICK_LOGIN?: string;
   STRIPE_INK_PRICE_ID: string;
 }
 
@@ -164,6 +166,8 @@ export default {
         // request.json() upstream. CORS is also irrelevant — Stripe
         // calls this server-to-server, not from a browser.
         response = await handleStripeWebhook(request, env);
+      } else if (url.pathname === "/dev/quick-login" && request.method === "POST") {
+        response = await handleDevQuickLogin(request, env);
       } else {
         response = errorResponse(Errors.NOT_FOUND);
       }

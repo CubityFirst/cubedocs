@@ -1,6 +1,7 @@
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { decorationField } from "./decorations";
+import { calloutFoldField } from "./decorations/calloutFold";
 import { rendererCtxFacet, type RendererCtx } from "./context/RendererContext";
 
 // Clicking at the visible end of inline markdown formatting (e.g. `**bold**`)
@@ -96,11 +97,12 @@ export function modeExtension(mode: WysiwygMode): Extension {
       return [
         EditorState.readOnly.of(true),
         EditorView.editable.of(false),
+        calloutFoldField,
         decorationField,
         enforceFullHeightInReadingMode,
       ];
     case "editing":
-      return [decorationField, fixClickAtTrailingHidden];
+      return [calloutFoldField, decorationField, fixClickAtTrailingHidden];
     case "raw":
       return [];
   }

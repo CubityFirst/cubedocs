@@ -427,6 +427,21 @@
   height: 16px;
   flex-shrink: 0;
 }
+.cm-wysiwyg .cm-content .cm-callout-chevron {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  margin-right: -0.05em;
+}
+.cm-wysiwyg .cm-content .cm-callout-chevron svg {
+  width: 16px;
+  height: 16px;
+  transition: transform 0.15s ease;
+}
+.cm-wysiwyg .cm-content .cm-callout-chevron[data-collapsed="true"] svg {
+  transform: rotate(-90deg);
+}
 .cm-wysiwyg .cm-content .cm-line.cm-callout-header-line {
   border-left-width: 4px;
   border-left-style: solid;

@@ -55,7 +55,8 @@ export default {
         url.pathname === "/force-change-password" ||
         url.pathname === "/verify-email" ||
         url.pathname === "/verify-email/resend" ||
-        url.pathname === "/admin/handoff/start"
+        url.pathname === "/admin/handoff/start" ||
+        url.pathname === "/dev/quick-login"
       ) {
         return env.AUTH.fetch(new Request(`https://auth${url.pathname}`, request));
       }

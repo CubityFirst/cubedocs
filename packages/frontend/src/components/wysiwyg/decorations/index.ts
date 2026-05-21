@@ -2,6 +2,7 @@ import { StateField } from "@codemirror/state";
 import { EditorView, type DecorationSet } from "@codemirror/view";
 import { buildDecorations } from "./walker";
 import { rendererCtxFacet } from "../context/RendererContext";
+import { toggleCalloutFold } from "./calloutFold";
 
 // Block decorations (HR, code fences, callouts, frontmatter, etc.) are not
 // allowed from ViewPlugins — CM6 throws "Block decorations may not be specified
@@ -13,7 +14,8 @@ export const decorationField = StateField.define<DecorationSet>({
   update(decorations, tr) {
     const ctxChanged =
       tr.startState.facet(rendererCtxFacet) !== tr.state.facet(rendererCtxFacet);
-    if (!tr.docChanged && !tr.selection && !ctxChanged) {
+    const foldToggled = tr.effects.some((e) => e.is(toggleCalloutFold));
+    if (!tr.docChanged && !tr.selection && !ctxChanged && !foldToggled) {
       return decorations.map(tr.changes);
     }
     return buildDecorations(tr.state);

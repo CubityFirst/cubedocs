@@ -619,6 +619,28 @@ export function LoginPage() {
     );
   }
 
+  async function handleDevLogin(variant: "standard-free" | "standard-ink" | "admin-free" | "admin-ink") {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/dev/quick-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ variant }),
+      });
+      const json = await res.json() as { ok: boolean; data?: { token: string } };
+      if (json.ok && json.data) {
+        await completeAuthentication(json.data.token);
+      } else {
+        setError("Dev quick login failed.");
+      }
+    } catch {
+      setError("Could not connect to the server.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <AuthForm
       wordmark={annexWordmark}
@@ -644,6 +666,22 @@ export function LoginPage() {
           </>
         )
       }
+      devPanel={import.meta.env.DEV ? (
+        <div className="space-y-1">
+          {(
+            [
+              { label: "Standard", free: "standard-free", ink: "standard-ink" },
+              { label: "Admin", free: "admin-free", ink: "admin-ink" },
+            ] as const
+          ).map(({ label, free, ink }) => (
+            <div key={label} className="flex items-center gap-2">
+              <span className="w-16 text-sm text-muted-foreground">{label}</span>
+              <Button type="button" variant="outline" size="sm" disabled={loading} onClick={() => void handleDevLogin(free)}>Free</Button>
+              <Button type="button" variant="outline" size="sm" disabled={loading} onClick={() => void handleDevLogin(ink)}>Ink</Button>
+            </div>
+          ))}
+        </div>
+      ) : undefined}
     >
       <div className="space-y-2">
         <Label htmlFor="email">Email</Label>

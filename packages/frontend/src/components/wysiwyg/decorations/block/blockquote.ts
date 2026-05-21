@@ -1,9 +1,14 @@
 import { Decoration } from "@codemirror/view";
-import { cursorTouches, type Visitor } from "../types";
+import { cursorTouches, type VisitorArgs } from "../types";
 import { tryVisitCallout } from "./callout";
 
-export const visitBlockquote: Visitor = (args) => {
-  if (tryVisitCallout(args)) return;
+// Returns false when the walker should NOT descend into this node's children
+// (a collapsed callout — its body is hidden, so inline visitors must not add
+// decorations inside the block-replaced range). Returns void to descend.
+export const visitBlockquote = (args: VisitorArgs): false | void => {
+  const result = tryVisitCallout(args);
+  if (result === "collapsed") return false;
+  if (result === "open") return;
 
   const { node, state, sel, reveal, decos } = args;
   const startLine = state.doc.lineAt(node.from).number;

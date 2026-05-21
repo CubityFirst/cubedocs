@@ -2,14 +2,18 @@ import { Decoration } from "@codemirror/view";
 import { cursorTouches, type Visitor } from "../types";
 import { parseCalloutHeader } from "@/lib/callout";
 import { CalloutIconWidget, CALLOUT_CONFIG } from "../../widgets/CalloutIconWidget";
+import { isCalloutCollapsed } from "../calloutFold";
 
 const HEADER_PREFIX_RE = /^>\s*\[!([a-zA-Z]+)\]([+\-]?)\s?/;
 
-// Returns true if the visitor handled this blockquote as a callout (so the
-// generic blockquote line styling should be skipped).
+// "collapsed" → handled, body hidden, walker should NOT descend.
+// "open"      → handled as a normal callout, walker should descend.
+// false       → not a callout.
+export type CalloutResult = "collapsed" | "open" | false;
+
 export function tryVisitCallout(
   args: Parameters<Visitor>[0],
-): boolean {
+): CalloutResult {
   const { node, state, sel, reveal, decos } = args;
 
   const firstLine = state.doc.lineAt(node.from);
@@ -21,6 +25,47 @@ export function tryVisitCallout(
   const tone = (CALLOUT_CONFIG[parsed.type] ?? CALLOUT_CONFIG.note!).tone;
   const startLine = firstLine.number;
   const endLine = state.doc.lineAt(Math.min(node.to, state.doc.length)).number;
+
+  const foldable = parsed.fold === "+" || parsed.fold === "-";
+  // When the cursor is anywhere in the callout, leave the source raw so the
+  // user can edit it — never collapse under the cursor.
+  const cursorIn = reveal && cursorTouches(sel, node.from, node.to);
+  const collapsed =
+    foldable && !cursorIn && isCalloutCollapsed(state, firstLine.from, parsed.fold);
+
+  if (collapsed) {
+    // Only the header line stays; it gets bottom rounding via --last.
+    decos.push(
+      Decoration.line({
+        class: `cm-callout-header-line cm-callout-tone-${tone} cm-callout-body--last`,
+      }).range(firstLine.from),
+    );
+
+    const prefixMatch = firstSrc.match(HEADER_PREFIX_RE);
+    if (prefixMatch && prefixMatch[0].length > 0) {
+      decos.push(
+        Decoration.replace({
+          widget: new CalloutIconWidget({
+            type: parsed.type,
+            showLabel: parsed.title.length === 0,
+            foldable: true,
+            collapsed: true,
+          }),
+        }).range(firstLine.from, firstLine.from + prefixMatch[0].length),
+      );
+    }
+
+    // Hide every body line as a single block — the following content flows
+    // straight after the header (same approach as the frontmatter hide).
+    if (endLine > startLine) {
+      const bodyStart = state.doc.line(startLine + 1);
+      const lastLine = state.doc.line(endLine);
+      decos.push(
+        Decoration.replace({ block: true }).range(bodyStart.from, lastLine.to),
+      );
+    }
+    return "collapsed";
+  }
 
   // Tone styling on every line of the callout. Header line is a separate
   // class so it can carry top rounded corners.
@@ -36,10 +81,9 @@ export function tryVisitCallout(
     decos.push(Decoration.line({ class: classes }).range(line.from));
   }
 
-  // When the cursor is anywhere in the callout, leave the source raw so the
-  // user can edit. Don't replace the prefix with the icon widget.
-  const cursorIn = reveal && cursorTouches(sel, node.from, node.to);
-  if (cursorIn) return true;
+  // Cursor inside — leave the source raw so the user can edit. Don't replace
+  // the prefix with the icon widget.
+  if (cursorIn) return "open";
 
   // Replace just "> [!type][+-]? " with an icon. Title text remains as real
   // markdown text so click coordinates land on the exact character.
@@ -52,6 +96,8 @@ export function tryVisitCallout(
           widget: new CalloutIconWidget({
             type: parsed.type,
             showLabel: parsed.title.length === 0,
+            foldable,
+            collapsed: false,
           }),
         }).range(firstLine.from, prefixEnd),
       );
@@ -71,5 +117,5 @@ export function tryVisitCallout(
     }
   }
 
-  return true;
+  return "open";
 }
