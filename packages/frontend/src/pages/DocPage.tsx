@@ -14,7 +14,7 @@ import { Callout, type CalloutType } from "@/components/Callout";
 import { MarkdownCode } from "@/components/CodeBlock";
 import { AuthenticatedImage } from "@/components/AuthenticatedImage";
 import { AudioEmbed } from "@/components/AudioEmbed";
-import { looksLikeAudio, parseAudioSize } from "@/lib/audioUrl";
+import { looksLikeAudio, parseAudioSize, type AudioSize } from "@/lib/audioUrl";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -32,7 +32,7 @@ import { HistorySheet, type RevisionMeta } from "@/components/HistorySheet";
 import { HistoryBanner } from "@/components/HistoryBanner";
 import { UserAvatar } from "@/components/UserAvatar";
 import { UserProfileCard } from "@/components/UserProfileCard";
-import { Pencil, X, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight, Sparkles, Users, UserPlus, Trash2, HelpCircle, Code2, AlertCircle, FileDown } from "lucide-react";
+import { Pencil, X, Save, Settings, Globe, Lock, Link, History, ChevronLeft, ChevronRight, Sparkles, Users, UserPlus, Trash2, HelpCircle, Code2, AlertCircle, FileDown, FileAudio } from "lucide-react";
 import { ExportPdfDialog } from "@/components/ExportPdfDialog";
 import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
 import { apiFetchJson } from "@/lib/apiFetch";
@@ -163,6 +163,56 @@ function makeAuthenticatedImage(projectId: string) {
   };
 }
 
+const WAVEFORM_FULL = [
+  0.22, 0.41, 0.68, 0.58, 0.88, 0.83, 0.51, 0.34, 0.61, 0.79,
+  0.73, 0.49, 0.62, 0.84, 0.69, 0.38, 0.52, 0.74, 0.63, 0.28,
+  0.21, 0.36, 0.64, 0.54, 0.91, 0.81, 0.44, 0.31, 0.56, 0.76,
+  0.71, 0.46, 0.57, 0.82, 0.66, 0.33, 0.47, 0.72, 0.61, 0.24,
+];
+const WAVEFORM_SMALL = [0.29, 0.54, 0.78, 0.65, 0.92, 0.81, 0.54, 0.38, 0.63, 0.85, 0.72, 0.47, 0.58, 0.81, 0.67, 0.36, 0.51, 0.74, 0.61, 0.31];
+
+function AudioPdfPlaceholder({ alt, size = "full" }: { alt?: string; size?: AudioSize }) {
+  if (size === "small") {
+    const svgH = 16;
+    return (
+      <span className="cm-wysiwyg-audio cm-wysiwyg-audio--small inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-2 py-[3px] align-middle text-muted-foreground/50">
+        <svg width={WAVEFORM_SMALL.length * 2.5 - 0.5} height={svgH} aria-hidden="true" style={{ flexShrink: 0 }}>
+          {WAVEFORM_SMALL.map((r, i) => {
+            const h = Math.round(r * svgH);
+            return <rect key={i} x={i * 2.5} y={(svgH - h) / 2} width="2" height={h} rx="1" fill="currentColor" />;
+          })}
+        </svg>
+        {alt && <span className="max-w-[13ch] truncate text-[10px] text-muted-foreground">{alt}</span>}
+      </span>
+    );
+  }
+  return (
+    <div className="cm-wysiwyg-audio cm-wysiwyg-audio--full rounded-lg border border-border bg-muted/30 p-4">
+      <div className="mb-3 flex h-20 items-end justify-center gap-[3px] overflow-hidden" aria-hidden="true">
+        {WAVEFORM_FULL.map((r, i) => (
+          <div key={i} className="flex-1 rounded-sm bg-primary/25" style={{ height: `${Math.round(r * 64)}px` }} />
+        ))}
+      </div>
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <FileAudio className="h-4 w-4 shrink-0" />
+        {alt ? <span className="truncate">{alt}</span> : <span className="italic">Audio file</span>}
+      </div>
+    </div>
+  );
+}
+
+function makeAuthenticatedImageForPdf(projectId: string) {
+  return function AuthImgPdf(props: React.ComponentPropsWithoutRef<"img"> & { node?: { properties?: Record<string, unknown> }; "data-size"?: string }) {
+    const src = typeof props.src === "string" ? props.src : "";
+    const alt = typeof props.alt === "string" ? props.alt : undefined;
+    if (looksLikeAudio(src, alt)) {
+      const rawSize = props["data-size"] ?? (props.node?.properties?.["dataSize"] as string | undefined);
+      return <AudioPdfPlaceholder alt={alt} size={parseAudioSize(rawSize)} />;
+    }
+    return <AuthenticatedImage {...props} projectId={projectId} />;
+  };
+}
+
 const baseMarkdownComponents = {
   blockquote({ children, node, ...props }: React.ComponentPropsWithoutRef<"blockquote"> & { node?: { properties?: Record<string, unknown> } }) {
     const p = node?.properties;
@@ -239,6 +289,17 @@ export function DocPage() {
   const markdownComponents = useMemo(() => ({
     ...baseMarkdownComponents,
     img: makeAuthenticatedImage(projectId ?? ""),
+    a: makeDocLink({
+      docs: allDocs,
+      folders: allFolders,
+      buildUrl: (docId, anchor) =>
+        `/projects/${projectId}/docs/${docId}${anchor ? "#" + anchor : ""}`,
+    }),
+  }), [projectId, allDocs, allFolders]);
+
+  const pdfMarkdownComponents = useMemo(() => ({
+    ...baseMarkdownComponents,
+    img: makeAuthenticatedImageForPdf(projectId ?? ""),
     a: makeDocLink({
       docs: allDocs,
       folders: allFolders,
@@ -1269,7 +1330,7 @@ export function DocPage() {
                     markdown via react-markdown into a sibling that's hidden on
                     screen and shown during print. */}
                 <div className="pdf-print-mirror">
-                  <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents} urlTransform={wikilinkUrlTransform}>
+                  <ReactMarkdown remarkPlugins={remarkPlugins} components={pdfMarkdownComponents} urlTransform={wikilinkUrlTransform}>
                     {viewingRevision ? viewingRevision.content : doc.content}
                   </ReactMarkdown>
                 </div>

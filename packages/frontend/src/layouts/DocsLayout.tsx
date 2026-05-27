@@ -113,11 +113,12 @@ export interface DocsLayoutContext {
   editingFont: FontChoice;
   uiFont: FontChoice;
   updateFontAppearance: (patch: { readingFont?: FontChoice; editingFont?: FontChoice; uiFont?: FontChoice }) => void;
-  // Site theme (admin-only to change; the settings section is hidden unless
-  // currentUser.isAdmin). Setter applies instantly via inline CSS vars on
+  // Site theme (admin-only to change; gated by the custom-theming Flagship flag
+  // + currentUser.isAdmin). Setter applies instantly via inline CSS vars on
   // <html> without waiting for a refetch.
   theme: ThemeMode;
   customColor: string | null;
+  customThemingEnabled: boolean;
   updateTheme: (patch: { mode?: ThemeMode; customColor?: string | null }) => void;
   docs: { id: string; title: string; display_title?: string | null; folder_id?: string | null; tags?: string | null }[];
   folders: { id: string; name: string; parent_id: string | null }[];
@@ -252,6 +253,7 @@ export function DocsLayout() {
   const [editingFont, setEditingFont] = useState<FontChoice>(() => readFontPrefsCookie().editingFont);
   const [uiFont, setUiFont] = useState<FontChoice>(() => readFontPrefsCookie().uiFont);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [customThemingEnabled, setCustomThemingEnabled] = useState(false);
   // Same cookie-seed-then-/api/me-override pattern as the fonts above.
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => readThemePrefsCookie().mode);
   const [themeCustomColor, setThemeCustomColor] = useState<string | null>(() => readThemePrefsCookie().customColor);
@@ -298,7 +300,7 @@ export function DocsLayout() {
 
   useEffect(() => {
     if (!getToken()) return;
-    apiFetchJson<{ name: string; userId: string; personalPlan: "free" | "ink"; personalPlanStyle: string | null; personalPresenceColor: string | null; personalCritSparkles: boolean; readingFont: string | null; editingFont: string | null; uiFont: string | null; isAdmin: boolean; themeMode: string | null; themeCustomColor: string | null }>("/api/me")
+    apiFetchJson<{ name: string; userId: string; personalPlan: "free" | "ink"; personalPlanStyle: string | null; personalPresenceColor: string | null; personalCritSparkles: boolean; readingFont: string | null; editingFont: string | null; uiFont: string | null; isAdmin: boolean; themeMode: string | null; themeCustomColor: string | null; customThemingEnabled: boolean }>("/api/me")
       .then(result => {
         if (result.ok && result.data) {
           setUserName(result.data.name);
@@ -311,6 +313,7 @@ export function DocsLayout() {
           setEditingFont(resolveFontChoice(result.data.editingFont, DEFAULT_EDITING_FONT));
           setUiFont(resolveFontChoice(result.data.uiFont, DEFAULT_UI_FONT));
           setIsAdmin(result.data.isAdmin ?? false);
+          setCustomThemingEnabled(result.data.customThemingEnabled ?? false);
           setThemeMode(resolveThemeMode(result.data.themeMode));
           setThemeCustomColor(result.data.themeCustomColor ?? null);
         }
@@ -448,6 +451,7 @@ export function DocsLayout() {
     },
     theme: themeMode,
     customColor: themeCustomColor,
+    customThemingEnabled,
     updateTheme: (patch) => {
       if (patch.mode !== undefined) setThemeMode(patch.mode);
       if (patch.customColor !== undefined) setThemeCustomColor(patch.customColor);

@@ -28,6 +28,7 @@ export interface Env {
   JWT_SECRET: string;
   OPENAI_API_KEY?: string;
   RATE_LIMITER_INVITE_LOOKUP: { limit(opts: { key: string }): Promise<{ success: boolean }> };
+  FLAGS?: { getBooleanValue(flag: string, defaultValue: boolean, ctx?: Record<string, string>): Promise<boolean> };
 }
 
 export default {
@@ -194,11 +195,16 @@ export default {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
         const authHeader = request.headers.get("Authorization");
-        const lookupRes = await env.AUTH.fetch("https://auth/lookup-by-id", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
-          body: JSON.stringify({ userId: session.userId }),
-        });
+        const [lookupRes, customThemingEnabled] = await Promise.all([
+          env.AUTH.fetch("https://auth/lookup-by-id", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...(authHeader ? { Authorization: authHeader } : {}) },
+            body: JSON.stringify({ userId: session.userId }),
+          }),
+          env.FLAGS
+            ? env.FLAGS.getBooleanValue("custom-theming", false, { userId: session.userId })
+            : Promise.resolve(true),
+        ]);
         if (!lookupRes.ok) return addCorsHeaders(errorResponse(Errors.INTERNAL));
         const data = await lookupRes.json<{ ok: boolean; data?: { name: string; email: string; emailVerified: boolean; emailVerificationEnabled: boolean; timezone: string | null; bio: string | null } }>();
         if (!data.ok || !data.data) return addCorsHeaders(errorResponse(Errors.INTERNAL));
@@ -225,6 +231,7 @@ export default {
             isAdmin: session.isAdmin ?? false,
             themeMode: session.themeMode ?? null,
             themeCustomColor: session.themeCustomColor ?? null,
+            customThemingEnabled,
           },
         }));
       }
@@ -296,10 +303,15 @@ export default {
       // PATCH /me/theme — set site theme (dark/light/custom). Admin-only:
       // the auth worker is authoritative on the admin check; we re-check here
       // (cheap, defense in depth) now that the API session carries isAdmin.
+      // Also gated on the custom-theming Flagship flag.
       if (url.pathname === "/me/theme" && request.method === "PATCH") {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
         if (!session.isAdmin) return addCorsHeaders(errorResponse(Errors.FORBIDDEN));
+        const flagEnabled = env.FLAGS
+          ? await env.FLAGS.getBooleanValue("custom-theming", false, { userId: session.userId })
+          : true;
+        if (!flagEnabled) return addCorsHeaders(errorResponse(Errors.FORBIDDEN));
         const body = await request.json<unknown>();
         const authHeader = request.headers.get("Authorization");
         const updateRes = await env.AUTH.fetch("https://auth/update-theme", {
