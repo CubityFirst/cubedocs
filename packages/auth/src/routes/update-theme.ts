@@ -3,9 +3,8 @@ import { okResponse, errorResponse, Errors } from "../lib";
 import { isThemeMode, isHexColor } from "../theme";
 import type { Env } from "../index";
 
-// Sets the user's site theme (dark / light / custom). GLOBAL-SITE-ADMIN ONLY —
-// mirrored on the frontend by hiding the settings section unless
-// currentUser.isAdmin, but the server check here is authoritative.
+// Sets the user's site theme (dark / light / custom). Available to any
+// authenticated user — callers are responsible for Flagship flag gating.
 //
 // `customColor` is only persisted for the 'custom' mode; any other mode nulls
 // it so a stale colour doesn't linger and re-apply if the user flips back to
@@ -14,10 +13,6 @@ import type { Env } from "../index";
 export async function handleUpdateTheme(request: Request, env: Env): Promise<Response> {
   const session = await requireAuthenticatedSession(request, env);
   if (session instanceof Response) return session;
-
-  if (!session.isAdmin) {
-    return Response.json({ ok: false, error: "not_admin" }, { status: 403 });
-  }
 
   const body = await request.json<{ theme?: unknown; customColor?: unknown }>();
 

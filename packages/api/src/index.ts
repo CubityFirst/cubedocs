@@ -300,18 +300,17 @@ export default {
         return addCorsHeaders(updateRes);
       }
 
-      // PATCH /me/theme — set site theme (dark/light/custom). Admin-only:
-      // the auth worker is authoritative on the admin check; we re-check here
-      // (cheap, defense in depth) now that the API session carries isAdmin.
-      // Also gated on the custom-theming Flagship flag.
+      // PATCH /me/theme — set site theme (dark/light/custom). Admins always
+      // have access; other users require the custom-theming Flagship flag.
       if (url.pathname === "/me/theme" && request.method === "PATCH") {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
-        if (!session.isAdmin) return addCorsHeaders(errorResponse(Errors.FORBIDDEN));
-        const flagEnabled = env.FLAGS
-          ? await env.FLAGS.getBooleanValue("custom-theming", false, { userId: session.userId })
-          : true;
-        if (!flagEnabled) return addCorsHeaders(errorResponse(Errors.FORBIDDEN));
+        if (!session.isAdmin) {
+          const flagEnabled = env.FLAGS
+            ? await env.FLAGS.getBooleanValue("custom-theming", false, { userId: session.userId })
+            : true;
+          if (!flagEnabled) return addCorsHeaders(errorResponse(Errors.FORBIDDEN));
+        }
         const body = await request.json<unknown>();
         const authHeader = request.headers.get("Authorization");
         const updateRes = await env.AUTH.fetch("https://auth/update-theme", {

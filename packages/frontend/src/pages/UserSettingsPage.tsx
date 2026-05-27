@@ -1854,11 +1854,11 @@ export function UserSettingsPage() {
 
           <Separator className="my-6" />
 
-          {/* Theme — global-site-admin only, gated by the custom-theming
-              Flagship flag. Dark is the default for everyone; Light drops
-              the .dark class; Custom derives a full palette from one colour.
-              Server also 403s on isAdmin check + flag. */}
-          {currentUser?.isAdmin && customThemingEnabled && (
+          {/* Theme — admins always see this; other users see it when the
+              custom-theming Flagship flag is enabled for them. Dark is the
+              default; Light drops .dark; Custom derives a palette from one
+              colour. Server enforces the same logic. */}
+          {(currentUser?.isAdmin || customThemingEnabled) && (
             <>
               <section id="theme">
                 <h2 className="text-base font-semibold">Theme</h2>
