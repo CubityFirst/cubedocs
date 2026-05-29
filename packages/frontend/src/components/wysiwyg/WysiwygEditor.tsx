@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { EditorView, keymap } from "@codemirror/view";
-import { ChangeSet, EditorState } from "@codemirror/state";
-import { defaultKeymap, historyKeymap, history, indentWithTab } from "@codemirror/commands";
-import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
+import { ChangeSet, EditorState, Prec } from "@codemirror/state";
+import { syntaxTree } from "@codemirror/language";
+import { defaultKeymap, historyKeymap, history, indentWithTab, undo, redo } from "@codemirror/commands";
+import { search, openSearchPanel, closeSearchPanel, searchPanelOpen } from "@codemirror/search";
+import { markdown, markdownLanguage, insertNewlineContinueMarkupCommand, deleteMarkupBackward } from "@codemirror/lang-markdown";
 import { Wikilink } from "./lezer/wikilinkExtension";
 import { Comment as MdCommentExt } from "./lezer/commentExtension";
 import { calloutContinueOnEnter, calloutBreakOnShiftEnter } from "./commands/calloutEnter";
@@ -29,7 +31,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Bold, ClipboardPaste, Copy, Italic, Link as LinkIcon, List, ListChecks, ListOrdered, Pilcrow, Scissors, Type, Underline } from "lucide-react";
+import { Bold, ClipboardPaste, Copy, Italic, Link as LinkIcon, List, ListChecks, ListOrdered, Pilcrow, Scissors, Strikethrough, Type, Underline } from "lucide-react";
+import { WysiwygToolbar, defaultActiveFormats, type ActiveFormats } from "./WysiwygToolbar";
 import "./styles.css";
 
 const editorTheme = EditorView.theme({
@@ -171,6 +174,131 @@ function applyLinePrefixCm(view: EditorView, kind: ListKind) {
   });
 }
 
+function computeActiveFormats(state: EditorState): ActiveFormats {
+  const pos = state.selection.main.head;
+  const tree = syntaxTree(state);
+  let headingLevel: ActiveFormats["headingLevel"] = 0;
+  let bold = false, italic = false, underline = false, strike = false;
+  let blockquote = false, codeFence = false;
+
+  let node = tree.resolveInner(pos, -1);
+  while (node) {
+    const name = node.name;
+    const hMatch = name.match(/^ATXHeading(\d)$/);
+    if (hMatch) {
+      headingLevel = Math.min(parseInt(hMatch[1]!, 10), 6) as ActiveFormats["headingLevel"];
+    }
+    if (name === "StrongEmphasis") {
+      if (state.doc.sliceString(node.from, node.from + 1) === "_") underline = true;
+      else bold = true;
+    }
+    if (name === "Emphasis") italic = true;
+    if (name === "Strikethrough") strike = true;
+    if (name === "Blockquote") blockquote = true;
+    if (name === "FencedCode") codeFence = true;
+    if (!node.parent) break;
+    node = node.parent;
+  }
+
+  return { headingLevel, bold, italic, underline, strike, blockquote, codeFence };
+}
+
+function applyBlockquoteCm(view: EditorView) {
+  const sel = view.state.selection.main;
+  const startLine = view.state.doc.lineAt(sel.from);
+  const endLine = view.state.doc.lineAt(sel.to);
+
+  const lines: { from: number; text: string }[] = [];
+  for (let n = startLine.number; n <= endLine.number; n++) {
+    const line = view.state.doc.line(n);
+    lines.push({ from: line.from, text: line.text });
+  }
+
+  const allBlockquote = lines.every(l => l.text.startsWith("> ") || l.text === ">");
+  const changes = lines.map(l => {
+    if (allBlockquote) {
+      const removeLen = l.text.startsWith("> ") ? 2 : 1;
+      return { from: l.from, to: l.from + removeLen, insert: "" };
+    }
+    return { from: l.from, to: l.from, insert: "> " };
+  });
+
+  const changeSet = ChangeSet.of(changes, view.state.doc.length);
+  view.dispatch({
+    changes: changeSet,
+    selection: { anchor: changeSet.mapPos(sel.anchor, 1), head: changeSet.mapPos(sel.head, 1) },
+  });
+}
+
+function applyHrCm(view: EditorView) {
+  const sel = view.state.selection.main;
+  const line = view.state.doc.lineAt(sel.head);
+  const insertPos = line.to;
+  const prefix = line.text.trim() === "" ? "" : "\n";
+  const text = `${prefix}\n---\n`;
+  view.dispatch({
+    changes: { from: insertPos, to: insertPos, insert: text },
+    selection: { anchor: insertPos + text.length },
+  });
+}
+
+function applyCodeFenceCm(view: EditorView) {
+  const sel = view.state.selection.main;
+  const line = view.state.doc.lineAt(sel.head);
+  const insertPos = line.to;
+  const prefix = line.text.trim() === "" ? "" : "\n";
+  const text = `${prefix}\n\`\`\`\n\n\`\`\`\n`;
+  const cursorPos = insertPos + prefix.length + 5; // land inside the fence
+  view.dispatch({
+    changes: { from: insertPos, to: insertPos, insert: text },
+    selection: { anchor: cursorPos },
+  });
+}
+
+function insertTableCm(view: EditorView, rows: number, cols: number) {
+  const sel = view.state.selection.main;
+  const line = view.state.doc.lineAt(sel.head);
+  const insertPos = line.to;
+  const header = "| " + Array.from({ length: cols }, (_, i) => `Col ${i + 1}`).join(" | ") + " |";
+  const sep    = "| " + Array(cols).fill("---").join(" | ") + " |";
+  const row    = "| " + Array(cols).fill("   ").join(" | ") + " |";
+  const prefix = line.text.trim() === "" ? "" : "\n";
+  const text = `${prefix}\n${[header, sep, ...Array(rows).fill(row)].join("\n")}\n`;
+  view.dispatch({
+    changes: { from: insertPos, to: insertPos, insert: text },
+    selection: { anchor: insertPos + prefix.length + 2 },
+  });
+}
+
+function insertCalloutCm(view: EditorView, type: string) {
+  const sel = view.state.selection.main;
+  const line = view.state.doc.lineAt(sel.head);
+  const insertPos = line.to;
+  const prefix = line.text.trim() === "" ? "" : "\n";
+  const text = `${prefix}\n> [!${type}]\n> `;
+  view.dispatch({
+    changes: { from: insertPos, to: insertPos, insert: text },
+    selection: { anchor: insertPos + text.length },
+  });
+}
+
+function applyHeadingCm(view: EditorView, level: 0 | 1 | 2 | 3 | 4 | 5 | 6) {
+  const sel = view.state.selection.main;
+  const line = view.state.doc.lineAt(sel.head);
+  const m = line.text.match(/^(#{1,6}) /);
+  const currentPrefixLen = m ? m[1].length + 1 : 0;
+  const newPrefix = level > 0 ? "#".repeat(level) + " " : "";
+  const delta = newPrefix.length - currentPrefixLen;
+  const adjustPos = (pos: number) => {
+    if (pos < line.from) return pos;
+    return Math.max(line.from + newPrefix.length, pos + delta);
+  };
+  view.dispatch({
+    changes: { from: line.from, to: line.from + currentPrefixLen, insert: newPrefix },
+    selection: { anchor: adjustPos(sel.anchor), head: adjustPos(sel.head) },
+  });
+}
+
 export function WysiwygEditor({
   mode,
   value,
@@ -197,6 +325,13 @@ export function WysiwygEditor({
   onCollabFatalRef.current = onCollabFatal;
   const onPasteImageRef = useRef(onPasteImage);
   onPasteImageRef.current = onPasteImage;
+
+  const [activeFormats, setActiveFormats] = useState<ActiveFormats>(defaultActiveFormats);
+  const setActiveFormatsRef = useRef(setActiveFormats);
+  setActiveFormatsRef.current = setActiveFormats;
+
+  // Populated after the link dialog callbacks are defined below; used by Ctrl+K keymap.
+  const openLinkDialogRef = useRef<() => void>(() => {});
 
   const initialValueRef = useRef(value);
   const collabRef = useRef(collab);
@@ -280,7 +415,15 @@ export function WysiwygEditor({
 
     const extensions = [
       history(),
-      markdown({ base: markdownLanguage, extensions: [Wikilink, MdCommentExt] }),
+      search(),
+      markdown({ base: markdownLanguage, extensions: [Wikilink, MdCommentExt], addKeymap: false }),
+      // Re-add the markdown keymap manually with nonTightLists:false so that pressing
+      // Enter on an empty list item exits the list rather than converting it to a
+      // loose (blank-line-separated) list.
+      Prec.high(keymap.of([
+        { key: "Enter", run: insertNewlineContinueMarkupCommand({ nonTightLists: false }) },
+        { key: "Backspace", run: deleteMarkupBackward },
+      ])),
       editorTheme,
       EditorView.lineWrapping,
       keymap.of([
@@ -302,6 +445,11 @@ export function WysiwygEditor({
         {
           key: "Mod-u",
           run: (view) => { applyMarkerCm(view, "__"); return true; },
+          preventDefault: true,
+        },
+        {
+          key: "Mod-k",
+          run: () => { openLinkDialogRef.current(); return true; },
           preventDefault: true,
         },
         // Context-aware Enter handling. Each command returns false when not
@@ -352,6 +500,9 @@ export function WysiwygEditor({
       ctxCompartment.of(ctxExtension(initialCtx)),
       modeCompartment.of(modeExtension(initialMode)),
       EditorView.updateListener.of((update) => {
+        if (update.selectionSet || update.docChanged) {
+          setActiveFormatsRef.current(computeActiveFormats(update.state));
+        }
         if (update.docChanged && !collabOpts) {
           const next = update.state.doc.toString();
           lastExternalValue.current = next;
@@ -453,10 +604,17 @@ export function WysiwygEditor({
     view.focus();
   }, []);
 
-  const handleFormat = useCallback((marker: "**" | "*" | "__") => {
+  const handleFormat = useCallback((marker: "**" | "*" | "__" | "~~") => {
     const view = viewRef.current;
     if (!view) return;
     applyMarkerCm(view, marker);
+    view.focus();
+  }, []);
+
+  const handleHeading = useCallback((level: 0 | 1 | 2 | 3 | 4 | 5 | 6) => {
+    const view = viewRef.current;
+    if (!view) return;
+    applyHeadingCm(view, level);
     view.focus();
   }, []);
 
@@ -466,6 +624,95 @@ export function WysiwygEditor({
     applyLinePrefixCm(view, kind);
     view.focus();
   }, []);
+
+  const handleUndo = useCallback(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    undo(view);
+    view.focus();
+  }, []);
+
+  const handleRedo = useCallback(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    redo(view);
+    view.focus();
+  }, []);
+
+  const handleFind = useCallback(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    if (searchPanelOpen(view.state)) closeSearchPanel(view);
+    else openSearchPanel(view);
+  }, []);
+
+  const handleBlockquote = useCallback(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    applyBlockquoteCm(view);
+    view.focus();
+  }, []);
+
+  const handleHr = useCallback(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    applyHrCm(view);
+    view.focus();
+  }, []);
+
+  const handleCodeFence = useCallback(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    applyCodeFenceCm(view);
+    view.focus();
+  }, []);
+
+  const handleTable = useCallback((rows: number, cols: number) => {
+    const view = viewRef.current;
+    if (!view) return;
+    insertTableCm(view, rows, cols);
+    view.focus();
+  }, []);
+
+  const handleCallout = useCallback((type: string) => {
+    const view = viewRef.current;
+    if (!view) return;
+    insertCalloutCm(view, type);
+    view.focus();
+  }, []);
+
+  const [imageDialogOpen, setImageDialogOpen] = useState(false);
+  const [imageAlt, setImageAlt] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
+  const imageRangeRef = useRef<{ from: number; to: number }>({ from: 0, to: 0 });
+
+  const handleOpenImageDialog = useCallback(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const sel = view.state.selection.main;
+    const selected = view.state.sliceDoc(sel.from, sel.to);
+    imageRangeRef.current = { from: sel.from, to: sel.to };
+    setImageAlt(selected);
+    setImageUrl("");
+    setImageDialogOpen(true);
+  }, []);
+
+  const handleSubmitImage = useCallback((e: React.FormEvent) => {
+    e.preventDefault();
+    const view = viewRef.current;
+    if (!view) return;
+    const url = imageUrl.trim();
+    if (!url) return;
+    const alt = imageAlt.trim();
+    const insert = `![${alt}](${url})`;
+    const { from, to } = imageRangeRef.current;
+    view.dispatch({
+      changes: { from, to, insert },
+      selection: { anchor: from + insert.length },
+    });
+    setImageDialogOpen(false);
+    view.focus();
+  }, [imageAlt, imageUrl]);
 
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [linkText, setLinkText] = useState("");
@@ -482,6 +729,7 @@ export function WysiwygEditor({
     setLinkUrl("");
     setLinkDialogOpen(true);
   }, []);
+  openLinkDialogRef.current = handleOpenLinkDialog;
 
   const handleSubmitLink = useCallback((e: React.FormEvent) => {
     e.preventDefault();
@@ -501,15 +749,12 @@ export function WysiwygEditor({
   }, [linkText, linkUrl]);
 
   // Reading mode flows inline (height: auto, no scroll). Editing/raw mode
-  // fills its positioned parent (absolute inset-0).
-  const layoutClass = mode === "reading"
-    ? "cm-wysiwyg cm-wysiwyg--reading"
-    : "cm-wysiwyg absolute inset-0 bg-background text-foreground";
-
+  // fills its positioned parent (absolute inset-0) via an outer flex wrapper
+  // so the toolbar can sit above the scrollable editor area.
   const containerEl = (
     <div
       ref={containerRef}
-      className={layoutClass}
+      className={mode === "reading" ? "cm-wysiwyg cm-wysiwyg--reading" : "cm-wysiwyg absolute inset-0"}
       spellCheck={false}
     />
   );
@@ -518,77 +763,102 @@ export function WysiwygEditor({
 
   return (
     <>
-    <ContextMenu onOpenChange={(open) => { if (open) refreshSelection(); }}>
-      <ContextMenuTrigger asChild>{containerEl}</ContextMenuTrigger>
-      <ContextMenuContent className="w-48">
-        <ContextMenuItem disabled={!hasSelection} onSelect={handleCut}>
-          <Scissors />
-          Cut
-          <ContextMenuShortcut>Ctrl+X</ContextMenuShortcut>
-        </ContextMenuItem>
-        <ContextMenuItem disabled={!hasSelection} onSelect={handleCopy}>
-          <Copy />
-          Copy
-          <ContextMenuShortcut>Ctrl+C</ContextMenuShortcut>
-        </ContextMenuItem>
-        <ContextMenuItem onSelect={handlePaste}>
-          <ClipboardPaste />
-          Paste
-          <ContextMenuShortcut>Ctrl+V</ContextMenuShortcut>
-        </ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem onSelect={handleOpenLinkDialog}>
-          <LinkIcon />
-          Create link…
-        </ContextMenuItem>
-        <ContextMenuSub>
-          <ContextMenuSubTrigger
-            disabled={!hasSelection}
-            className="gap-2 data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
-          >
-            <Type />
-            Format
-          </ContextMenuSubTrigger>
-          <ContextMenuSubContent className="w-44">
-            <ContextMenuItem onSelect={() => handleFormat("**")}>
-              <Bold />
-              Bold
-              <ContextMenuShortcut>Ctrl+B</ContextMenuShortcut>
+    <div className="absolute inset-0 flex flex-col bg-background text-foreground">
+      <WysiwygToolbar
+        active={activeFormats}
+        onFormat={handleFormat}
+        onList={handleList}
+        onLink={handleOpenLinkDialog}
+        onHeading={handleHeading}
+        onBlockquote={handleBlockquote}
+        onHr={handleHr}
+        onCodeFence={handleCodeFence}
+        onTable={handleTable}
+        onCallout={handleCallout}
+        onImage={handleOpenImageDialog}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
+        onFind={handleFind}
+      />
+      <div className="relative flex-1 overflow-hidden">
+        <ContextMenu onOpenChange={(open) => { if (open) refreshSelection(); }}>
+          <ContextMenuTrigger asChild>{containerEl}</ContextMenuTrigger>
+          <ContextMenuContent className="w-48">
+            <ContextMenuItem disabled={!hasSelection} onSelect={handleCut}>
+              <Scissors />
+              Cut
+              <ContextMenuShortcut>Ctrl+X</ContextMenuShortcut>
             </ContextMenuItem>
-            <ContextMenuItem onSelect={() => handleFormat("*")}>
-              <Italic />
-              Italic
-              <ContextMenuShortcut>Ctrl+I</ContextMenuShortcut>
+            <ContextMenuItem disabled={!hasSelection} onSelect={handleCopy}>
+              <Copy />
+              Copy
+              <ContextMenuShortcut>Ctrl+C</ContextMenuShortcut>
             </ContextMenuItem>
-            <ContextMenuItem onSelect={() => handleFormat("__")}>
-              <Underline />
-              Underline
-              <ContextMenuShortcut>Ctrl+U</ContextMenuShortcut>
+            <ContextMenuItem onSelect={handlePaste}>
+              <ClipboardPaste />
+              Paste
+              <ContextMenuShortcut>Ctrl+V</ContextMenuShortcut>
             </ContextMenuItem>
-          </ContextMenuSubContent>
-        </ContextMenuSub>
-        <ContextMenuSub>
-          <ContextMenuSubTrigger className="gap-2">
-            <Pilcrow />
-            Paragraph
-          </ContextMenuSubTrigger>
-          <ContextMenuSubContent className="w-48">
-            <ContextMenuItem onSelect={() => handleList("bullet")}>
-              <List />
-              Bullet list
+            <ContextMenuSeparator />
+            <ContextMenuItem onSelect={handleOpenLinkDialog}>
+              <LinkIcon />
+              Create link…
+              <ContextMenuShortcut>Ctrl+K</ContextMenuShortcut>
             </ContextMenuItem>
-            <ContextMenuItem onSelect={() => handleList("numbered")}>
-              <ListOrdered />
-              Numbered list
-            </ContextMenuItem>
-            <ContextMenuItem onSelect={() => handleList("task")}>
-              <ListChecks />
-              Task list
-            </ContextMenuItem>
-          </ContextMenuSubContent>
-        </ContextMenuSub>
-      </ContextMenuContent>
-    </ContextMenu>
+            <ContextMenuSub>
+              <ContextMenuSubTrigger
+                disabled={!hasSelection}
+                className="gap-2 data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
+              >
+                <Type />
+                Format
+              </ContextMenuSubTrigger>
+              <ContextMenuSubContent className="w-44">
+                <ContextMenuItem onSelect={() => handleFormat("**")}>
+                  <Bold />
+                  Bold
+                  <ContextMenuShortcut>Ctrl+B</ContextMenuShortcut>
+                </ContextMenuItem>
+                <ContextMenuItem onSelect={() => handleFormat("*")}>
+                  <Italic />
+                  Italic
+                  <ContextMenuShortcut>Ctrl+I</ContextMenuShortcut>
+                </ContextMenuItem>
+                <ContextMenuItem onSelect={() => handleFormat("__")}>
+                  <Underline />
+                  Underline
+                  <ContextMenuShortcut>Ctrl+U</ContextMenuShortcut>
+                </ContextMenuItem>
+                <ContextMenuItem onSelect={() => handleFormat("~~")}>
+                  <Strikethrough />
+                  Strikethrough
+                </ContextMenuItem>
+              </ContextMenuSubContent>
+            </ContextMenuSub>
+            <ContextMenuSub>
+              <ContextMenuSubTrigger className="gap-2">
+                <Pilcrow />
+                Paragraph
+              </ContextMenuSubTrigger>
+              <ContextMenuSubContent className="w-48">
+                <ContextMenuItem onSelect={() => handleList("bullet")}>
+                  <List />
+                  Bullet list
+                </ContextMenuItem>
+                <ContextMenuItem onSelect={() => handleList("numbered")}>
+                  <ListOrdered />
+                  Numbered list
+                </ContextMenuItem>
+                <ContextMenuItem onSelect={() => handleList("task")}>
+                  <ListChecks />
+                  Task list
+                </ContextMenuItem>
+              </ContextMenuSubContent>
+            </ContextMenuSub>
+          </ContextMenuContent>
+        </ContextMenu>
+      </div>
+    </div>
     <Dialog open={linkDialogOpen} onOpenChange={setLinkDialogOpen}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
@@ -620,6 +890,40 @@ export function WysiwygEditor({
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setLinkDialogOpen(false)}>Cancel</Button>
             <Button type="submit" disabled={!linkUrl.trim()}>Insert</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+    <Dialog open={imageDialogOpen} onOpenChange={setImageDialogOpen}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Insert image</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmitImage} className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="image-alt">Alt text</Label>
+            <Input
+              id="image-alt"
+              placeholder="Image description"
+              value={imageAlt}
+              onChange={e => setImageAlt(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="image-url">URL</Label>
+            <Input
+              id="image-url"
+              type="url"
+              placeholder="https://example.com/image.png"
+              value={imageUrl}
+              onChange={e => setImageUrl(e.target.value)}
+              autoFocus
+              required
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setImageDialogOpen(false)}>Cancel</Button>
+            <Button type="submit" disabled={!imageUrl.trim()}>Insert</Button>
           </DialogFooter>
         </form>
       </DialogContent>

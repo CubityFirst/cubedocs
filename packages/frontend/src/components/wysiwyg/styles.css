@@ -485,6 +485,90 @@
   color: inherit;
 }
 
+/* Search panel — @codemirror/search injects .cm-panels + .cm-search into the
+   editor's DOM. Theme them to match the editor chrome. The CSS custom
+   properties here are oklch() values (see index.css), so they're used
+   directly with var() — wrapping them in hsl() produces invalid CSS and
+   drops the rule. */
+.cm-wysiwyg .cm-panels {
+  background-color: var(--background);
+  border-top: 1px solid var(--border);
+}
+.cm-wysiwyg .cm-panel.cm-search {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 5px 8px;
+  font-size: 13px;
+  color: var(--foreground);
+  background-color: var(--background);
+}
+.cm-wysiwyg .cm-search .cm-textfield {
+  background-color: var(--background);
+  border: 1px solid var(--input);
+  border-radius: 4px;
+  color: var(--foreground);
+  padding: 2px 6px;
+  font-size: 13px;
+  height: 26px;
+  outline: none;
+}
+.cm-wysiwyg .cm-search .cm-textfield:focus {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 1px var(--ring);
+}
+/* CodeMirror's view baseTheme paints a linear-gradient `background-image`
+   onto every `.cm-button`, which would sit on top of our background-color.
+   Reset `background-image: none` (and use the `background` shorthand so it
+   wins specificity-wise) to kill the gradient. Same goes for the explicit
+   font-size: 70% that .cm-button sets — override with our own size. */
+.cm-wysiwyg .cm-search button {
+  background: var(--secondary);
+  background-image: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--secondary-foreground);
+  padding: 0 8px;
+  font-size: 12px;
+  height: 26px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cm-wysiwyg .cm-search button:hover {
+  background: var(--accent);
+  background-image: none;
+  color: var(--accent-foreground);
+}
+.cm-wysiwyg .cm-search button[name="close"] {
+  background: transparent;
+  background-image: none;
+  border: none;
+  padding: 0 4px;
+  font-size: 16px;
+  color: var(--muted-foreground);
+  opacity: 0.7;
+  height: auto;
+}
+.cm-wysiwyg .cm-search button[name="close"]:hover {
+  opacity: 1;
+  color: var(--foreground);
+  background: transparent;
+  background-image: none;
+}
+.cm-wysiwyg .cm-search label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  user-select: none;
+}
+.cm-wysiwyg .cm-search input[type="checkbox"] {
+  accent-color: var(--primary);
+}
+
 /* Remote cursor labels */
 .cm-wysiwyg .cm-ySelectionInfo {
   font-size: 11px;
