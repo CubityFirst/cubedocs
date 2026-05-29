@@ -43,6 +43,7 @@ import { UserProfileCard } from "@/components/UserProfileCard";
 import { InlineSaveControls } from "@/components/InlineSaveControls";
 import { AvatarCropDialog } from "@/components/AvatarCropDialog";
 import { Globe, House, Link, Lock, Copy, Check, X, Network, Plus, ChevronDown, RefreshCw, Upload, ImageIcon, AlertTriangle } from "lucide-react";
+import { SettingsShell, type SettingsGroupDef, type SettingsSectionDef } from "@/components/settings/SettingsShell";
 
 type Role = "limited" | "viewer" | "editor" | "admin" | "owner";
 
@@ -65,6 +66,18 @@ const ROLE_DESCRIPTIONS: Record<Role, string> = {
 const ROLE_RANK: Record<Role, number> = { limited: -1, viewer: 0, editor: 1, admin: 2, owner: 3 };
 
 const ASSIGNABLE_ROLES: Role[] = ["limited", "viewer", "editor", "admin"];
+
+// Grouped outline for the settings accordion. Section→group membership and
+// per-role visibility live in the per-render `settingsSections` array. Order
+// here is the accordion order and matches DOM order. Features/People collapse
+// away for non-admins (their only sections are admin-gated); Site (General)
+// and Danger Zone remain for every member.
+const SITE_SETTINGS_GROUPS: SettingsGroupDef[] = [
+  { id: "site", label: "Site" },
+  { id: "features", label: "Features" },
+  { id: "people", label: "People" },
+  { id: "danger", label: "Danger Zone" },
+];
 
 interface Project {
   id: string;
@@ -924,21 +937,6 @@ export function SiteSettingsPage() {
   const isAdminOrOwner = myRole !== null && ROLE_RANK[myRole] >= ROLE_RANK["admin"];
   const isOwner = myRole === "owner";
 
-  function scrollToSection(id: string) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    const container = el.closest(".overflow-y-auto");
-    if (container) {
-      const containerTop = container.getBoundingClientRect().top;
-      const elTop = el.getBoundingClientRect().top;
-      const offset = elTop - containerTop + container.scrollTop;
-      const maxScroll = container.scrollHeight - container.clientHeight;
-      container.scrollTo({ top: Math.min(offset, maxScroll), behavior: "smooth" });
-    } else {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }
-
   if (!project) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -947,31 +945,26 @@ export function SiteSettingsPage() {
     );
   }
 
+  const settingsSections: SettingsSectionDef[] = [
+    { id: "general", label: "General", group: "site" },
+    { id: "publishing", label: "Publishing", group: "site", visible: isAdminOrOwner },
+    { id: "branding", label: "Branding", group: "site", visible: isAdminOrOwner },
+    { id: "features", label: "Features", group: "features", visible: isAdminOrOwner },
+    { id: "members", label: "Members", group: "people", visible: isAdminOrOwner },
+    { id: "danger", label: "Danger Zone", group: "danger", visible: myRole !== null, danger: true },
+  ];
+
   return (
-    <div className="mx-auto max-w-4xl px-6 py-10">
-      <div className="flex gap-12">
-        {/* Sidebar nav */}
-        <aside className="hidden md:block w-40 shrink-0">
-          <nav className="sticky top-10 flex flex-col">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">On this page</p>
-            <button onClick={() => scrollToSection("general")} className="py-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground">General</button>
-            {isAdminOrOwner && <button onClick={() => scrollToSection("publishing")} className="py-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground">Publishing</button>}
-            {isAdminOrOwner && <button onClick={() => scrollToSection("branding")} className="py-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground">Branding</button>}
-            {isAdminOrOwner && <button onClick={() => scrollToSection("features")} className="py-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground">Features</button>}
-            {isAdminOrOwner && <button onClick={() => scrollToSection("members")} className="py-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground">Members</button>}
-            {myRole !== null && <button onClick={() => scrollToSection("danger")} className="py-1 text-left text-sm text-destructive/70 transition-colors hover:text-destructive">Danger Zone</button>}
-          </nav>
-        </aside>
-
-        {/* Main content */}
-        <div className="flex-1 min-w-0 max-w-xl">
-      <h2 id="general" className="mb-1 text-xl font-semibold">Site Settings</h2>
-      <p className="mb-8 text-sm text-muted-foreground">
-        Manage settings for <span className="font-medium text-foreground">{project.name}</span>.
-      </p>
-
+    <SettingsShell
+      title="Site Settings"
+      description={<>Manage settings for <span className="font-medium text-foreground">{project.name}</span>.</>}
+      maxWidth="4xl"
+      groups={SITE_SETTINGS_GROUPS}
+      sections={settingsSections}
+    >
+      <div className="max-w-xl">
       {/* General settings */}
-      <div className="flex flex-col gap-5">
+      <div id="general" className="flex flex-col gap-5">
         <form onSubmit={handleSaveName} className="flex flex-col gap-1.5">
           <Label htmlFor="settings-name">Name</Label>
           <div className="flex items-center">
@@ -1864,9 +1857,8 @@ export function SiteSettingsPage() {
           </div>
         </>
       )}
-        </div>
       </div>
-    </div>
+    </SettingsShell>
   );
 }
 

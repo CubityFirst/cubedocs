@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useNavigate, useLocation, useOutletContext, Link } from "react-router-dom";
+import { useNavigate, useOutletContext, Link } from "react-router-dom";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
 import zxcvbn from "zxcvbn";
 import QRCode from "react-qr-code";
@@ -41,6 +41,7 @@ import { formatInkSince } from "@/lib/inkDate";
 import { FONT_CHOICES, FONT_LABELS, FONT_STACKS, DEFAULT_READING_FONT, DEFAULT_EDITING_FONT, DEFAULT_UI_FONT, type FontChoice } from "@/lib/fonts";
 import { type ThemeMode, DEFAULT_CUSTOM_COLOR } from "@/lib/theme";
 import { cn } from "@/lib/utils";
+import { SettingsShell, type SettingsGroupDef, type SettingsSectionDef } from "@/components/settings/SettingsShell";
 import { useAvatarVariant } from "@/lib/avatarVariant";
 import { toast as sonnerToast } from "sonner";
 
@@ -53,6 +54,16 @@ const INK_RING_STYLE_OPTIONS: { id: "shimmer" | "aurora" | "ember" | "mono" | "n
   { id: "ember", label: "Ember" },
   { id: "mono", label: "Mono" },
   { id: "none", label: "None" },
+];
+
+// Grouped outline for the settings accordion. Section→group membership lives
+// in the per-render `settingsSections` array (its visibility depends on
+// currentUser). Order here is the accordion order and matches DOM order.
+const USER_SETTINGS_GROUPS: SettingsGroupDef[] = [
+  { id: "profile", label: "Profile" },
+  { id: "appearance", label: "Appearance" },
+  { id: "security", label: "Security" },
+  { id: "danger", label: "Danger Zone" },
 ];
 
 const STRENGTH_LABELS = ["Very weak", "Weak", "Fair", "Strong", "Very strong"];
@@ -106,18 +117,9 @@ function formatRelative(timestampMs: number): string {
 
 export function UserSettingsPage() {
   const navigate = useNavigate();
-  const location = useLocation();
   const { updateInkAppearance, readingFont, editingFont, uiFont, updateFontAppearance, currentUser, theme, customColor, customThemingEnabled, updateTheme } = useOutletContext<DocsLayoutContext>();
   const [fontPrefsBusy, setFontPrefsBusy] = useState(false);
   const [themePrefsBusy, setThemePrefsBusy] = useState(false);
-  useEffect(() => {
-    if (!location.hash) return;
-    const id = location.hash.slice(1);
-    // Defer to next frame so the section has rendered before we scroll.
-    requestAnimationFrame(() => {
-      document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-  }, [location.hash]);
   const [userId, setUserId] = useState("");
   const [name, setName] = useState("");
   const [currentName, setCurrentName] = useState("");
@@ -1067,28 +1069,24 @@ export function UserSettingsPage() {
     }
   }
 
+  const settingsSections: SettingsSectionDef[] = [
+    { id: "account", label: "Account", group: "profile" },
+    { id: "favourites", label: "Favourites", group: "profile" },
+    { id: "billing", label: "Billing", group: "profile" },
+    { id: "reading-font", label: "Fonts", group: "appearance" },
+    { id: "theme", label: "Theme", group: "appearance", visible: !!(currentUser?.isAdmin || customThemingEnabled) },
+    { id: "two-factor", label: "Security", group: "security" },
+    { id: "sessions", label: "Sessions", group: "security" },
+    { id: "danger", label: "Danger Zone", group: "danger", danger: true },
+  ];
+
   return (
-    <div className="mx-auto max-w-3xl px-6 py-10">
-      <div className="flex gap-12">
-        {/* Sidebar nav */}
-        <aside className="hidden md:block w-40 shrink-0">
-          <nav className="sticky top-10 flex flex-col">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">On this page</p>
-            <a href="#account" className="py-1 text-sm text-muted-foreground transition-colors hover:text-foreground">Account</a>
-            <a href="#favourites" className="py-1 text-sm text-muted-foreground transition-colors hover:text-foreground">Favourites</a>
-            <a href="#billing" className="py-1 text-sm text-muted-foreground transition-colors hover:text-foreground">Billing</a>
-            <a href="#two-factor" className="py-1 text-sm text-muted-foreground transition-colors hover:text-foreground">Security</a>
-            <a href="#danger" className="py-1 text-sm text-destructive/70 transition-colors hover:text-destructive">Danger Zone</a>
-          </nav>
-        </aside>
-
-        {/* Main content */}
-        <div className="flex-1 min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Manage your account preferences.</p>
-
-          <Separator className="my-6" />
-
+    <SettingsShell
+      title="Settings"
+      description="Manage your account preferences."
+      groups={USER_SETTINGS_GROUPS}
+      sections={settingsSections}
+    >
           {/* Account section */}
           <section id="account">
             <h2 className="text-base font-semibold">Account</h2>
@@ -2371,8 +2369,6 @@ export function UserSettingsPage() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
-        </div>
-      </div>
 
       <Dialog open={backupCodesOpen} onOpenChange={setBackupCodesOpen}>
         <DialogContent>
@@ -2409,6 +2405,6 @@ export function UserSettingsPage() {
       </Dialog>
 
       {twoFADialog}
-    </div>
+    </SettingsShell>
   );
 }
