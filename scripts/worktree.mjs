@@ -10,6 +10,7 @@
 // warm pnpm store (no re-download, near-zero disk; junctions, not symlinks, on Windows).
 //
 //   node scripts/worktree.mjs new <name> [--base <branch>] [--start]
+//   node scripts/worktree.mjs serve [--port <n>]   (run frontend from the current checkout)
 //   node scripts/worktree.mjs list
 //   node scripts/worktree.mjs rm <name> [--force]
 
@@ -136,6 +137,16 @@ async function allocPort(reg, name) {
   throw new Error(`No free port in ${PORT_MIN}-${PORT_MAX}; remove an old worktree first.`);
 }
 
+// Registry-free: first port in range with nothing serving on it. Used by `serve`, which
+// runs from any checkout (incl. an agent's own worktree) where the root registry can't
+// coordinate ports — the live probe avoids collisions across independent checkouts.
+async function findFreePort() {
+  for (let p = PORT_MIN; p <= PORT_MAX; p++) {
+    if (!(await isPortServing(p))) return p;
+  }
+  return null;
+}
+
 function storeDrive() {
   try {
     const p = execSync("pnpm store path", { cwd: root, encoding: "utf8" }).trim();
@@ -143,6 +154,16 @@ function storeDrive() {
   } catch {
     return parsePath(root).root.toUpperCase();
   }
+}
+
+// Robust frontend-dev invocation: run vite directly from the frontend package dir via
+// `pnpm exec`, which passes args straight to vite. Avoids `pnpm <script> -- <args>`, whose
+// `--` was observed leaking through to vite (so --port was ignored and Vite drifted ports).
+function frontendDir(checkout) {
+  return resolve(checkout, "packages", "frontend");
+}
+function viteCmd(port) {
+  return `pnpm exec vite --port ${port} --strictPort`;
 }
 
 // ---------- commands ----------
@@ -208,18 +229,19 @@ async function cmdNew(name, opts) {
   latest[name] = { port, path: wtPath };
   saveRegistry(latest);
 
-  const cmd = `pnpm --filter frontend dev -- --port ${port} --strictPort`;
+  const feDir = frontendDir(wtPath);
+  const cmd = viteCmd(port);
   console.log(`\n✓ Worktree ready: ${name}`);
   console.log(`  path:   ${wtPath}`);
   console.log(`  branch: ${name}`);
   console.log(`  review: http://localhost:${port}  (proxies /api → http://localhost:${BACKEND_PORT})`);
   console.log(`\n  Make sure the backend is up in the main checkout (\`pnpm dev\`), then:`);
-  console.log(`    cd "${wtPath}"`);
+  console.log(`    cd "${feDir}"`);
   console.log(`    ${cmd}`);
 
   if (opts.start) {
     console.log(`\n→ Starting frontend (Ctrl-C to stop)…\n`);
-    const r = spawnSync(cmd, { cwd: wtPath, stdio: "inherit", shell: true });
+    const r = spawnSync(cmd, { cwd: feDir, stdio: "inherit", shell: true });
     process.exit(r.status ?? (r.signal ? 1 : 0));
   }
 }
@@ -295,15 +317,58 @@ function cmdRm(name, opts) {
   }
 }
 
+// Run the frontend for review from the CURRENT checkout (this worktree), against the
+// shared backend on :8787. Creates no worktree and touches no registry — meant to be the
+// one-liner an isolated agent (e.g. an agent-view session in its own .claude/worktrees/
+// checkout) runs to expose a reviewable port. Auto-picks a free port unless --port is given.
+async function cmdServe(opts) {
+  let port = opts.port;
+  if (port != null) {
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      console.error(`✗ Invalid --port ${opts.port}. Use an integer 1-65535.`);
+      process.exit(1);
+    }
+  } else {
+    port = await findFreePort();
+    if (!port) {
+      console.error(`✗ No free port in ${PORT_MIN}-${PORT_MAX}. Pass --port <n> to override.`);
+      process.exit(1);
+    }
+  }
+
+  // Self-contained: a fresh agent worktree may not have deps yet. Install if missing
+  // (hardlinked from the warm store when on the same drive).
+  if (!existsSync(resolve(root, "node_modules"))) {
+    try {
+      step("pnpm install --frozen-lockfile", "pnpm install --frozen-lockfile", root);
+    } catch {
+      console.warn("⚠ frozen install failed — retrying with a normal install…");
+      step("pnpm install", "pnpm install", root);
+    }
+  }
+
+  const cmd = viteCmd(port);
+  console.log(`\n✓ Serving frontend for review`);
+  console.log(`  checkout: ${root}`);
+  console.log(`  review:   http://localhost:${port}  (proxies /api → http://localhost:${BACKEND_PORT})`);
+  console.log(`  note:     needs the shared backend up (\`pnpm dev\` in the main checkout) for /api calls.`);
+  console.log(`\n→ Starting (Ctrl-C to stop)…\n`);
+  const r = spawnSync(cmd, { cwd: frontendDir(root), stdio: "inherit", shell: true });
+  process.exit(r.status ?? (r.signal ? 1 : 0));
+}
+
 function usage() {
   console.log(
     `Annex worktree helper — parallel frontend dev servers against the shared backend on :${BACKEND_PORT}\n` +
       `\nUsage:\n` +
       `  node scripts/worktree.mjs new <name> [--base <branch>] [--start]\n` +
+      `  node scripts/worktree.mjs serve [--port <n>]\n` +
       `  node scripts/worktree.mjs list\n` +
       `  node scripts/worktree.mjs rm <name> [--force]\n` +
       `\n  new   Create a worktree on the repo's drive, install (hardlinked from the warm\n` +
       `        pnpm store), assign a stable frontend port, and print/run the dev command.\n` +
+      `  serve Run the frontend from the CURRENT checkout on a free (or --port) port — no\n` +
+      `        worktree created. The one-liner for an isolated agent to expose a review port.\n` +
       `  list  Show worktrees, assigned ports, and whether each port is serving.\n` +
       `  rm    Remove a worktree and free its port (--force for a dirty worktree).\n` +
       `\n  Run exactly ONE backend (the main checkout's \`pnpm dev\`); every worktree\n` +
@@ -314,19 +379,23 @@ function usage() {
 // ---------- entry ----------
 
 const [, , sub, ...rest] = process.argv;
-const opts = { base: undefined, start: false, force: false };
+const opts = { base: undefined, start: false, force: false, port: undefined };
 const positional = [];
 for (let i = 0; i < rest.length; i++) {
   const a = rest[i];
   if (a === "--base") opts.base = rest[++i];
   else if (a === "--start") opts.start = true;
   else if (a === "--force") opts.force = true;
+  else if (a === "--port") opts.port = Number(rest[++i]);
   else positional.push(a);
 }
 
 switch (sub) {
   case "new":
     await cmdNew(positional[0], opts);
+    break;
+  case "serve":
+    await cmdServe(opts);
     break;
   case "list":
   case "ls":

@@ -94,6 +94,7 @@ vite-config changes.
 
 ```
 node scripts/worktree.mjs new <name> [--base main] [--start]   # create + install + assign port
+node scripts/worktree.mjs serve [--port <n>]                   # run frontend from CURRENT checkout
 node scripts/worktree.mjs list                                 # worktrees, ports, serving status
 node scripts/worktree.mjs rm <name> [--force]                  # remove worktree, free port
 ```
@@ -106,3 +107,16 @@ model** — a schema migration on one branch hits everyone; run an isolated back
 if a branch needs its own schema. See `memories/Worktree-Dev.md` for the full workflow,
 caveats (per-port login, dev service-worker staleness, one-backend-at-a-time), and when to
 use this vs. the agents' built-in ephemeral `isolation: "worktree"`.
+
+### Exposing a review port from an agent (e.g. agent view)
+
+**If you are an agent that edited frontend code and the user wants to review it running:**
+expose a port by running, from your current checkout, **`node scripts/worktree.mjs serve`**
+(auto-picks a free port in 5200–5299) or **`node scripts/worktree.mjs serve --port <n>`**
+(fails fast on an invalid port or one already in use, via `--strictPort`), then **report the
+`http://localhost:<port>` URL** to the user. The server runs in the foreground and keeps the
+session alive; tell the user to pin the session (`Ctrl+T` in agent view) so it isn't reaped
+while idle. Notes: `serve` runs vite from the *current* checkout and installs deps first if
+missing, so it works inside an agent-view worktree (`.claude/worktrees/...`) as-is — **do not
+run `new` there** (the agent already has its own isolated worktree). `/api` calls still need
+the one shared backend up (`pnpm dev` in the main checkout) on `:8787`.

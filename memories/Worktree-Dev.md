@@ -36,6 +36,7 @@ one — it's both correct and fast.
 
 ```
 node scripts/worktree.mjs new <name> [--base main] [--start]
+node scripts/worktree.mjs serve [--port <n>]
 node scripts/worktree.mjs list
 node scripts/worktree.mjs rm <name> [--force]
 ```
@@ -44,15 +45,23 @@ node scripts/worktree.mjs rm <name> [--force]
   same drive; warns if cross-drive), `pnpm install --frozen-lockfile` (falls back to a plain
   install if the branch adds a brand-new dep not yet in the store — note `minimumReleaseAge:
   10080` in `pnpm-workspace.yaml`), assigns a stable port from 5200–5299, then prints the dev
-  command (or with `--start` runs `pnpm --filter frontend dev -- --port <port> --strictPort`).
+  command (or with `--start` runs it). Validates the name (safe git-branch chars only) and
+  refuses to install into a path that exists but isn't a real worktree.
+- **serve** — runs the frontend from the *current* checkout (creates no worktree, no registry),
+  auto-picking a free port in 5200–5299 (or `--port <n>`, guarded to 1–65535). Installs deps
+  first if missing. This is the one-liner an isolated agent runs to expose a review port — see
+  "Agent view" below.
 - **list** — parses `git worktree list --porcelain`, cross-references the registry, and probes
-  each port for serving status.
-- **rm** — `git worktree remove` and frees the port. The branch is left intact (merge/delete it
-  separately).
+  each port (concurrently, both IPv4+IPv6) for serving status.
+- **rm** — `git worktree remove`, then force-deletes the leftover dir (Windows leaves it) and
+  prunes; frees the port. With `--force`, cleanup runs even if the git remove fails. The branch
+  is left intact (merge/delete it separately).
 
-Ports are persisted in `.worktree-ports.json` at the repo root (gitignored), keyed by name, so
-a feature keeps the same review port across restarts. `--strictPort` makes Vite fail loudly
-instead of drifting, keeping the registry honest.
+The dev server is launched as **`pnpm exec vite --port <port> --strictPort`** run from the
+frontend package dir — *not* `pnpm <script> -- <args>`, whose `--` was observed leaking through
+to vite (so `--port` was ignored and Vite drifted to another port). `--strictPort` makes a taken
+port fail loudly. Ports are persisted in `.worktree-ports.json` at the repo root (gitignored),
+keyed by name, so a feature keeps the same review port across restarts.
 
 ## Caveats (and why)
 
@@ -78,3 +87,23 @@ instead of drifting, keeping the registry honest.
   subagent should produce a diff in isolation, not a reviewable server.
 - **Long-lived, human-reviewable features → `scripts/worktree.mjs new`.** Persistent branch +
   worktree + a frontend on a fixed port to open and review, then commit/merge and `rm`.
+
+## Agent view (`claude agents`)
+
+Agent view already isolates each background session in its own worktree under
+`.claude/worktrees/` (before the first edit) and its review model is **PR-centric** — there is
+no built-in dev-server/port/preview concept. So agents do **not** auto-expose a frontend. To get
+a reviewable port:
+
+1. Keep the one backend up in the main checkout (`pnpm dev` → `:8787` + shared DB).
+2. In the agent's prompt, tell it to **`node scripts/worktree.mjs serve`** (auto-port) or
+   `serve --port <n>` after editing, and to report the `http://localhost:<port>` URL. `serve`
+   runs from the agent's own checkout, so **don't tell it to run `new`** (it's already isolated).
+3. **Pin the session (`Ctrl+T`)** — a dev server keeps the session alive, but an unattached idle
+   session is reaped after ~1 h unless pinned.
+4. Open the reported URL, review, merge the PR/branch.
+
+Gotchas specific to agent view: each agent-view worktree has its *own* `.worktree-ports.json`, so
+the registry can't coordinate ports across agents — `serve`'s live port-probe handles collisions
+instead (assign explicit `--port`s in prompts if you want fixed URLs). Deleting a session **deletes
+its worktree** (merge/push first), and N parallel agents burn ~N× usage quota.
