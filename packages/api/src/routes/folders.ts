@@ -1,15 +1,10 @@
-import { okResponse, errorResponse, Errors, ROLE_RANK, type Session, type Folder, type Role } from "../lib";
+import { okResponse, errorResponse, Errors, ROLE_RANK, folderInProject, wouldCreateFolderCycle, type Session, type Folder, type Role } from "../lib";
 import type { Env } from "../index";
 
 async function getCallerRole(db: D1Database, projectId: string, userId: string): Promise<Role | null> {
-  const row = await db.prepare(`
-    SELECT pm.role
-    FROM projects p
-    LEFT JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = ? AND pm.accepted = 1
-    WHERE p.id = ?
-  `).bind(userId, projectId).first<{ role: Role | null }>();
-  if (row === null) return null;
-  return row.role ?? null;
+  const row = await db.prepare("SELECT role FROM project_members WHERE project_id = ? AND user_id = ? AND accepted = 1")
+    .bind(projectId, userId).first<{ role: Role }>();
+  return row?.role ?? null;
 }
 
 export async function handleFolders(
@@ -159,6 +154,11 @@ export async function handleFolders(
     const now = new Date().toISOString();
     const type = body.type ?? "docs";
 
+    // Parent folder (if any) must live in this project and share the type.
+    if (!(await folderInProject(env.DB, body.parentId, body.projectId, type))) {
+      return errorResponse(Errors.BAD_REQUEST);
+    }
+
     await env.DB.prepare(
       "INSERT INTO folders (id, name, type, project_id, parent_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
     ).bind(id, body.name, type, body.projectId, body.parentId ?? null, now).run();
@@ -177,6 +177,18 @@ export async function handleFolders(
     if (ROLE_RANK[role] < ROLE_RANK["editor"]) return errorResponse(Errors.FORBIDDEN);
 
     const body = await request.json<Partial<{ name: string; parentId: string | null }>>();
+
+    // Validate a re-parent: target must be in the same project + type, and the
+    // move must not create a cycle (which would make the recursive subtree CTEs
+    // loop forever — a DoS).
+    if (body.parentId !== undefined && body.parentId !== null) {
+      if (!(await folderInProject(env.DB, body.parentId, folder.project_id, folder.type))) {
+        return errorResponse(Errors.BAD_REQUEST);
+      }
+      if (body.parentId === folderId || (await wouldCreateFolderCycle(env.DB, folderId, body.parentId))) {
+        return errorResponse(Errors.BAD_REQUEST);
+      }
+    }
 
     const sets: string[] = [];
     const binds: (string | null)[] = [];

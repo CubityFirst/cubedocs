@@ -228,6 +228,37 @@ describe("handleStripeWebhook — customer.subscription.created/updated", () => 
     expect(db._statements[0]).toContain("SELECT 1 FROM webhook_events");
     expect(db._statements[1]).toContain("INSERT OR IGNORE INTO webhook_events");
   });
+
+  // Price-binding guard: when STRIPE_INK_PRICE_ID is configured, only a
+  // subscription on that price may grant Ink.
+  function makeEnvWithInkPrice(db: MockDB, priceId: string) {
+    return { ...makeEnv(db), STRIPE_INK_PRICE_ID: priceId } as Parameters<typeof handleStripeWebhook>[1];
+  }
+
+  it("grants Ink when a subscription item matches the configured Ink price", async () => {
+    mockConstructEvent({
+      ...event,
+      data: { object: { ...event.data.object, items: { data: [{ price: { id: "price_ink" }, current_period_end: 1_700_000_000 }] } } },
+    });
+    const db = makeDB();
+    const res = await handleStripeWebhook(makeRequest("{}"), makeEnvWithInkPrice(db, "price_ink"));
+    expect(res.status).toBe(200);
+    expect(db._statements[1]).toContain("INSERT INTO user_billing");
+    expect(db._bindCalls[1][3]).toBe("ink");
+  });
+
+  it("does NOT grant Ink for a subscription on a different price", async () => {
+    mockConstructEvent({
+      ...event,
+      data: { object: { ...event.data.object, items: { data: [{ price: { id: "price_other_cheaper" }, current_period_end: 1_700_000_000 }] } } },
+    });
+    const db = makeDB();
+    const res = await handleStripeWebhook(makeRequest("{}"), makeEnvWithInkPrice(db, "price_ink"));
+    expect(res.status).toBe(200);
+    // No user_billing write — only dedup lookup + post-success marker.
+    expect(db._statements.length).toBe(2);
+    expect(db._statements.some(s => s.includes("INSERT INTO user_billing"))).toBe(false);
+  });
 });
 
 describe("handleStripeWebhook — customer.subscription.deleted", () => {

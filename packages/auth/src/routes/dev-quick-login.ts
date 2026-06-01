@@ -6,7 +6,12 @@ import type { Env } from "../index";
 type Variant = "standard-free" | "standard-ink" | "admin-free" | "admin-ink";
 
 export async function handleDevQuickLogin(request: Request, env: Env): Promise<Response> {
-  if (env.DEV_QUICK_LOGIN !== "true") {
+  // This route mints a fully-valid (optionally admin) session with NO
+  // credentials. DEV_QUICK_LOGIN is the primary gate, but also hard-require a
+  // localhost deployment so a misconfigured flag in production can never
+  // expose credential-free admin minting (defence in depth).
+  const isLocalDeploy = /\blocalhost\b|127\.0\.0\.1/.test(env.APP_ORIGIN ?? "");
+  if (env.DEV_QUICK_LOGIN !== "true" || !isLocalDeploy) {
     return errorResponse(Errors.NOT_FOUND);
   }
 

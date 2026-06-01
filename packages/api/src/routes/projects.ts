@@ -223,11 +223,18 @@ export async function handleProjects(
           : env.DB.prepare(`${fileSelect} WHERE f.project_id = ? AND f.folder_id IS NULL ORDER BY f.name ASC`)
               .bind(projectId));
 
+    // Counts are only ever displayed for the folders in the current view
+    // (FileManager reads folderCounts[folder.id] for each rendered folder),
+    // so root the subtree at exactly those folders — the same set foldersQuery
+    // returns (parent_id IS folderFilter) — instead of every folder in the
+    // project. Each count is still a full descendant total; we just stop
+    // building closures for folders nobody asked about, which collapses the
+    // recursion from O(folders × depth) to ~O(folders) and the docs join with it.
     const countsQuery = isLimited
       ? null
       : env.DB.prepare(`
           WITH RECURSIVE subtree(ancestor_id, folder_id) AS (
-            SELECT id, id FROM folders WHERE project_id = ? AND type = 'docs'
+            SELECT id, id FROM folders WHERE project_id = ? AND type = 'docs' AND parent_id IS ?
             UNION ALL
             SELECT s.ancestor_id, f.id
               FROM folders f JOIN subtree s ON f.parent_id = s.folder_id
@@ -240,7 +247,7 @@ export async function handleProjects(
           FROM subtree s
           LEFT JOIN docs i ON i.folder_id = s.folder_id AND i.project_id = ?
           GROUP BY s.ancestor_id
-        `).bind(projectId, projectId, projectId);
+        `).bind(projectId, folderFilter, projectId, projectId);
 
     // Ancestor chain for the current folder (root → current), so the frontend
     // can rebuild breadcrumbs on a direct folder-URL load. Only fetched when a

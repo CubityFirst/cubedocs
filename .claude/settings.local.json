@@ -30,7 +30,10 @@
       "Bash(pnpm --filter api typecheck)",
       "Bash(pnpm --version)",
       "Bash(pnpm --filter auth exec tsc --noEmit)",
-      "Bash(pnpm *)"
+      "Bash(pnpm *)",
+      "Bash(Get-ChildItem -Path \"G:\\\\Scripts\\\\cubedocs\" -Directory)",
+      "Bash(Select-Object Name)",
+      "Bash(Get-ChildItem -Path \"G:\\\\Scripts\\\\cubedocs\\\\packages\" -Directory)"
     ]
   }
 }

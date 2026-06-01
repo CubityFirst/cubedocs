@@ -1,5 +1,6 @@
 import { verifyWebauthnAssertion } from "./webauthn";
 import { verifyTOTP } from "./totp";
+import { errorResponse, Errors } from "./lib";
 import type { Env } from "./index";
 
 export type MFAVerification = {
@@ -37,6 +38,22 @@ export async function requireMFA(
   const hasWebauthn = !!existingKey;
 
   if (!hasTOTP && !hasWebauthn) return null;
+
+  // Throttle real verification attempts per-user so a stolen/live session
+  // can't brute-force the 6-digit TOTP or a backup code to strip MFA. Keyed
+  // on userId rather than IP because every caller reaches the auth worker via
+  // the API worker's service-binding proxy, which does not forward
+  // CF-Connecting-IP. Only counted when a code/assertion is actually supplied;
+  // the "mfa_required" prompt path below is a normal flow and not throttled.
+  const attempting = !!(
+    verification.totpCode ||
+    verification.backupCode ||
+    (verification.challengeId && verification.webauthnResponse)
+  );
+  if (attempting) {
+    const { success } = await env.RATE_LIMITER_AUTH.limit({ key: `mfa:${userId}` });
+    if (!success) return errorResponse(Errors.RATE_LIMITED);
+  }
 
   if (verification.challengeId && verification.webauthnResponse) {
     return verifyWebauthnAssertion(

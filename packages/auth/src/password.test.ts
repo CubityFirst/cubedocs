@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { hashPassword, verifyPassword, needsRehash } from "./password";
+import { hashPassword, verifyPassword, needsRehash, DUMMY_PASSWORD_HASH } from "./password";
 
 describe("hashPassword", () => {
   it("returns the versioned pbkdf2 format", async () => {
@@ -56,6 +56,21 @@ describe("verifyPassword", () => {
     const stored = `${toHex(salt)}:${toHex(raw)}`;
     expect(await verifyPassword("legacy-pass", stored)).toBe(true);
     expect(await verifyPassword("wrong", stored)).toBe(false);
+  });
+});
+
+describe("DUMMY_PASSWORD_HASH (login timing-oracle defence)", () => {
+  it("is in the current versioned format at the full iteration count", () => {
+    expect(DUMMY_PASSWORD_HASH).toMatch(/^pbkdf2-1\$\d+\$[0-9a-f]+\$[0-9a-f]+$/);
+    const [, iter] = DUMMY_PASSWORD_HASH.split("$");
+    expect(Number.parseInt(iter, 10)).toBeGreaterThanOrEqual(100_000);
+    // No opportunistic rehash should ever be triggered by it.
+    expect(needsRehash(DUMMY_PASSWORD_HASH)).toBe(false);
+  });
+
+  it("runs a real derivation and never matches (returns false, does not throw)", async () => {
+    expect(await verifyPassword("anything", DUMMY_PASSWORD_HASH)).toBe(false);
+    expect(await verifyPassword("", DUMMY_PASSWORD_HASH)).toBe(false);
   });
 });
 

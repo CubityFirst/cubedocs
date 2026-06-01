@@ -1,5 +1,5 @@
 import { okResponse, errorResponse, Errors } from "../lib";
-import { verifyPassword, hashPassword, needsRehash } from "../password";
+import { verifyPassword, hashPassword, needsRehash, DUMMY_PASSWORD_HASH } from "../password";
 import { signJwt } from "../jwt";
 import { verifyTurnstile } from "../turnstile";
 import { verifyTOTP } from "../totp";
@@ -27,10 +27,11 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
     id: string; email: string; name: string; password_hash: string; created_at: string; moderation: number; totp_secret: string | null; force_password_change: number; is_admin: number; email_verified: number;
   }>();
 
-  if (!row) return errorResponse(Errors.UNAUTHORIZED);
-
-  const valid = await verifyPassword(body.password, row.password_hash);
-  if (!valid) return errorResponse(Errors.UNAUTHORIZED);
+  // Always run a PBKDF2 derivation, even when the account doesn't exist, so the
+  // response time can't be used to enumerate registered emails. The dummy hash
+  // never matches, so the missing-user branch still returns UNAUTHORIZED.
+  const valid = await verifyPassword(body.password, row?.password_hash ?? DUMMY_PASSWORD_HASH);
+  if (!row || !valid) return errorResponse(Errors.UNAUTHORIZED);
 
   const moderationResponse = checkModeration(row.moderation);
   if (moderationResponse) return moderationResponse;
@@ -39,10 +40,12 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
     return Response.json({ ok: false, error: "email_not_verified" }, { status: 403 });
   }
 
+  // Existence check only — stop at the first row instead of counting every
+  // credential. Backed by idx_webauthn_credentials_user (migration 0027).
   const webauthnResult = await env.DB.prepare(
-    "SELECT COUNT(*) as count FROM webauthn_credentials WHERE user_id = ?",
-  ).bind(row.id).first<{ count: number }>();
-  const hasWebauthn = (webauthnResult?.count ?? 0) > 0;
+    "SELECT 1 FROM webauthn_credentials WHERE user_id = ? LIMIT 1",
+  ).bind(row.id).first<{ 1: number }>();
+  const hasWebauthn = webauthnResult !== null;
   const hasTOTP = !!row.totp_secret;
 
   if (hasWebauthn && hasTOTP) {

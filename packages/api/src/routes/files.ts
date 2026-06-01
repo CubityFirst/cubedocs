@@ -1,4 +1,4 @@
-import { okResponse, errorResponse, Errors, ROLE_RANK, type Role } from "../lib";
+import { okResponse, errorResponse, Errors, ROLE_RANK, fileServeHeaders, folderInProject, type Role } from "../lib";
 import type { Env } from "../index";
 
 const MAX_SIZE = 50 * 1024 * 1024; // 50MB
@@ -77,8 +77,7 @@ export async function handleFiles(
     return new Response(await obj.arrayBuffer(), {
       status: 200,
       headers: {
-        "Content-Type": meta.mime_type || "application/octet-stream",
-        "Content-Disposition": `inline; filename="${meta.name}"`,
+        ...fileServeHeaders(meta.mime_type, meta.name),
         "Cache-Control": canUsePublishedAccess ? "public, max-age=3600" : "private, max-age=300, must-revalidate",
         "ETag": etag,
       },
@@ -184,6 +183,10 @@ export async function handleFiles(
         .bind(body.name, fileId).run();
     }
     if (body.folderId !== undefined) {
+      // Target folder must belong to this file's own project.
+      if (!(await folderInProject(env.DB, body.folderId, meta.project_id))) {
+        return errorResponse(Errors.BAD_REQUEST);
+      }
       await env.DB.prepare("UPDATE files SET folder_id = ? WHERE id = ?")
         .bind(body.folderId ?? null, fileId).run();
     }

@@ -17,7 +17,7 @@ export async function handleAi(
     // own table so the docs row stays narrow; LEFT JOIN gives us the cached
     // summary when one exists.
     const doc = await env.DB.prepare(
-      `SELECT d.id, d.title, d.project_id, d.updated_at,
+      `SELECT d.id, d.title, d.project_id, d.updated_at, pm.role AS caller_role,
               s.summary AS ai_summary, s.version AS ai_summary_version
        FROM docs d
        INNER JOIN project_members pm ON pm.project_id = d.project_id
@@ -28,10 +28,21 @@ export async function handleAi(
       title: string;
       project_id: string;
       updated_at: string;
+      caller_role: string;
       ai_summary: string | null;
       ai_summary_version: string | null;
     }>();
     if (!doc) return errorResponse(Errors.NOT_FOUND);
+
+    // A `limited` member has no project-wide read access — a doc_share is
+    // required to read this doc (mirrors the gate in docs.ts). Without this,
+    // summarizing would leak the body of any project doc to a limited member.
+    if (doc.caller_role === "limited") {
+      const hasShare = await env.DB.prepare(
+        "SELECT id FROM doc_shares WHERE doc_id = ? AND user_id = ? LIMIT 1",
+      ).bind(doc.id, user.userId).first();
+      if (!hasShare) return errorResponse(Errors.FORBIDDEN);
+    }
 
     // Verify AI is enabled for this project
     const project = await env.DB.prepare("SELECT ai_enabled FROM projects WHERE id = ?")

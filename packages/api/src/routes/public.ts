@@ -1,4 +1,4 @@
-import { okResponse, errorResponse, Errors } from "../lib";
+import { okResponse, errorResponse, Errors, fileServeHeaders } from "../lib";
 import { parseFrontmatter } from "../lib/frontmatter";
 import type { Env } from "../index";
 
@@ -165,8 +165,7 @@ export async function handlePublic(
     return new Response(await obj.arrayBuffer(), {
       status: 200,
       headers: {
-        "Content-Type": meta.mime_type || "application/octet-stream",
-        "Content-Disposition": `inline; filename="${meta.name}"`,
+        ...fileServeHeaders(meta.mime_type, meta.name),
         "Cache-Control": "public, max-age=3600",
       },
     });

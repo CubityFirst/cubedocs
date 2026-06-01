@@ -30,6 +30,36 @@ interface WsAttachment {
   clientId: number | null;
 }
 
+// Validates that every client state embedded in an awareness update claims the
+// connection's authenticated user id. A malicious editor can otherwise inject
+// awareness entries carrying another member's identity, spoofing their presence
+// avatar / cursor label to everyone else in the room. Returns false on any
+// mismatch or malformed payload so the caller drops the update (fail-closed).
+// Cursor-only / removal (null) states carry no identity and are allowed.
+//
+// Wire format mirrors y-protocols `encodeAwarenessUpdate`:
+//   varUint count, then per client: varUint clientID, varUint clock,
+//   varString JSON.stringify(state).
+export function awarenessUpdateIdentityOk(updateBytes: Uint8Array, expectedUserId: string): boolean {
+  try {
+    const d = decoding.createDecoder(updateBytes);
+    const numClients = decoding.readVarUint(d);
+    for (let i = 0; i < numClients; i++) {
+      decoding.readVarUint(d); // clientID
+      decoding.readVarUint(d); // clock
+      const stateStr = decoding.readVarString(d);
+      if (stateStr === "null") continue; // removal — no identity claimed
+      const state = JSON.parse(stateStr) as { user?: { id?: unknown } } | null;
+      if (state && state.user && "id" in state.user && state.user.id !== expectedUserId) {
+        return false;
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function toUint8Array(value: unknown): Uint8Array | null {
   if (value instanceof Uint8Array) return value;
   // wrangler dev can deserialize stored Uint8Arrays as plain objects
@@ -309,6 +339,15 @@ export class DocCollabRoom implements DurableObject {
           const updateBytes = decoding.readVarUint8Array(decoder);
 
           const attachment = ws.deserializeAttachment() as WsAttachment | null;
+
+          // Drop awareness updates that claim any identity other than this
+          // connection's authenticated user — prevents presence/cursor
+          // impersonation of another member. (Durable edit attribution already
+          // uses att.userId, not the client-supplied awareness state.)
+          if (attachment?.userId && !awarenessUpdateIdentityOk(updateBytes, attachment.userId)) {
+            break;
+          }
+
           if (attachment?.clientId === null) {
             try {
               const d = decoding.createDecoder(updateBytes);

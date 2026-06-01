@@ -119,6 +119,8 @@ export default {
       } else if (url.pathname === "/force-change-password" && request.method === "POST") {
         response = await handleForceChangePassword(request, env);
       } else if (url.pathname === "/verify-email" && request.method === "POST") {
+        const { success } = await env.RATE_LIMITER_EMAIL_VERIFY.limit({ key: ip });
+        if (!success) return addCorsHeaders(errorResponse(Errors.RATE_LIMITED));
         response = await handleVerifyEmail(request, env);
       } else if (url.pathname === "/verify-email/resend" && request.method === "POST") {
         const { success } = await env.RATE_LIMITER_EMAIL_VERIFY.limit({ key: ip });

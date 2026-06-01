@@ -159,6 +159,21 @@ export async function handleInvitePublic(
       return Response.json({ ok: false, error: "This invite link has reached its maximum uses.", status: 410 }, { status: 410 });
     }
 
+    // Re-validate the creator's CURRENT authority to grant this link's role.
+    // Without this, a link created by an admin who is later demoted or removed
+    // keeps minting its original role — letting a removed admin re-grant
+    // themselves access. Managing invite links requires admin+, and an admin
+    // may not grant admin (mirrors the POST creation rule above).
+    const creatorRole = await getCallerRole(env.DB, link.project_id, link.created_by);
+    if (
+      creatorRole === null ||
+      ROLE_RANK[creatorRole] < ROLE_RANK["admin"] ||
+      ROLE_RANK[creatorRole] < ROLE_RANK[link.role] ||
+      (creatorRole === "admin" && ROLE_RANK[link.role] >= ROLE_RANK["admin"])
+    ) {
+      return Response.json({ ok: false, error: "This invite link is no longer valid.", status: 410 }, { status: 410 });
+    }
+
     // Check if already a member (accepted or pending email invite)
     const existing = await env.DB.prepare("SELECT id, role, accepted FROM project_members WHERE project_id = ? AND user_id = ?")
       .bind(link.project_id, session.userId).first<{ id: string; role: Role; accepted: number }>();
@@ -166,14 +181,17 @@ export async function handleInvitePublic(
       if (existing.accepted === 1) {
         return Response.json({ ok: true, data: { projectId: link.project_id, alreadyMember: true, role: existing.role } });
       }
-      // Pending email invite — accept it via the link
+      // Pending email invite — accept it via the link. Keep the role an admin
+      // explicitly provisioned for this user; a link must NOT silently raise
+      // (or change) it, otherwise a more-permissive link would undo a
+      // deliberate lower-privilege invite. The link only flips `accepted`.
       await env.DB.batch([
-        env.DB.prepare("UPDATE project_members SET accepted = 1, role = ? WHERE id = ?")
-          .bind(link.role, existing.id),
+        env.DB.prepare("UPDATE project_members SET accepted = 1 WHERE id = ?")
+          .bind(existing.id),
         env.DB.prepare("UPDATE project_invite_links SET use_count = use_count + 1 WHERE id = ?")
           .bind(token),
       ]);
-      return okResponse({ projectId: link.project_id, role: link.role }, 201);
+      return okResponse({ projectId: link.project_id, role: existing.role }, 201);
     }
 
     // Look up user info from auth worker

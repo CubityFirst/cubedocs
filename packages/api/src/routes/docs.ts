@@ -1,4 +1,4 @@
-import { okResponse, errorResponse, Errors, ProjectFeatures, ROLE_RANK, type Session, type Doc, type Role } from "../lib";
+import { okResponse, errorResponse, Errors, ProjectFeatures, ROLE_RANK, folderInProject, type Session, type Doc, type Role } from "../lib";
 import { parseFrontmatter } from "../lib/frontmatter";
 import { indexDocLinks, invalidateProjectGraphIndex } from "../lib/docLinks";
 import { upsertFtsRow, deleteFtsRow } from "../lib/fts";
@@ -91,10 +91,15 @@ export async function handleDocs(
     if (caller === null) return errorResponse(Errors.FORBIDDEN);
     if (ROLE_RANK[caller.role] < ROLE_RANK["editor"]) return errorResponse(Errors.FORBIDDEN);
 
+    const folderId = body.folderId ?? null;
+    // Target folder (if any) must belong to this project and be a docs folder.
+    if (!(await folderInProject(env.DB, folderId, body.projectId, "docs"))) {
+      return errorResponse(Errors.BAD_REQUEST);
+    }
+
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     const content = body.content ?? "";
-    const folderId = body.folderId ?? null;
     const fm = parseFrontmatter(content);
     const sidebarPosition = fm.sidebar_position ?? null;
     const tags = fm.tags ? JSON.stringify(fm.tags) : null;
@@ -232,6 +237,11 @@ export async function handleDocs(
     if (isUpliftedEdit) {
       delete body.publishedAt;
       delete body.folderId;
+    }
+
+    // A move must target a folder in this doc's own project (and a docs folder).
+    if (body.folderId !== undefined && !(await folderInProject(env.DB, body.folderId, doc.project_id, "docs"))) {
+      return errorResponse(Errors.BAD_REQUEST);
     }
 
     const now = new Date().toISOString();

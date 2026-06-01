@@ -16,6 +16,14 @@ const LEGACY_ITERATIONS = 100_000;
 const HASH = "SHA-256";
 const FORMAT_PREFIX = "pbkdf2-1$";
 
+// A well-formed hash that no password will ever match. Used to equalise work
+// on the "user not found" login path so PBKDF2 timing can't be used as a
+// registration oracle (verifyPassword against this performs the same
+// 100k-iteration derivation as a real user). The hash bytes are arbitrary.
+export const DUMMY_PASSWORD_HASH =
+  `${FORMAT_PREFIX}${ITERATIONS}$00000000000000000000000000000000$` +
+  "0000000000000000000000000000000000000000000000000000000000000000";
+
 export async function hashPassword(password: string): Promise<string> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const hash = await derive(password, salt, ITERATIONS);

@@ -139,6 +139,17 @@ async function handleSubscriptionUpsert(env: Env, sub: Stripe.Subscription): Pro
     return;
   }
 
+  // Bind the Ink grant to the actual product purchased. Without this, ANY
+  // priced subscription carrying metadata.userId (a future second product, a
+  // sub created out-of-band on a different price) would flip the user to Ink.
+  // Only the configured Ink price grants the plan. (A promo/100%-off code on
+  // the Ink price itself still counts — that's a legitimate Ink subscription.)
+  const inkPriceId = env.STRIPE_INK_PRICE_ID;
+  if (inkPriceId && !sub.items.data.some(item => item.price?.id === inkPriceId)) {
+    console.warn(`subscription ${sub.id} for user ${userId} is not the Ink price; not granting Ink`);
+    return;
+  }
+
   const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer.id;
   // Stripe moved current_period_end from the subscription to per-item in
   // newer api versions. Try both — older SDK type defs still expose it
