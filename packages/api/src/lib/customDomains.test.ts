@@ -7,6 +7,7 @@ import {
   collectVerificationErrors,
   customDomainsConfigured,
   releaseCustomDomain,
+  removeCustomDomain,
   type CfCustomHostname,
 } from "./customDomains";
 
@@ -118,16 +119,16 @@ describe("customDomainsConfigured", () => {
 describe("releaseCustomDomain", () => {
   const CONFIG = { CF_API_TOKEN: "t", CF_ZONE_ID: "zone1", CUSTOM_DOMAIN_CNAME_TARGET: "docs.cubityfir.st" };
 
-  // Minimal D1 stub: prepare().bind().first() resolves to `row` (and records
-  // the SQL/params so we can assert the lookup happened — or didn't).
-  function fakeDb(row: { cf_hostname_id: string | null } | null) {
+  // Minimal D1 stub: prepare().bind().first() resolves to `row`, .run() is a
+  // no-op. Records each SQL/params so we can assert which statements ran.
+  function fakeDb(row: { cf_hostname_id: string | null; hostname?: string } | null) {
     const calls: { sql: string; params: unknown[] }[] = [];
     const DB = {
       prepare(sql: string) {
         return {
           bind(...params: unknown[]) {
             calls.push({ sql, params });
-            return { first: async () => row };
+            return { first: async () => row, run: async () => ({}) };
           },
         };
       },
@@ -182,5 +183,66 @@ describe("releaseCustomDomain", () => {
       },
     } as unknown as D1Database;
     await expect(releaseCustomDomain({ ...CONFIG, DB }, "proj1")).resolves.toBeUndefined();
+  });
+});
+
+describe("removeCustomDomain", () => {
+  const CONFIG = { CF_API_TOKEN: "t", CF_ZONE_ID: "zone1", CUSTOM_DOMAIN_CNAME_TARGET: "cname.yourannex.com" };
+
+  function fakeDb(row: { cf_hostname_id: string | null; hostname: string } | null) {
+    const calls: { sql: string; params: unknown[] }[] = [];
+    const DB = {
+      prepare(sql: string) {
+        return {
+          bind(...params: unknown[]) {
+            calls.push({ sql, params });
+            return { first: async () => row, run: async () => ({}) };
+          },
+        };
+      },
+    } as unknown as D1Database;
+    return { DB, calls };
+  }
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it("returns null and touches nothing else when no domain is mapped", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const { DB, calls } = fakeDb(null);
+    const result = await removeCustomDomain({ ...CONFIG, DB }, "proj1");
+    expect(result).toBeNull();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    // Only the lookup ran — no DELETE.
+    expect(calls.some(c => /DELETE FROM project_custom_domains/.test(c.sql))).toBe(false);
+  });
+
+  it("deregisters the CF hostname, drops the row, and returns the hostname", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({ success: true, result: { id: "cf123" } }), { status: 200 }));
+    const { DB, calls } = fakeDb({ cf_hostname_id: "cf123", hostname: "docs.acme.com" });
+    const result = await removeCustomDomain({ ...CONFIG, DB }, "proj1");
+    expect(result).toBe("docs.acme.com");
+    expect((fetchSpy.mock.calls[0][1] as RequestInit).method).toBe("DELETE");
+    expect(calls.some(c => /DELETE FROM project_custom_domains/.test(c.sql))).toBe(true);
+  });
+
+  it("still drops the DB row (and returns the hostname) when the CF delete fails", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ success: false, errors: [{ message: "boom" }] }), { status: 500 }),
+    );
+    const { DB, calls } = fakeDb({ cf_hostname_id: "cf123", hostname: "docs.acme.com" });
+    const result = await removeCustomDomain({ ...CONFIG, DB }, "proj1");
+    expect(result).toBe("docs.acme.com");
+    expect(calls.some(c => /DELETE FROM project_custom_domains/.test(c.sql))).toBe(true);
+  });
+
+  it("drops the row without calling CF when not configured", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const { DB, calls } = fakeDb({ cf_hostname_id: "cf123", hostname: "docs.acme.com" });
+    const result = await removeCustomDomain({ DB }, "proj1"); // no CF creds
+    expect(result).toBe("docs.acme.com");
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(calls.some(c => /DELETE FROM project_custom_domains/.test(c.sql))).toBe(true);
   });
 });

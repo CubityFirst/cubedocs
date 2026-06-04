@@ -86,6 +86,10 @@ export interface AdminProject {
   owner_id: string;
   features: number;
   created_at: string;
+  // Mapped custom domain (Cloudflare for SaaS), or null if none. status is the
+  // app-facing pending | active | error from project_custom_domains.
+  custom_domain: string | null;
+  custom_domain_status: string | null;
 }
 
 export interface AdminAuditEntry {
@@ -217,6 +221,15 @@ export async function updateProjectFeatures(id: string, features: number): Promi
 export async function deleteProject(id: string): Promise<void> {
   const res = await authFetch(`/api/projects/${id}`, { method: "DELETE" });
   await readOk(res, "Failed to delete project");
+}
+
+// Remove a site's custom domain (deregisters the Cloudflare custom hostname +
+// drops the DB row). Returns the removed hostname, or null if none was mapped.
+export async function removeProjectDomain(id: string): Promise<{ hostname: string | null }> {
+  const res = await authFetch(`/api/projects/${id}/domain`, { method: "DELETE" });
+  const json = (await res.json()) as { ok: boolean; data?: { hostname: string | null }; error?: string };
+  if (!json.ok) throw new Error(json.error ?? "Failed to remove custom domain");
+  return json.data ?? { hostname: null };
 }
 
 export async function reindexProjectFts(id: string): Promise<{ indexed: number }> {

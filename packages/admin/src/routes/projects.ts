@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { upsertFtsRow } from "../../../api/src/lib/fts";
-import { releaseCustomDomain } from "../../../api/src/lib/customDomains";
+import { releaseCustomDomain, removeCustomDomain } from "../../../api/src/lib/customDomains";
 import { writeAdminAudit } from "../audit";
 import type { AppEnv } from "../index";
 
@@ -14,17 +14,26 @@ const REINDEX_MAX_DOCS = 2000;
 const REINDEX_CHUNK = 10;
 
 // GET /api/projects?q=
+//
+// LEFT JOINs project_custom_domains so each row carries its mapped custom
+// domain (if any) + status, letting the UI show + offer to remove it.
 projectsRouter.get("/", async (c) => {
   const q = c.req.query("q") ?? "";
+  const cols =
+    "p.id, p.name, p.owner_id, p.features, p.created_at, " +
+    "cd.hostname AS custom_domain, cd.status AS custom_domain_status";
+  const join = "FROM projects p LEFT JOIN project_custom_domains cd ON cd.project_id = p.id";
+  type Row = {
+    id: string; name: string; owner_id: string; features: number; created_at: string;
+    custom_domain: string | null; custom_domain_status: string | null;
+  };
   const rows = q
     ? await c.env.DB.prepare(
-        "SELECT id, name, owner_id, features, created_at FROM projects WHERE name LIKE ? ORDER BY created_at DESC LIMIT 100",
-      )
-        .bind(`%${q}%`)
-        .all<{ id: string; name: string; owner_id: string; features: number; created_at: string }>()
+        `SELECT ${cols} ${join} WHERE p.name LIKE ? ORDER BY p.created_at DESC LIMIT 100`,
+      ).bind(`%${q}%`).all<Row>()
     : await c.env.DB.prepare(
-        "SELECT id, name, owner_id, features, created_at FROM projects ORDER BY created_at DESC LIMIT 100",
-      ).all<{ id: string; name: string; owner_id: string; features: number; created_at: string }>();
+        `SELECT ${cols} ${join} ORDER BY p.created_at DESC LIMIT 100`,
+      ).all<Row>();
   return c.json({ ok: true, data: rows.results });
 });
 
@@ -77,6 +86,26 @@ projectsRouter.post("/:id/reindex", async (c) => {
 
   await writeAdminAudit(c.env, session, "project.reindex", "project", projectId, { indexed });
   return c.json({ ok: true, data: { indexed } });
+});
+
+// DELETE /api/projects/:id/domain — remove a site's custom domain mapping.
+//
+// Deregisters the Cloudflare custom hostname (best-effort) and drops the
+// project_custom_domains row, leaving the site itself intact. Mirrors the
+// owner-facing DELETE /projects/:id/domain. No-op (200) when the site has no
+// mapped domain. Requires CF_API_TOKEN/CF_ZONE_ID on the admin worker for the
+// Cloudflare side to actually fire; the DB row is dropped regardless.
+projectsRouter.delete("/:id/domain", async (c) => {
+  const session = c.get("session");
+  const projectId = c.req.param("id");
+
+  const exists = await c.env.DB.prepare("SELECT id FROM projects WHERE id = ?")
+    .bind(projectId).first<{ id: string }>();
+  if (!exists) return c.json({ ok: false, error: "Not found" }, 404);
+
+  const hostname = await removeCustomDomain(c.env, projectId);
+  await writeAdminAudit(c.env, session, "project.domain.remove", "project", projectId, { hostname });
+  return c.json({ ok: true, data: { hostname } });
 });
 
 // DELETE /api/projects/:id

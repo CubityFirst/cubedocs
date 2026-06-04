@@ -254,3 +254,32 @@ export async function releaseCustomDomain(
     // Best-effort: never block project deletion on CF cleanup.
   }
 }
+
+// Fully unmap a site's custom domain WITHOUT deleting the site: deregister the
+// Cloudflare custom hostname (best-effort) AND drop the `project_custom_domains`
+// row. Unlike `releaseCustomDomain` (which runs before a project delete and
+// lets the cascade drop the row), this owns the row deletion itself, so it's
+// the right call for an admin "remove custom domain" action or any standalone
+// unmap. Returns the removed hostname, or null if the site had none mapped.
+//
+// The CF deregistration is best-effort (a CF hiccup must not leave the DB row
+// orphaned), but the DB row IS always deleted — that's the user-visible effect
+// the caller asked for.
+export async function removeCustomDomain(
+  env: CustomDomainEnv & { DB: D1Database },
+  projectId: string,
+): Promise<string | null> {
+  const row = await env.DB.prepare(
+    "SELECT hostname, cf_hostname_id FROM project_custom_domains WHERE project_id = ?",
+  ).bind(projectId).first<{ hostname: string; cf_hostname_id: string | null }>();
+  if (!row) return null;
+  if (customDomainsConfigured(env) && row.cf_hostname_id) {
+    try {
+      await cfDeleteCustomHostname(env, row.cf_hostname_id);
+    } catch {
+      // Best-effort CF cleanup; still drop the DB row below.
+    }
+  }
+  await env.DB.prepare("DELETE FROM project_custom_domains WHERE project_id = ?").bind(projectId).run();
+  return row.hostname;
+}

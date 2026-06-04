@@ -31,12 +31,14 @@ pattern = "admin.cubityfir.st"
 custom_domain = true
 
 [vars]
-# Cloudflare-for-SaaS custom domains — used ONLY to release a site's custom
-# hostname when an admin deletes the site (mirrors the api worker). Must match
-# the api worker's values. When CF_ZONE_ID / CF_API_TOKEN are unset,
-# releaseCustomDomain() is a safe no-op. See memories/Custom-Domains.md.
-CF_ZONE_ID = "14eabaaf9e2760f169a63e27c78f9b62"
-CUSTOM_DOMAIN_CNAME_TARGET = "docs.cubityfir.st"
+# Cloudflare-for-SaaS custom domains — used to release a site's custom hostname
+# when an admin removes a domain or deletes the site (mirrors the api worker).
+# MUST match the api worker's values (the dedicated yourannex.com zone — see
+# memories/Custom-Domains.md), and CF_API_TOKEN must be scoped to that zone.
+# When CF_ZONE_ID / CF_API_TOKEN are unset, the CF call is a safe no-op (the DB
+# row is still removed).
+CF_ZONE_ID = "397deb54a68d306201a295d1793fe84c"
+CUSTOM_DOMAIN_CNAME_TARGET = "cname.yourannex.com"
 
 [[unsafe.bindings]]
 name = "RATE_LIMITER_ADMIN"

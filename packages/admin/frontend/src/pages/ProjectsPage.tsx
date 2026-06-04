@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
-import { ChevronDown, ChevronRight, RefreshCw, Search, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Globe, RefreshCw, Search, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,7 +29,7 @@ import {
   SheetBody,
   SheetFooter,
 } from "@/components/ui/sheet";
-import { type AdminProject, listProjects, updateProjectFeatures, deleteProject, reindexProjectFts } from "@/lib/api";
+import { type AdminProject, listProjects, updateProjectFeatures, deleteProject, reindexProjectFts, removeProjectDomain } from "@/lib/api";
 
 const ProjectFeatures = {
   CUSTOM_LINK: 1,
@@ -67,9 +67,10 @@ interface ProjectRowProps {
   project: AdminProject;
   onSaved: (id: string, features: number) => void;
   onDeleted: (id: string) => void;
+  onDomainRemoved: (id: string) => void;
 }
 
-function ProjectRow({ project, onSaved, onDeleted }: ProjectRowProps) {
+function ProjectRow({ project, onSaved, onDeleted, onDomainRemoved }: ProjectRowProps) {
   const [expanded, setExpanded] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [savedFeatures, setSavedFeatures] = useState(project.features);
@@ -77,6 +78,7 @@ function ProjectRow({ project, onSaved, onDeleted }: ProjectRowProps) {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [reindexing, setReindexing] = useState(false);
+  const [removingDomain, setRemovingDomain] = useState(false);
 
   useEffect(() => {
     setSavedFeatures(project.features);
@@ -128,6 +130,19 @@ function ProjectRow({ project, onSaved, onDeleted }: ProjectRowProps) {
     }
   }
 
+  async function handleRemoveDomain() {
+    setRemovingDomain(true);
+    try {
+      const { hostname } = await removeProjectDomain(project.id);
+      onDomainRemoved(project.id);
+      toast.success(hostname ? `Removed custom domain ${hostname}` : "No custom domain was mapped");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to remove custom domain");
+    } finally {
+      setRemovingDomain(false);
+    }
+  }
+
   const dirty = pendingFeatures !== savedFeatures;
 
   return (
@@ -159,7 +174,8 @@ function ProjectRow({ project, onSaved, onDeleted }: ProjectRowProps) {
       {expanded && (
         <TableRow className="hover:bg-transparent bg-muted/20">
           <TableCell colSpan={4} className="py-3 pl-10 pr-6">
-            <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+            <div className="flex flex-col gap-3" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-2">
               <Sheet open={sheetOpen} onOpenChange={handleSheetOpen}>
                 <SheetTrigger asChild>
                   <Button size="sm" variant="outline">
@@ -228,6 +244,42 @@ function ProjectRow({ project, onSaved, onDeleted }: ProjectRowProps) {
                 </AlertDialogContent>
               </AlertDialog>
             </div>
+
+            {project.custom_domain && (
+              <div className="flex items-center gap-2 text-sm">
+                <Globe className="h-4 w-4 text-muted-foreground shrink-0" />
+                <span className="text-muted-foreground">Custom domain:</span>
+                <span className="font-mono">{project.custom_domain}</span>
+                {project.custom_domain_status && (
+                  <span className="text-xs text-muted-foreground">({project.custom_domain_status})</span>
+                )}
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button size="sm" variant="destructive" className="ml-auto" disabled={removingDomain}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                      {removingDomain ? "Removing..." : "Remove custom domain"}
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Remove custom domain?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This unmaps <strong>{project.custom_domain}</strong> from <strong>{project.name}</strong>:
+                        the Cloudflare custom hostname is deregistered and the mapping is cleared. The site itself
+                        is untouched and the owner can map a domain again later. This cannot be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction variant="destructive" onClick={handleRemoveDomain}>
+                        Remove
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
+            )}
+            </div>
           </TableCell>
         </TableRow>
       )}
@@ -277,6 +329,12 @@ export function ProjectsPage() {
 
   function handleDeleted(id: string) {
     setProjects(prev => prev.filter(p => p.id !== id));
+  }
+
+  function handleDomainRemoved(id: string) {
+    setProjects(prev =>
+      prev.map(p => (p.id === id ? { ...p, custom_domain: null, custom_domain_status: null } : p)),
+    );
   }
 
   return (
@@ -339,7 +397,7 @@ export function ProjectsPage() {
               </TableHeader>
               <TableBody>
                 {projects.map(project => (
-                  <ProjectRow key={project.id} project={project} onSaved={handleSaved} onDeleted={handleDeleted} />
+                  <ProjectRow key={project.id} project={project} onSaved={handleSaved} onDeleted={handleDeleted} onDomainRemoved={handleDomainRemoved} />
                 ))}
               </TableBody>
             </Table>
