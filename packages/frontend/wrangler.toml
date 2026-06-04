@@ -21,12 +21,17 @@ service = "annex-auth"
 pattern = "docs.cubityfir.st"
 custom_domain = true
 
-# Cloudflare-for-SaaS fallback route: catches every custom hostname that
-# customers CNAME to docs.cubityfir.st (and any other host on the zone without a
-# more-specific route) and serves it from this worker in host-mode. Required for
-# custom domains to resolve — without it, arbitrary SaaS hostnames have no Worker
-# route, fall through to the originless fallback origin, and return 522.
-# Exact custom_domain routes (docs/admin.cubityfir.st) take precedence over this.
+# Cloudflare-for-SaaS catch-all, on the DEDICATED `yourannex.com` zone. Customer
+# custom domains (their.domain -> cname.yourannex.com) arrive as custom hostnames
+# on that zone; this `*/*` route hands them to annex-frontend in host-mode.
+# Required — without it, custom hostnames hit the originless fallback origin and
+# return 522. The zone is dedicated to SaaS routing (nothing else lives on it),
+# so `*/*` is safe here: it can't shadow our own infra the way it did on
+# cubityfir.st (where it once hijacked i.cubityfir.st). The app itself still
+# serves on docs.cubityfir.st via the exact custom_domain route above.
+# NOTE: the OLD `*/*` route on the cubityfir.st zone must be deleted in the
+# dashboard — wrangler only manages the routes in this file and won't remove it.
+# See memories/Custom-Domains.md.
 [[routes]]
 pattern = "*/*"
-zone_name = "cubityfir.st"
+zone_name = "yourannex.com"

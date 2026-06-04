@@ -38,13 +38,15 @@ service = "annex-auth"
 
 [vars]
 ENVIRONMENT = "production"
-# Cloudflare for SaaS custom domains (see memories/Custom-Domains.md).
-# CUSTOM_DOMAIN_CNAME_TARGET is the hostname customers CNAME their domain to —
-# the zone's fallback origin. CF_ZONE_ID is the cubityfir.st zone id (uncomment
-# and fill to enable). When CF_ZONE_ID or CF_API_TOKEN is unset, the custom-
-# domain endpoints report "not configured" and never call Cloudflare.
-CUSTOM_DOMAIN_CNAME_TARGET = "docs.cubityfir.st"
-CF_ZONE_ID = "14eabaaf9e2760f169a63e27c78f9b62"
+# Cloudflare for SaaS custom domains (see memories/Custom-Domains.md). These live
+# on the DEDICATED `yourannex.com` zone, kept separate from cubityfir.st so the
+# SaaS `*/*` catch-all route can't shadow our own hosts (it once hijacked
+# i.cubityfir.st). CUSTOM_DOMAIN_CNAME_TARGET is the proxied hostname customers
+# CNAME their domain to; CF_ZONE_ID is the yourannex.com zone id. When CF_ZONE_ID
+# or CF_API_TOKEN is unset, the custom-domain endpoints report "not configured"
+# and never call Cloudflare.
+CUSTOM_DOMAIN_CNAME_TARGET = "cname.yourannex.com"
+CF_ZONE_ID = "397deb54a68d306201a295d1793fe84c"
 
 # Per-user limiter for the invite-by-email lookup. The auth worker's
 # /lookup also has its own coarser IP-keyed limiter — this one caps any

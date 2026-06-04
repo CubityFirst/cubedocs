@@ -42,11 +42,16 @@ The row caches CF state so the settings UI renders without hitting CF on every l
 
 ## One-time Cloudflare zone setup (prod — NOT done by code)
 
-1. **Enable Cloudflare for SaaS** on the `cubityfir.st` zone (paid add-on).
-2. **Fallback origin**: create an originless record (e.g. `service.cubityfir.st AAAA 100::`) and set it as the zone's fallback origin.
-3. **Worker route**: add `*/*` → `annex-frontend` so custom-hostname traffic reaches the frontend Worker (the "Workers as your fallback origin" pattern). More specific routes (e.g. `api.cubityfir.st/*` → none) can bypass it.
-4. **Config**: set `CF_ZONE_ID` (var) + `CUSTOM_DOMAIN_CNAME_TARGET` (var, default `docs.cubityfir.st`) in `packages/api/wrangler.toml`, and `wrangler secret put CF_API_TOKEN` (token scoped to the zone with **SSL and Certificates: Edit**).
-5. Customers then add: a **CNAME** `their.domain → CUSTOM_DOMAIN_CNAME_TARGET`, plus the **TXT** ownership + SSL-DCV records shown in Site Settings.
+**Lives on a DEDICATED zone — `yourannex.com` (zone id `397deb54a68d306201a295d1793fe84c`), NOT `cubityfir.st`.** The SaaS catch-all is a zone-wide `*/*` Worker route, which on a shared zone hijacks every other host (it once made `i.cubityfir.st` serve the SPA shell instead of R2 objects). A dedicated zone with nothing else on it makes `*/*` safe by construction — `cubityfir.st` keeps zero SaaS routes, so its `i.`/apex/subdomains are untouched with no carve-outs to maintain. (The app itself still serves on `docs.cubityfir.st` via the frontend's exact `custom_domain` route — only customer custom hostnames go through `yourannex.com`.)
+
+1. **Enable Cloudflare for SaaS** on the `yourannex.com` zone (paid add-on).
+2. **Fallback origin**: create an originless record `service.yourannex.com AAAA 100::` (proxied) and set it as the zone's SaaS fallback origin.
+3. **CNAME target**: create a proxied record `cname.yourannex.com AAAA 100::` (orange cloud) — the hostname customers point their CNAME at.
+4. **Worker route**: add `*/*` → `annex-frontend` on the `yourannex.com` zone (the "Workers as your fallback origin" pattern). This is declared in `packages/frontend/wrangler.toml` (`pattern="*/*" zone_name="yourannex.com"`), so deploying the frontend creates it.
+5. **Config** (`packages/api/wrangler.toml`): `CF_ZONE_ID = "397deb54a68d306201a295d1793fe84c"`, `CUSTOM_DOMAIN_CNAME_TARGET = "cname.yourannex.com"`, and `wrangler secret put CF_API_TOKEN` (token scoped to the **yourannex.com** zone with **SSL and Certificates: Edit**).
+6. Customers then add: a **CNAME** `their.domain → cname.yourannex.com`, plus the **TXT** ownership + SSL-DCV records shown in Site Settings.
+
+**Cleanup of the old shared-zone setup:** delete the stale `*/*` Worker route on the `cubityfir.st` zone (wrangler won't remove it — it only manages routes in the frontend toml, which now targets `yourannex.com`). No carve-out routes (`*.cubityfir.st/*` → None) are needed once `cubityfir.st` has no `*/*`.
 
 ## Local testing
 
