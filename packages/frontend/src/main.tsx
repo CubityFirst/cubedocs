@@ -2,6 +2,8 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { App } from "./App";
+import { CustomDomainApp } from "./CustomDomainApp";
+import { isCustomDomain } from "@/lib/siteUrl";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { applyFontVarsToRoot, readFontPrefsCookie } from "@/lib/fonts";
 import { applyThemeToRoot, readThemePrefsCookie, pathUsesUserTheme, DEFAULT_THEME_PREFS } from "@/lib/theme";
@@ -29,11 +31,15 @@ if (import.meta.env.VITE_BRANCH === "dev") {
   document.title = "Annex (dev)";
 }
 
+// On a customer's mapped custom domain we serve a single published site at the
+// root (host mode); on our own app hosts we run the full app.
+const Root = isCustomDomain() ? CustomDomainApp : App;
+
 createRoot(document.getElementById("app")!).render(
   <StrictMode>
     <BrowserRouter>
       <TooltipProvider>
-        <App />
+        <Root />
       </TooltipProvider>
     </BrowserRouter>
   </StrictMode>,

@@ -38,6 +38,13 @@ service = "annex-auth"
 
 [vars]
 ENVIRONMENT = "production"
+# Cloudflare for SaaS custom domains (see memories/Custom-Domains.md).
+# CUSTOM_DOMAIN_CNAME_TARGET is the hostname customers CNAME their domain to —
+# the zone's fallback origin. CF_ZONE_ID is the cubityfir.st zone id (uncomment
+# and fill to enable). When CF_ZONE_ID or CF_API_TOKEN is unset, the custom-
+# domain endpoints report "not configured" and never call Cloudflare.
+CUSTOM_DOMAIN_CNAME_TARGET = "docs.cubityfir.st"
+# CF_ZONE_ID = "<cubityfir.st zone id>"
 
 # Per-user limiter for the invite-by-email lookup. The auth worker's
 # /lookup also has its own coarser IP-keyed limiter — this one caps any
@@ -65,3 +72,5 @@ app_id = "08fb610f-b8ed-4a60-afcf-7f5fe6b9f948"
 # Secrets (set via `wrangler secret put`):
 #   JWT_SECRET      (same value as auth worker — used for local JWT verification)
 #   OPENAI_API_KEY  (OpenAI API key for AI summarisation feature)
+#   CF_API_TOKEN    (Cloudflare token scoped to the zone with "SSL and
+#                    Certificates: Edit" — used to create/poll custom hostnames)

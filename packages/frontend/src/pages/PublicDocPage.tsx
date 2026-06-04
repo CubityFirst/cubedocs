@@ -17,6 +17,7 @@ import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { getToken } from "@/lib/auth";
+import { useSiteRoute, siteHref } from "@/lib/siteUrl";
 import { cn } from "@/lib/utils";
 import { BookOpen, FileText, Folder, House, ChevronLeft, ChevronRight, Search, X, Image, FileCode, FileArchive, File, Music, Download, Network } from "lucide-react";
 
@@ -117,7 +118,7 @@ const DOC_ERASE    = "after:content-[''] after:absolute after:left-[-1px] after:
 
 function FolderNode({
   folder,
-  projectId,
+  href,
   folders,
   docs,
   files,
@@ -128,7 +129,7 @@ function FolderNode({
   selectedFileId,
 }: {
   folder: NavFolder;
-  projectId: string;
+  href: (docId: string) => string;
   folders: NavFolder[];
   docs: NavDoc[];
   files: NavFile[];
@@ -155,7 +156,7 @@ function FolderNode({
       </button>
       {open && (
         <div className="ml-3 border-l border-border">
-          <NavTree projectId={projectId} folders={folders} docs={docs} files={files} parentId={folder.id} depth={depth + 1} onFileClick={onFileClick} onDocClick={onDocClick} selectedFileId={selectedFileId} />
+          <NavTree href={href} folders={folders} docs={docs} files={files} parentId={folder.id} depth={depth + 1} onFileClick={onFileClick} onDocClick={onDocClick} selectedFileId={selectedFileId} />
         </div>
       )}
     </div>
@@ -163,7 +164,7 @@ function FolderNode({
 }
 
 function NavTree({
-  projectId,
+  href,
   folders,
   docs,
   files,
@@ -173,7 +174,7 @@ function NavTree({
   onDocClick,
   selectedFileId,
 }: {
-  projectId: string;
+  href: (docId: string) => string;
   folders: NavFolder[];
   docs: NavDoc[];
   files: NavFile[];
@@ -200,7 +201,7 @@ function NavTree({
           <FolderNode
             key={folder.id}
             folder={folder}
-            projectId={projectId}
+            href={href}
             folders={folders}
             docs={docs}
             files={files}
@@ -217,7 +218,7 @@ function NavTree({
         return (
           <NavLink
             key={doc.id}
-            to={`/s/${projectId}/${doc.id}`}
+            to={href(doc.id)}
             onClick={onDocClick}
             className={({ isActive }) =>
               `relative flex items-center gap-2 rounded-md py-1.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground pr-2 ${
@@ -326,7 +327,13 @@ function PublicFileView({ file, projectId }: { file: NavFile; projectId: string 
 }
 
 export function PublicDocPage() {
-  const { projectId, docId } = useParams<{ projectId: string; docId: string }>();
+  // In host mode (custom domain) the project comes from context and the site
+  // lives at clean root URLs; otherwise projectId is the /s/:projectId param.
+  const route = useSiteRoute();
+  const params = useParams<{ projectId: string; docId: string }>();
+  const hostMode = route.hostMode;
+  const docId = params.docId;
+  const projectId = hostMode ? route.slug : params.projectId;
   const isGraph = docId === "graph";
   const navigate = useNavigate();
   const location = useLocation();
@@ -357,6 +364,14 @@ export function PublicDocPage() {
     onSwipeRight: () => setSidebarOpen(true),
   });
 
+  // Canonical in-site link builder. Path mode → /s/<slug>/<docId> (slug prefers
+  // the vanity slug once loaded); host mode → /<docId> at the domain root.
+  const linkSlug = data?.project.vanity_slug ?? data?.project.id ?? projectId ?? "";
+  const href = useCallback(
+    (id: string, anchor?: string) => siteHref(route, linkSlug, id, anchor),
+    [route, linkSlug],
+  );
+
   const wysiwygCtx = useMemo(() => ({
     projectId: data?.project.id,
     isPublic: true,
@@ -365,11 +380,8 @@ export function PublicDocPage() {
     hideFrontmatter: true,
     docs: data?.docs ?? [],
     folders: data?.folders ?? [],
-    buildUrl: (id: string, anchor?: string) => {
-      const slug = data?.project.vanity_slug ?? data?.project.id ?? projectId ?? "";
-      return `/s/${slug}/${id}${anchor ? "#" + anchor : ""}`;
-    },
-  }), [projectId, docId, data]);
+    buildUrl: (id: string, anchor?: string) => href(id, anchor),
+  }), [docId, data, href]);
 
   useEffect(() => {
     setHasToken(!!getToken());
@@ -387,7 +399,7 @@ export function PublicDocPage() {
             const slug = json.data.vanity_slug ?? projectId;
             const homeDoc = json.data.home_doc_id ? json.data.docs.find(d => d.id === json.data!.home_doc_id) : null;
             const target = homeDoc ?? json.data.docs[0];
-            navigate(`/s/${slug}/${target.id}`, { replace: true });
+            navigate(hostMode ? `/${target.id}` : `/s/${slug}/${target.id}`, { replace: true });
           } else {
             setNotFound(true);
             setLoading(false);
@@ -446,14 +458,15 @@ export function PublicDocPage() {
       .finally(() => setLoading(false));
   }, [projectId, docId, isGraph, navigate]);
 
-  // Redirect raw UUID to vanity slug once we know it
+  // Redirect raw UUID to vanity slug once we know it. Path mode only — on a
+  // custom domain the project isn't in the URL, so there's nothing to canonicalize.
   useEffect(() => {
-    if (!data || !docId) return;
+    if (hostMode || !data || !docId) return;
     const slug = data.project.vanity_slug;
     if (slug && projectId !== slug) {
       navigate(`/s/${slug}/${docId}`, { replace: true });
     }
-  }, [data, projectId, docId, navigate]);
+  }, [hostMode, data, projectId, docId, navigate]);
 
   // Shared scroll-to-heading helper used by both the URL-hash effect below and
   // the outline buttons. Drives CodeMirror's own `scrollIntoView` against the
@@ -689,7 +702,7 @@ export function PublicDocPage() {
             </div>
             {data.project.published_graph_enabled === 1 && (
               <NavLink
-                to={`/s/${data.project.vanity_slug ?? data.project.id}/graph`}
+                to={href("graph")}
                 title="Graph"
                 className={({ isActive }) =>
                   `shrink-0 flex items-center justify-center rounded-md h-8 w-8 transition-colors hover:bg-accent hover:text-accent-foreground ${
@@ -710,7 +723,7 @@ export function PublicDocPage() {
                   filteredDocs.map(doc => (
                     <NavLink
                       key={doc.id}
-                      to={`/s/${data.project.vanity_slug ?? data.project.id}/${doc.id}`}
+                      to={href(doc.id)}
                       onClick={() => setSelectedFile(null)}
                       className={({ isActive }) =>
                         `flex items-center gap-2 rounded-md py-1.5 pl-2 pr-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground ${
@@ -729,12 +742,11 @@ export function PublicDocPage() {
               ) : (() => {
                 const homeDoc = data.docs!.find(d => d.is_home === 1);
                 const restDocs = homeDoc ? data.docs!.filter(d => d.id !== homeDoc.id) : data.docs!;
-                const slug = data.project.vanity_slug ?? data.project.id;
                 return (
                   <>
                     {homeDoc && (
                       <NavLink
-                        to={`/s/${slug}/${homeDoc.id}`}
+                        to={href(homeDoc.id)}
                         onClick={() => setSelectedFile(null)}
                         className={({ isActive }) =>
                           `flex items-center gap-2 rounded-md py-1.5 pl-2 pr-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground ${
@@ -747,7 +759,7 @@ export function PublicDocPage() {
                       </NavLink>
                     )}
                     <NavTree
-                      projectId={slug}
+                      href={href}
                       folders={data.folders ?? []}
                       docs={restDocs}
                       files={data.files ?? []}
@@ -804,7 +816,7 @@ export function PublicDocPage() {
             {graphData && graphData.nodes.length > 0 ? (
               <GraphView
                 data={graphData}
-                onNodeClick={id => navigate(`/s/${data.project.vanity_slug ?? data.project.id}/${id}`)}
+                onNodeClick={id => navigate(href(id))}
               />
             ) : (
               <div className="flex h-full items-center justify-center">
@@ -856,7 +868,6 @@ export function PublicDocPage() {
 
                   {(() => {
                     if (!data.docs || data.docs.length < 2) return null;
-                    const slug = data.project.vanity_slug ?? data.project.id;
                     const homeDoc = data.docs.find(d => d.is_home === 1);
                     const restDocs = homeDoc ? data.docs.filter(d => d.id !== homeDoc.id) : data.docs;
                     const orderedDocs: NavDoc[] = [
@@ -871,7 +882,7 @@ export function PublicDocPage() {
                       <div className="not-prose mt-12 flex justify-between gap-4">
                         {prevDoc ? (
                           <button
-                            onClick={() => navigate(`/s/${slug}/${prevDoc.id}`)}
+                            onClick={() => navigate(href(prevDoc.id))}
                             className="group flex flex-col gap-0.5 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-accent w-[calc(50%-8px)]"
                           >
                             <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
@@ -882,7 +893,7 @@ export function PublicDocPage() {
                         ) : <div />}
                         {nextDoc ? (
                           <button
-                            onClick={() => navigate(`/s/${slug}/${nextDoc.id}`)}
+                            onClick={() => navigate(href(nextDoc.id))}
                             className="group flex flex-col gap-0.5 rounded-lg border border-border bg-card p-4 text-right transition-colors hover:bg-accent w-[calc(50%-8px)] items-end ml-auto"
                           >
                             <span className="flex items-center justify-end gap-1.5 text-xs font-medium text-muted-foreground">
@@ -901,7 +912,6 @@ export function PublicDocPage() {
               {(() => {
                 const showLinkedDocs = data.project.published_graph_enabled === 1 && !!docId && !!graphData;
                 if (!showLinkedDocs && headings.length === 0) return null;
-                const slug = data.project.vanity_slug ?? data.project.id;
                 return (
                   <aside className="hidden xl:block w-56 shrink-0 py-10 pr-6">
                     <div className="sticky top-6">
@@ -910,7 +920,7 @@ export function PublicDocPage() {
                           data={graphData}
                           currentDocId={docId}
                           onExpand={() => setGraphExpanded(true)}
-                          onNodeClick={id => navigate(`/s/${slug}/${id}`)}
+                          onNodeClick={id => navigate(href(id))}
                         />
                       )}
                       {headings.length > 0 && (
@@ -974,8 +984,7 @@ export function PublicDocPage() {
                 data={graphData}
                 onNodeClick={id => {
                   setGraphExpanded(false);
-                  const slug = data.project.vanity_slug ?? data.project.id;
-                  navigate(`/s/${slug}/${id}`);
+                  navigate(href(id));
                 }}
               />
             )}

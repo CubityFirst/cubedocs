@@ -141,6 +141,25 @@ interface ApiKey {
   expiresAt: string | null;
 }
 
+interface DomainDnsRecord {
+  type: "CNAME" | "TXT";
+  name: string;
+  value: string;
+  note: string;
+}
+
+interface CustomDomain {
+  hostname: string;
+  status: "pending" | "active" | "error";
+  hostnameStatus: string | null;
+  sslStatus: string | null;
+  dnsRecords: DomainDnsRecord[];
+  verificationErrors: string[];
+  cnameTarget: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 const EXPIRY_OPTIONS = [
   { value: "never", label: "Never" },
   { value: "1d", label: "1 day" },
@@ -239,6 +258,17 @@ export function SiteSettingsPage() {
   const [vanitySlug, setVanitySlug] = useState("");
   const [savingSlug, setSavingSlug] = useState(false);
   const [slugError, setSlugError] = useState<string | null>(null);
+
+  // ── Custom domain (Cloudflare for SaaS) — gated by the same CUSTOM_LINK flag ──
+  const [domain, setDomain] = useState<CustomDomain | null>(null);
+  const [domainConfigured, setDomainConfigured] = useState(true);
+  const [domainCnameTarget, setDomainCnameTarget] = useState<string | null>(null);
+  const [domainInput, setDomainInput] = useState("");
+  const [savingDomain, setSavingDomain] = useState(false);
+  const [refreshingDomain, setRefreshingDomain] = useState(false);
+  const [removingDomain, setRemovingDomain] = useState(false);
+  const [domainError, setDomainError] = useState<string | null>(null);
+  const [copiedRecord, setCopiedRecord] = useState<string | null>(null);
 
   // Per-variant logo state. Square is cropped client-side via AvatarCropDialog
   // (1:1, 512×512); wide uploads native-aspect for the published-site header.
@@ -394,6 +424,24 @@ export function SiteSettingsPage() {
       .catch(() => {})
       .finally(() => setLoadingLinks(false));
   }, [projectId, token, myRole]);
+
+  // Load the custom-domain mapping when the CUSTOM_LINK feature is enabled and
+  // the caller can manage it (admin+). The endpoint enforces both server-side.
+  const customLinkEnabled = !!(project?.features ?? 0) && !!((project?.features ?? 0) & 1);
+  useEffect(() => {
+    if (!token || !projectId || !customLinkEnabled || !myRole) return;
+    if (ROLE_RANK[myRole] < ROLE_RANK["admin"]) return;
+    fetch(`/api/projects/${projectId}/domain`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then((json: { ok: boolean; data?: { configured: boolean; cnameTarget: string; domain: CustomDomain | null } }) => {
+        if (json.ok && json.data) {
+          setDomainConfigured(json.data.configured);
+          setDomainCnameTarget(json.data.cnameTarget || null);
+          setDomain(json.data.domain);
+        }
+      })
+      .catch(() => {});
+  }, [projectId, token, customLinkEnabled, myRole]);
 
   async function handleSaveName(e: React.FormEvent) {
     e.preventDefault();
@@ -967,6 +1015,87 @@ export function SiteSettingsPage() {
     }
   }
 
+  async function handleSaveDomain(e: React.FormEvent) {
+    e.preventDefault();
+    if (!projectId || !domainInput.trim()) return;
+    setSavingDomain(true);
+    setDomainError(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/domain`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ hostname: domainInput.trim() }),
+      });
+      const json = await res.json() as { ok: boolean; data?: { configured: boolean; domain: CustomDomain }; error?: string };
+      if (json.ok && json.data) {
+        setDomain(json.data.domain);
+        setDomainConfigured(json.data.configured);
+        setDomainCnameTarget(json.data.domain.cnameTarget || domainCnameTarget);
+        setDomainInput("");
+        toast({ title: "Domain added. Add the DNS records below to activate it." });
+      } else {
+        setDomainError(json.error ?? "Failed to add domain.");
+      }
+    } catch {
+      setDomainError("Could not connect to the server.");
+    } finally {
+      setSavingDomain(false);
+    }
+  }
+
+  async function handleRefreshDomain() {
+    if (!projectId) return;
+    setRefreshingDomain(true);
+    setDomainError(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/domain/refresh`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json() as { ok: boolean; data?: { domain: CustomDomain }; error?: string };
+      if (json.ok && json.data) {
+        setDomain(json.data.domain);
+        toast({ title: json.data.domain.status === "active" ? "Domain is active." : "Status refreshed." });
+      } else {
+        setDomainError(json.error ?? "Failed to refresh status.");
+      }
+    } catch {
+      setDomainError("Could not connect to the server.");
+    } finally {
+      setRefreshingDomain(false);
+    }
+  }
+
+  async function handleRemoveDomain() {
+    if (!projectId) return;
+    setRemovingDomain(true);
+    setDomainError(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/domain`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json() as { ok: boolean };
+      if (json.ok) {
+        setDomain(null);
+        toast({ title: "Custom domain removed." });
+      } else {
+        setDomainError("Failed to remove domain.");
+      }
+    } catch {
+      setDomainError("Could not connect to the server.");
+    } finally {
+      setRemovingDomain(false);
+    }
+  }
+
+  function handleCopyRecord(key: string, value: string) {
+    navigator.clipboard.writeText(value).then(() => {
+      setCopiedRecord(key);
+      setTimeout(() => setCopiedRecord(prev => (prev === key ? null : prev)), 2000);
+    }).catch(() => {});
+  }
+
   async function handleLeave() {
     if (!projectId || !currentUser) return;
     setLeaving(true);
@@ -1406,8 +1535,9 @@ export function SiteSettingsPage() {
                 }}
               />
             )}
-            {/* Custom Link — requires CUSTOM_LINK_ENABLED flag */}
+            {/* Custom Link & Domain — both gated by the CUSTOM_LINK flag */}
             {!!(project.features & 1) && (
+              <>
               <div id="custom-link" className="flex flex-col gap-3 rounded-md border border-border px-4 py-3">
                 <div>
                   <p className="text-sm font-medium flex items-center gap-2">Custom Link <PremiumBadge /></p>
@@ -1461,6 +1591,153 @@ export function SiteSettingsPage() {
                   )}
                 </form>
               </div>
+
+              {/* Custom Domain — map the site to the owner's own domain (Cloudflare for SaaS) */}
+              <div id="custom-domain" className="flex flex-col gap-3 rounded-md border border-border px-4 py-3">
+                <div>
+                  <p className="text-sm font-medium flex items-center gap-2">
+                    <Globe className="h-4 w-4 text-muted-foreground" /> Custom Domain <PremiumBadge />
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Serve your published site from a domain you own, e.g. <span className="font-mono">docs.example.com</span>.
+                  </p>
+                </div>
+
+                {!domainConfigured ? (
+                  <Alert>
+                    <AlertDescription>
+                      Custom domains aren't available on this deployment yet. Check back later.
+                    </AlertDescription>
+                  </Alert>
+                ) : !domain ? (
+                  <form onSubmit={handleSaveDomain} className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        id="custom-domain-input"
+                        value={domainInput}
+                        onChange={e => setDomainInput(e.target.value.toLowerCase().replace(/[^a-z0-9.-]/g, ""))}
+                        placeholder="docs.example.com"
+                        className="flex-1"
+                      />
+                      <Button type="submit" disabled={savingDomain || !domainInput.trim()}>
+                        {savingDomain ? "Adding…" : "Add domain"}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Enter a domain or subdomain you control. We'll give you the DNS records to add. Your site must be published for the domain to serve.
+                    </p>
+                  </form>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <a
+                          href={`https://${domain.hostname}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="truncate text-sm font-medium hover:underline"
+                        >
+                          {domain.hostname}
+                        </a>
+                        <Badge variant={domain.status === "active" ? "default" : domain.status === "error" ? "destructive" : "secondary"}>
+                          {domain.status === "active" ? "Active" : domain.status === "error" ? "Error" : "Pending"}
+                        </Badge>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRefreshDomain} disabled={refreshingDomain}>
+                          <RefreshCw className={`h-3.5 w-3.5 ${refreshingDomain ? "animate-spin" : ""}`} />
+                          {refreshingDomain ? "Checking…" : "Refresh"}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-muted-foreground hover:text-destructive"
+                          onClick={handleRemoveDomain}
+                          disabled={removingDomain}
+                        >
+                          {removingDomain ? "Removing…" : "Remove"}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {domain.status !== "active" && domain.dnsRecords.length > 0 && (
+                      <div className="flex flex-col gap-2">
+                        <p className="text-xs text-muted-foreground">
+                          Add these records at your DNS provider. We re-check automatically — click Refresh once they've propagated (this can take a few minutes).
+                        </p>
+                        <div className="overflow-x-auto rounded-md border border-border">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="border-b border-border bg-muted/40 text-left text-muted-foreground">
+                                <th className="px-2.5 py-1.5 font-medium">Type</th>
+                                <th className="px-2.5 py-1.5 font-medium">Name</th>
+                                <th className="px-2.5 py-1.5 font-medium">Value</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {domain.dnsRecords.map((rec, i) => (
+                                <tr key={i} className="border-b border-border align-top last:border-0">
+                                  <td className="px-2.5 py-2 font-mono">{rec.type}</td>
+                                  <td className="px-2.5 py-2">
+                                    <div className="flex items-start gap-1.5">
+                                      <code className="break-all font-mono">{rec.name}</code>
+                                      <button
+                                        type="button"
+                                        aria-label="Copy name"
+                                        onClick={() => handleCopyRecord(`${i}-name`, rec.name)}
+                                        className="mt-0.5 shrink-0 text-muted-foreground hover:text-foreground"
+                                      >
+                                        {copiedRecord === `${i}-name` ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                                      </button>
+                                    </div>
+                                  </td>
+                                  <td className="px-2.5 py-2">
+                                    <div className="flex items-start gap-1.5">
+                                      <code className="break-all font-mono">{rec.value}</code>
+                                      <button
+                                        type="button"
+                                        aria-label="Copy value"
+                                        onClick={() => handleCopyRecord(`${i}-value`, rec.value)}
+                                        className="mt-0.5 shrink-0 text-muted-foreground hover:text-foreground"
+                                      >
+                                        {copiedRecord === `${i}-value` ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                                      </button>
+                                    </div>
+                                    <p className="mt-1 text-[11px] text-muted-foreground">{rec.note}</p>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {domain.status === "active" && (
+                      <p className="text-xs text-muted-foreground">
+                        Your site is live at this domain. You can remove the SSL/ownership TXT records now if you like; keep the CNAME in place.
+                      </p>
+                    )}
+
+                    {domain.verificationErrors.length > 0 && (
+                      <Alert variant="destructive">
+                        <AlertDescription>
+                          <ul className="list-disc pl-4">
+                            {domain.verificationErrors.map((err, i) => <li key={i}>{err}</li>)}
+                          </ul>
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                  </div>
+                )}
+
+                {domainError && (
+                  <Alert variant="destructive">
+                    <AlertDescription>{domainError}</AlertDescription>
+                  </Alert>
+                )}
+              </div>
+              </>
             )}
           </div>
         </>

@@ -16,6 +16,7 @@ import { handleSearch, handlePublicSearch } from "./routes/search";
 import { handlePublicApi } from "./routes/v1";
 import { handleApiKeys } from "./routes/apiKeys";
 import { handleOrganizations } from "./routes/organizations";
+import { handleCustomDomain } from "./routes/customDomains";
 import { DocCollabRoom } from "./collab/DocCollabRoom";
 import { resolvePersonalPlan } from "../../auth/src/plan";
 import { resolveAvatar, parseVariant, avatarKey, deleteAllAvatarVariants } from "./avatar";
@@ -31,6 +32,12 @@ export interface Env {
   DOC_COLLAB?: DurableObjectNamespace;
   JWT_SECRET: string;
   OPENAI_API_KEY?: string;
+  // Cloudflare-for-SaaS custom domains (see routes/customDomains.ts). Optional:
+  // when unset, the custom-domain endpoints report "not configured" instead of
+  // calling Cloudflare. CF_API_TOKEN is a secret; the others are vars.
+  CF_API_TOKEN?: string;
+  CF_ZONE_ID?: string;
+  CUSTOM_DOMAIN_CNAME_TARGET?: string;
   RATE_LIMITER_INVITE_LOOKUP: { limit(opts: { key: string }): Promise<{ success: boolean }> };
   // Per-API-key limiter for the public /v1 surface (keyed by `apikey:<id>`).
   RATE_LIMITER_API?: { limit(opts: { key: string }): Promise<{ success: boolean }> };
@@ -674,6 +681,10 @@ export default {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
         response = await handleApiKeys(request, env, session, url);
+      } else if (/^\/projects\/[^/]+\/domain(\/refresh)?$/.test(url.pathname)) {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        response = await handleCustomDomain(request, env, session, url);
       } else if (/^\/projects\/[^/]+\/invite-links/.test(url.pathname)) {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;

@@ -40,8 +40,8 @@ const ProjectFeatures = {
 const FEATURE_FLAGS = [
   {
     bit: ProjectFeatures.CUSTOM_LINK,
-    label: "Custom Link",
-    description: "Enables a custom slug, making this site accessible at /s/SLUG",
+    label: "Custom Link & Domain",
+    description: "Enables a custom slug (/s/SLUG) and mapping the site to the owner's own domain (e.g. docs.example.com) via Cloudflare for SaaS, configured in Site Settings.",
   },
   {
     bit: ProjectFeatures.AI_FEATURES,

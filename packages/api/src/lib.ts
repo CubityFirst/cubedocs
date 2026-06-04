@@ -43,6 +43,8 @@ export interface Doc {
 }
 
 export const ProjectFeatures = {
+  // CUSTOM_LINK gates both the vanity slug (/s/<slug>) and mapping the site to
+  // the owner's own custom domain — they're one feature (see routes/customDomains.ts).
   CUSTOM_LINK: 1,
   AI_FEATURES: 2,
   REALTIME:    4,

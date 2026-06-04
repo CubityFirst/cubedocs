@@ -47,6 +47,22 @@ export async function handlePublic(
 
   const parts = url.pathname.replace(/^\/public\/?/, "").split("/");
 
+  // /public/site-by-host?host=docs.acme.com — resolve a mapped custom domain to
+  // its (published) site so the frontend can render it at the domain root. Only
+  // resolves published sites; an unpublished/unmapped host returns 404.
+  if (parts[0] === "site-by-host") {
+    const host = (url.searchParams.get("host") ?? "").trim().toLowerCase().replace(/\.$/, "");
+    if (!host) return errorResponse(Errors.NOT_FOUND);
+    const row = await env.DB.prepare(
+      `SELECT p.id, p.vanity_slug, p.name
+         FROM project_custom_domains cd
+         JOIN projects p ON p.id = cd.project_id
+        WHERE cd.hostname = ? AND p.published_at IS NOT NULL`,
+    ).bind(host).first<{ id: string; vanity_slug: string | null; name: string }>();
+    if (!row) return errorResponse(Errors.NOT_FOUND);
+    return okResponse({ projectId: row.id, vanitySlug: row.vanity_slug, name: row.name });
+  }
+
   // /public/projects/:id/logo/:variant — serve the site logo for a published project.
   // variant ∈ {"square","wide"}.
   if (parts[0] === "projects" && parts[1] && parts[2] === "logo" && parts[3]) {

@@ -8,6 +8,7 @@ import {
   CommandEmpty,
 } from "@/components/ui/command";
 import { getToken } from "@/lib/auth";
+import { useSiteRoute, siteHref } from "@/lib/siteUrl";
 import { FileText, Hash, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -80,6 +81,7 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false 
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const route = useSiteRoute();
 
   const tagMode = query.startsWith("#");
   const searchTerm = tagMode ? query.slice(1) : query;
@@ -125,7 +127,8 @@ export function SearchPalette({ open, onOpenChange, projectId, isPublic = false 
   function handleSelect(docId: string) {
     onOpenChange(false);
     if (isPublic) {
-      navigate(`/s/${projectId}/${docId}`);
+      // Host mode (custom domain) → clean root URL; otherwise /s/<slug>/<docId>.
+      navigate(siteHref(route, projectId, docId));
     } else {
       navigate(`/projects/${projectId}/docs/${docId}`);
     }
