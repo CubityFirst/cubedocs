@@ -501,8 +501,7 @@ export function DocsLayout() {
 
   return (
     <div className="relative h-screen overflow-hidden bg-background text-foreground">
-      {/* Sliding wrapper — sidebar + content translate as one unit on mobile; plain flex row on desktop */}
-      <div className={cn("flex h-full transition-transform duration-200", sidebarOpen ? "translate-x-0" : "-translate-x-64", "md:translate-x-0")}>
+      <div className="flex h-full">
       {/* Backdrop — mobile only: closes sidebar when tapping the content area */}
       {sidebarOpen && (
         <div
@@ -511,8 +510,13 @@ export function DocsLayout() {
         />
       )}
       <aside className={cn(
-        "relative z-20 flex flex-col shrink-0 border-r border-border bg-background w-64",
-        "md:transition-[width] md:duration-200",
+        "z-20 flex flex-col shrink-0 border-r border-border bg-background w-64",
+        // Mobile: fixed overlay that slides in over the content (doesn't push it wider).
+        "fixed inset-y-0 left-0 transition-transform duration-200",
+        sidebarOpen ? "translate-x-0" : "-translate-x-full",
+        // Desktop: static-flow column (relative, so it keeps its place in the row
+        // and anchors the toggle button) whose width collapses instead of translating.
+        "md:relative md:inset-auto md:translate-x-0 md:transition-[width] md:duration-200",
         sidebarOpen ? "md:w-64" : "md:w-0 md:border-r-0",
       )}>
         {/* Inner wrapper — clips content on desktop when collapsed; toggle button lives outside so it stays visible */}
@@ -716,8 +720,8 @@ export function DocsLayout() {
         </button>
       </aside>
 
-      {/* Main content */}
-      <main className="flex flex-col overflow-hidden min-w-full md:min-w-0 md:flex-1">
+      {/* Main content — full-width and static; the sidebar overlays it on mobile */}
+      <main className="flex flex-1 flex-col overflow-hidden min-w-0">
         {/* Breadcrumb bar — always at the top */}
         {breadcrumbs.length > 0 && (
           <div className="shrink-0 flex h-14 items-center gap-1 px-6 border-b border-border bg-background text-sm">
