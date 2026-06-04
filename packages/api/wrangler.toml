@@ -45,7 +45,7 @@ ENVIRONMENT = "production"
 # CNAME their domain to; CF_ZONE_ID is the yourannex.com zone id. When CF_ZONE_ID
 # or CF_API_TOKEN is unset, the custom-domain endpoints report "not configured"
 # and never call Cloudflare.
-CUSTOM_DOMAIN_CNAME_TARGET = "cname.yourannex.com"
+CUSTOM_DOMAIN_CNAME_TARGET = "publish.yourannex.com"
 CF_ZONE_ID = "397deb54a68d306201a295d1793fe84c"
 
 # Per-user limiter for the invite-by-email lookup. The auth worker's

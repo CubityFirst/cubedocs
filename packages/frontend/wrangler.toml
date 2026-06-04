@@ -22,7 +22,7 @@ pattern = "docs.cubityfir.st"
 custom_domain = true
 
 # Cloudflare-for-SaaS catch-all, on the DEDICATED `yourannex.com` zone. Customer
-# custom domains (their.domain -> cname.yourannex.com) arrive as custom hostnames
+# custom domains (their.domain -> publish.yourannex.com) arrive as custom hostnames
 # on that zone; this `*/*` route hands them to annex-frontend in host-mode.
 # Required — without it, custom hostnames hit the originless fallback origin and
 # return 522. The zone is dedicated to SaaS routing (nothing else lives on it),
