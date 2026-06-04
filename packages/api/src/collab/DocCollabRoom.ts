@@ -4,6 +4,8 @@ import * as awarenessProtocol from "y-protocols/awareness";
 import * as encoding from "lib0/encoding";
 import * as decoding from "lib0/decoding";
 import type { Env } from "../index";
+import { ROLE_RANK } from "../lib";
+import { resolveAccess } from "../lib/access";
 
 const MSG_SYNC = 0;
 const MSG_AWARENESS = 1;
@@ -23,6 +25,28 @@ const MAX_DOC_STATE_BYTES = 2 * 1024 * 1024;
 // delta since the last check exceeds this. Updates are append-merged, so summed delta is
 // an upper bound on growth between checks.
 const DELTA_RECHECK_BYTES = 64 * 1024;
+
+// A collab socket is authorized exactly ONCE, at WebSocket upgrade
+// (handleCollabUpgrade in index.ts). Every other surface resolves access at read
+// time, but nothing tears down a live socket, so a user who loses editor access
+// mid-session (direct member removal/demotion, org-member removal, whole-org
+// delete) would keep editing until they disconnect. We re-resolve effective
+// access for every connected socket, piggybacked on incoming room traffic (no
+// timer — WS hibernation is preserved) and throttled to at most once per room
+// per this interval, closing any socket that no longer has editor+ (1008). This
+// bounds the leak window for an actively-trafficked room to ~this long.
+//
+// Writes are always cut: a revoked sender's own in-flight frame is dropped (see
+// webSocketMessage). The only residual is a revoked user who goes fully idle —
+// they keep a read view of FUTURE broadcast edits until ANY participant sends a
+// frame, which re-arms this sweep and closes them; a fully idle room broadcasts
+// nothing, so there is nothing to leak.
+//
+// We deliberately do NOT fan a close out from the membership routes: that would
+// instantiate one DO per doc across the whole site (or whole org), on every
+// membership change — CF subrequest limits + latency — whereas this only ever
+// runs in rooms that already hold a live socket.
+const AUTH_RECHECK_MS = 15_000;
 
 interface WsAttachment {
   userId: string;
@@ -85,6 +109,11 @@ export class DocCollabRoom implements DurableObject {
   // NOT write that emptiness over the real content in R2. Once true, an
   // empty doc is a genuine delete-all and MUST be persisted.
   private contentLoaded = false;
+  // Site id for this room's doc, cached from the connect-time docKey so the
+  // access re-check doesn't re-read storage every sweep.
+  private projectId: string | null = null;
+  // Wall-clock of the last access-revalidation sweep; throttles revalidateAccess.
+  private lastAuthSweepAt = 0;
 
   constructor(ctx: DurableObjectState, env: Env) {
     this.ctx = ctx;
@@ -216,6 +245,7 @@ export class DocCollabRoom implements DurableObject {
     const userName = request.headers.get("X-User-Name") ?? "";
     const projectId = request.headers.get("X-Project-Id") ?? "";
     const docId = request.headers.get("X-Doc-Id") ?? "";
+    if (projectId) this.projectId = projectId;
 
     try {
       const existingKey = await this.ctx.storage.get<string>("docKey");
@@ -262,6 +292,70 @@ export class DocCollabRoom implements DurableObject {
     return new Response(null, { status: 101, webSocket: client });
   }
 
+  // Re-resolve effective access for every currently-connected socket and close
+  // any whose user no longer has editor+ on the site (membership removed,
+  // demoted below editor, org membership revoked, or org deleted). Throttled to
+  // once per AUTH_RECHECK_MS and driven by incoming traffic, so it adds no timer
+  // and only runs for rooms with live sockets. Returns the set of userIds closed
+  // this sweep so the caller can drop the in-flight frame of a now-revoked sender.
+  private async revalidateAccess(): Promise<Set<string>> {
+    const revoked = new Set<string>();
+    const now = Date.now();
+    if (now - this.lastAuthSweepAt < AUTH_RECHECK_MS) return revoked;
+    this.lastAuthSweepAt = now;
+
+    const sockets = this.ctx.getWebSockets();
+    if (sockets.length === 0) return revoked;
+
+    let projectId = this.projectId;
+    if (!projectId) {
+      const docKey = await this.ctx.storage.get<string>("docKey");
+      projectId = docKey ? docKey.split("/")[0] : null;
+      this.projectId = projectId;
+    }
+    if (!projectId) return revoked; // can't resolve without it — fail open (no worse than before)
+    const pid = projectId;
+
+    // Resolve every DISTINCT connected user once, in parallel — one indexed read
+    // each. editor+ keeps the socket; anything lower (or null = no membership)
+    // gets closed. A transient resolver/DB error fails OPEN for that user: we
+    // don't tear down a live session over a blip (reconnect re-checks at upgrade).
+    const uids = new Set<string>();
+    for (const ws of sockets) {
+      const uid = (ws.deserializeAttachment() as WsAttachment | null)?.userId;
+      if (uid) uids.add(uid);
+    }
+    if (uids.size === 0) return revoked;
+    const allowedById = new Map<string, boolean>();
+    await Promise.all([...uids].map(async (uid) => {
+      try {
+        const access = await resolveAccess(this.env.DB, pid, uid);
+        allowedById.set(uid, access !== null && ROLE_RANK[access.role] >= ROLE_RANK["editor"]);
+      } catch {
+        allowedById.set(uid, true);
+      }
+    }));
+
+    // Close every socket whose user lost access. Clean up the closed socket's Yjs
+    // awareness explicitly (and broadcast the removal): a server-initiated
+    // ws.close() does NOT reliably invoke webSocketClose under this worker's compat
+    // date, and the awareness expiry timer is disabled (see ensureLoaded), so
+    // without this the revoked user's cursor/avatar would linger for everyone else.
+    for (const ws of sockets) {
+      const att = ws.deserializeAttachment() as WsAttachment | null;
+      const uid = att?.userId;
+      if (!att || !uid) continue;
+      if (allowedById.get(uid) === false) {
+        revoked.add(uid);
+        if (this.awareness && att.clientId != null) {
+          try { awarenessProtocol.removeAwarenessStates(this.awareness, [att.clientId], ws); } catch { /* */ }
+        }
+        try { ws.close(1008, "access revoked"); } catch { /* */ }
+      }
+    }
+    return revoked;
+  }
+
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
     // Reject oversized frames before doing any work. String length undercounts UTF-8 bytes
     // but Yjs traffic is binary; a string this long is itself anomalous.
@@ -277,6 +371,15 @@ export class DocCollabRoom implements DurableObject {
       if (this.frozen) {
         try { ws.close(1008, "doc size limit exceeded"); } catch { /* */ }
         return;
+      }
+
+      // Re-authorize the room (throttled). If THIS sender just lost access, drop
+      // their in-flight frame so a revoked editor's last message can't still
+      // mutate the doc after their socket is closed.
+      const revoked = await this.revalidateAccess();
+      if (revoked.size > 0) {
+        const self = ws.deserializeAttachment() as WsAttachment | null;
+        if (self?.userId && revoked.has(self.userId)) return;
       }
 
       const data = typeof message === "string"

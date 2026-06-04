@@ -1,4 +1,4 @@
-import { okResponse, errorResponse, Errors } from "../lib";
+import { okResponse, errorResponse, Errors, normalizeEmail } from "../lib";
 import { verifyWebauthnAssertion } from "../webauthn";
 import { signJwt } from "../jwt";
 import { checkModeration } from "./login";
@@ -20,7 +20,7 @@ export async function handleWebauthnAuthFinish(request: Request, env: Env): Prom
   const user = await env.DB.prepare(
     "SELECT id, email, name, created_at, moderation, force_password_change, is_admin FROM users WHERE id = ? AND email = ?",
   )
-    .bind(body.userId, body.email.toLowerCase())
+    .bind(body.userId, normalizeEmail(body.email))
     .first<{ id: string; email: string; name: string; created_at: string; moderation: number; force_password_change: number; is_admin: number }>();
   if (!user) return errorResponse(Errors.UNAUTHORIZED);
 

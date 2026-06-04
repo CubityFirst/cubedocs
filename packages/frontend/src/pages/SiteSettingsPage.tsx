@@ -42,7 +42,7 @@ import type { DocsLayoutContext } from "@/layouts/DocsLayout";
 import { UserProfileCard } from "@/components/UserProfileCard";
 import { InlineSaveControls } from "@/components/InlineSaveControls";
 import { AvatarCropDialog } from "@/components/AvatarCropDialog";
-import { Globe, House, Link, Lock, Copy, Check, X, Network, Plus, ChevronDown, RefreshCw, Upload, ImageIcon, AlertTriangle, KeyRound } from "lucide-react";
+import { Globe, House, Link, Lock, Copy, Check, X, Network, Plus, ChevronDown, RefreshCw, Upload, ImageIcon, AlertTriangle, KeyRound, Building2 } from "lucide-react";
 import { SettingsShell, type SettingsGroupDef, type SettingsSectionDef } from "@/components/settings/SettingsShell";
 
 type Role = "limited" | "viewer" | "editor" | "admin" | "owner";
@@ -98,6 +98,8 @@ interface Project {
   home_doc_id: string | null;
   logo_square_updated_at: string | null;
   logo_wide_updated_at: string | null;
+  organization_id: string | null;
+  organization_name: string | null;
   role: Role;
 }
 
@@ -221,6 +223,8 @@ export function SiteSettingsPage() {
 
   const [leaveOpen, setLeaveOpen] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  const [detachOrgOpen, setDetachOrgOpen] = useState(false);
+  const [detaching, setDetaching] = useState(false);
   const [leaveError, setLeaveError] = useState<string | null>(null);
 
   const [unpublishedDocCount, setUnpublishedDocCount] = useState(0);
@@ -985,6 +989,29 @@ export function SiteSettingsPage() {
     }
   }
 
+  async function handleDetach() {
+    if (!projectId || !project?.organization_id) return;
+    setDetaching(true);
+    try {
+      const res = await fetch(`/api/organizations/${project.organization_id}/projects/${projectId}/attach`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json() as { ok: boolean };
+      if (json.ok) {
+        setProject(prev => prev ? { ...prev, organization_id: null, organization_name: null } : prev);
+        setDetachOrgOpen(false);
+        toast({ title: "Site detached from the organization." });
+      } else {
+        toast({ title: "Failed to detach site.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Could not connect to the server.", variant: "destructive" });
+    } finally {
+      setDetaching(false);
+    }
+  }
+
   async function handleExport() {
     if (!projectId) return;
     setExporting(true);
@@ -1123,6 +1150,41 @@ export function SiteSettingsPage() {
           <Alert variant="destructive">
             <AlertDescription>{saveError}</AlertDescription>
           </Alert>
+        )}
+
+        {project.organization_id && (
+          <div className="flex flex-col gap-1.5">
+            <Label>Organization</Label>
+            <div className="flex items-center justify-between gap-3 rounded-md border border-border px-4 py-3">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <Building2 className="h-4 w-4 shrink-0 text-primary" />
+                <p className="truncate text-sm">
+                  Part of <span className="font-medium">{project.organization_name ?? "an organization"}</span>
+                </p>
+              </div>
+              {isOwner && (
+                <AlertDialog open={detachOrgOpen} onOpenChange={setDetachOrgOpen}>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="outline" size="sm" className="shrink-0">Detach</Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Detach from {project.organization_name}?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Members of the organization will lose the access they had to this site through it. Direct site members are unaffected.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction disabled={detaching} onClick={handleDetach}>
+                        {detaching ? "Detaching…" : "Detach"}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+            </div>
+          </div>
         )}
       </div>
 

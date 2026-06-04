@@ -19,6 +19,8 @@ import { UserProfilePage } from "./pages/UserProfilePage";
 import { PublicDocPage } from "./pages/PublicDocPage";
 import { AcceptInvitePage } from "./pages/AcceptInvitePage";
 import { PendingInvitesPage } from "./pages/PendingInvitesPage";
+import { OrgPage } from "./pages/OrgPage";
+import { OrgSettingsPage } from "./pages/OrgSettingsPage";
 import { TagPage } from "./pages/TagPage";
 import { PrivacyPage } from "./pages/PrivacyPage";
 import { TermsPage } from "./pages/TermsPage";
@@ -62,6 +64,8 @@ export function App() {
           <Route path="/settings" element={<UserSettingsPage />} />
           <Route path="/u/:userId" element={<UserProfilePage />} />
           <Route path="/invites/pending" element={<PendingInvitesPage />} />
+          <Route path="/orgs/:orgId" element={<OrgPage />} />
+          <Route path="/orgs/:orgId/settings" element={<OrgSettingsPage />} />
         </Route>
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="/terms" element={<TermsPage />} />

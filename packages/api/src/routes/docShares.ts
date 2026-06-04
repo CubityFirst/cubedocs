@@ -1,14 +1,9 @@
 import { okResponse, errorResponse, Errors, ROLE_RANK, type Role } from "../lib";
 import type { Env } from "../index";
 import type { Session } from "../lib";
+import { resolveRole } from "../lib/access";
 
 type SharePermission = "view" | "edit";
-
-async function getCallerRole(db: D1Database, projectId: string, userId: string): Promise<Role | null> {
-  const row = await db.prepare("SELECT role FROM project_members WHERE project_id = ? AND user_id = ? AND accepted = 1")
-    .bind(projectId, userId).first<{ role: Role }>();
-  return row?.role ?? null;
-}
 
 function isValidPermission(p: unknown): p is SharePermission {
   return p === "view" || p === "edit";
@@ -29,7 +24,7 @@ export async function handleDocShares(
   const folderShareMatch = url.pathname.match(/^\/projects\/([^/]+)\/folder-shares$/);
   if (folderShareMatch && request.method === "POST") {
     const projectId = folderShareMatch[1];
-    const callerRole = await getCallerRole(env.DB, projectId, user.userId);
+    const callerRole = await resolveRole(env.DB, projectId, user.userId);
     if (callerRole === null) return errorResponse(Errors.NOT_FOUND);
     if (ROLE_RANK[callerRole] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
 
@@ -71,7 +66,7 @@ export async function handleDocShares(
     .bind(docId).first<{ project_id: string }>();
   if (!meta) return errorResponse(Errors.NOT_FOUND);
 
-  const callerRole = await getCallerRole(env.DB, meta.project_id, user.userId);
+  const callerRole = await resolveRole(env.DB, meta.project_id, user.userId);
   if (callerRole === null) return errorResponse(Errors.NOT_FOUND);
   if (ROLE_RANK[callerRole] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
 

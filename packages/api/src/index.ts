@@ -15,9 +15,11 @@ import { handleProjectExport } from "./routes/export";
 import { handleSearch, handlePublicSearch } from "./routes/search";
 import { handlePublicApi } from "./routes/v1";
 import { handleApiKeys } from "./routes/apiKeys";
+import { handleOrganizations } from "./routes/organizations";
 import { DocCollabRoom } from "./collab/DocCollabRoom";
 import { resolvePersonalPlan } from "../../auth/src/plan";
 import { resolveAvatar, parseVariant, avatarKey, deleteAllAvatarVariants } from "./avatar";
+import { resolveAccess } from "./lib/access";
 
 export { DocCollabRoom };
 
@@ -265,6 +267,9 @@ export default {
           if (!updateRes.ok) return addCorsHeaders(errorResponse(Errors.INTERNAL));
           const trimmedName = body.name.trim();
           await env.DB.prepare("UPDATE project_members SET name = ? WHERE user_id = ?")
+            .bind(trimmedName, session.userId).run();
+          // Keep org-membership rows' denormalized name in sync too.
+          await env.DB.prepare("UPDATE organization_members SET name = ? WHERE user_id = ?")
             .bind(trimmedName, session.userId).run();
           responseData.name = trimmedName;
         }
@@ -522,6 +527,16 @@ export default {
           return addCorsHeaders(Response.json({ ok: false, error: "owns_projects" }, { status: 400 }));
         }
 
+        // Same guard for organizations: an owned org has no transfer path and
+        // its owner row can't be removed/re-roled, so deleting the account would
+        // orphan it. Force the user to delete/hand off owned orgs first.
+        const ownedOrgCount = await env.DB.prepare(
+          "SELECT COUNT(*) as count FROM organizations WHERE owner_id = ?",
+        ).bind(session.userId).first<{ count: number }>();
+        if (ownedOrgCount && ownedOrgCount.count > 0) {
+          return addCorsHeaders(Response.json({ ok: false, error: "owns_organizations" }, { status: 400 }));
+        }
+
         const body = await request.json<Record<string, unknown>>();
         const authHeader = request.headers.get("Authorization");
         const authRes = await env.AUTH.fetch("https://auth/delete-account", {
@@ -540,8 +555,9 @@ export default {
           await env.DB.prepare("DELETE FROM projects WHERE id = ?").bind(proj.id).run();
         }
 
-        // Remove user from any remaining project memberships
+        // Remove user from any remaining project + organization memberships
         await env.DB.prepare("DELETE FROM project_members WHERE user_id = ?").bind(session.userId).run();
+        await env.DB.prepare("DELETE FROM organization_members WHERE user_id = ?").bind(session.userId).run();
 
         // Delete avatar (both variants + any legacy object)
         await deleteAllAvatarVariants(env.ASSETS, session.userId);
@@ -646,6 +662,10 @@ export default {
         response = await handlePublic(request, env, url);
       } else if (url.pathname.startsWith("/invites/")) {
         response = await handleInvitePublic(request, env, url);
+      } else if (url.pathname.startsWith("/organizations")) {
+        const session = await getSession(request, env);
+        if (session instanceof Response) return session;
+        response = await handleOrganizations(request, env, session, url);
       } else if (/^\/projects\/[^/]+\/members/.test(url.pathname)) {
         const session = await getSession(request, env);
         if (session instanceof Response) return session;
@@ -745,9 +765,10 @@ async function handleCollabUpgrade(request: Request, url: URL, env: Env, docId: 
     return new Response("Forbidden", { status: 403 });
   }
 
-  const caller = await env.DB.prepare("SELECT role, name FROM project_members WHERE project_id = ? AND user_id = ?")
-    .bind(docRow.project_id, session.userId).first<{ role: string; name: string }>();
-  if (!caller || ROLE_RANK[caller.role as keyof typeof ROLE_RANK] < ROLE_RANK["editor"]) {
+  // Effective role (direct OR via the site's org) gates realtime co-editing,
+  // and — unlike the old query — requires an ACCEPTED membership.
+  const caller = await resolveAccess(env.DB, docRow.project_id, session.userId);
+  if (!caller || ROLE_RANK[caller.role] < ROLE_RANK["editor"]) {
     return new Response("Forbidden", { status: 403 });
   }
 

@@ -170,8 +170,10 @@ export class CollabProvider {
     if (this.destroyed) return;
 
     // Terminal close codes — reconnecting won't help, fall back to non-collab editing.
-    // 1008 (policy violation): doc size cap exceeded server-side; room frozen, any reconnect
-    //   immediately re-freezes on load.
+    // 1008 (policy violation): either the doc size cap was exceeded (room frozen — any
+    //   reconnect immediately re-freezes on load) OR the user's access was revoked/demoted
+    //   below editor mid-session (a reconnect would just be rejected at the upgrade gate).
+    //   Either way it's terminal; the server's reason (shown below) distinguishes them.
     // 1009 (message too big): a frame we sent exceeded MAX_MESSAGE_BYTES. The server rejected
     //   it before applying, but Yjs applied it locally before sending — so our state has
     //   diverged from the server's. Reconnecting recomputes the same too-big diff and loops.

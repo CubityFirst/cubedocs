@@ -1,13 +1,8 @@
 import { okResponse, errorResponse, Errors, ROLE_RANK, fileServeHeaders, folderInProject, type Role } from "../lib";
 import type { Env } from "../index";
+import { resolveRole } from "../lib/access";
 
 const MAX_SIZE = 50 * 1024 * 1024; // 50MB
-
-async function getCallerRole(db: D1Database, projectId: string, userId: string): Promise<Role | null> {
-  const row = await db.prepare("SELECT role FROM project_members WHERE project_id = ? AND user_id = ? AND accepted = 1")
-    .bind(projectId, userId).first<{ role: Role }>();
-  return row?.role ?? null;
-}
 
 export interface FileRecord {
   id: string;
@@ -46,7 +41,7 @@ export async function handleFiles(
 
     if (!canUsePublishedAccess) {
       if (!user) return errorResponse(Errors.UNAUTHORIZED);
-      const role = await getCallerRole(env.DB, meta.project_id, user.userId);
+      const role = await resolveRole(env.DB, meta.project_id, user.userId);
       if (role === null) return errorResponse(Errors.FORBIDDEN);
       if (role === "limited") {
         const hasShare = await env.DB.prepare(
@@ -93,7 +88,7 @@ export async function handleFiles(
       .bind(fileId).first<FileRecord>();
     if (!record) return errorResponse(Errors.NOT_FOUND);
 
-    const role = await getCallerRole(env.DB, record.project_id, user.userId);
+    const role = await resolveRole(env.DB, record.project_id, user.userId);
     if (role === null) return errorResponse(Errors.FORBIDDEN);
     if (role === "limited") return errorResponse(Errors.FORBIDDEN);
 
@@ -105,7 +100,7 @@ export async function handleFiles(
     const projectId = url.searchParams.get("projectId");
     if (!projectId) return errorResponse(Errors.BAD_REQUEST);
 
-    const role = await getCallerRole(env.DB, projectId, user.userId);
+    const role = await resolveRole(env.DB, projectId, user.userId);
     if (role === null) return errorResponse(Errors.FORBIDDEN);
     if (role === "limited") return errorResponse(Errors.FORBIDDEN);
 
@@ -147,7 +142,7 @@ export async function handleFiles(
       return Response.json({ ok: false, error: "File too large. Maximum size is 50MB." }, { status: 400 });
     }
 
-    const role = await getCallerRole(env.DB, projectId, user.userId);
+    const role = await resolveRole(env.DB, projectId, user.userId);
     if (role === null) return errorResponse(Errors.FORBIDDEN);
     if (ROLE_RANK[role] < ROLE_RANK["editor"]) return errorResponse(Errors.FORBIDDEN);
 
@@ -173,7 +168,7 @@ export async function handleFiles(
       .bind(fileId).first<{ project_id: string }>();
     if (!meta) return errorResponse(Errors.NOT_FOUND);
 
-    const role = await getCallerRole(env.DB, meta.project_id, user.userId);
+    const role = await resolveRole(env.DB, meta.project_id, user.userId);
     if (role === null) return errorResponse(Errors.FORBIDDEN);
     if (ROLE_RANK[role] < ROLE_RANK["editor"]) return errorResponse(Errors.FORBIDDEN);
 
@@ -207,7 +202,7 @@ export async function handleFiles(
       .bind(fileId).first<{ project_id: string }>();
     if (!meta) return errorResponse(Errors.NOT_FOUND);
 
-    const role = await getCallerRole(env.DB, meta.project_id, user.userId);
+    const role = await resolveRole(env.DB, meta.project_id, user.userId);
     if (role === null) return errorResponse(Errors.FORBIDDEN);
     if (ROLE_RANK[role] < ROLE_RANK["editor"]) return errorResponse(Errors.FORBIDDEN);
 

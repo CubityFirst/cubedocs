@@ -1,0 +1,1 @@
+ALTER TABLE project_members ADD COLUMN is_hidden INTEGER NOT NULL DEFAULT 0;

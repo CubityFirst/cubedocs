@@ -1,13 +1,8 @@
-import { okResponse, errorResponse, Errors, ProjectFeatures, ROLE_RANK, folderInProject, type Session, type Doc, type Role } from "../lib";
+import { okResponse, errorResponse, Errors, ProjectFeatures, ROLE_RANK, folderInProject, type Session, type Doc } from "../lib";
 import { parseFrontmatter } from "../lib/frontmatter";
 import { createDoc, applyDocUpdate, deleteDoc, type DocUpdateRow } from "../lib/docOps";
 import type { Env } from "../index";
-
-async function getCallerInfo(db: D1Database, projectId: string, userId: string): Promise<{ role: Role; name: string } | null> {
-  const row = await db.prepare("SELECT role, name FROM project_members WHERE project_id = ? AND user_id = ? AND accepted = 1")
-    .bind(projectId, userId).first<{ role: Role; name: string }>();
-  return row ? { role: row.role, name: row.name } : null;
-}
+import { resolveAccess } from "../lib/access";
 
 export async function handleDocs(
   request: Request,
@@ -26,7 +21,7 @@ export async function handleDocs(
     const projectId = params.get("projectId");
     if (!projectId) return errorResponse(Errors.BAD_REQUEST);
 
-    const caller = await getCallerInfo(env.DB, projectId, user.userId);
+    const caller = await resolveAccess(env.DB, projectId, user.userId);
     if (caller === null) return errorResponse(Errors.FORBIDDEN);
     const role = caller.role;
 
@@ -86,7 +81,7 @@ export async function handleDocs(
     const body = await request.json<{ title: string; content: string; projectId: string; folderId?: string | null }>();
     if (!body.title || !body.projectId) return errorResponse(Errors.BAD_REQUEST);
 
-    const caller = await getCallerInfo(env.DB, body.projectId, user.userId);
+    const caller = await resolveAccess(env.DB, body.projectId, user.userId);
     if (caller === null) return errorResponse(Errors.FORBIDDEN);
     if (ROLE_RANK[caller.role] < ROLE_RANK["editor"]) return errorResponse(Errors.FORBIDDEN);
 
@@ -117,7 +112,7 @@ export async function handleDocs(
     if (!project) return errorResponse(Errors.NOT_FOUND);
     if (!(project.features & ProjectFeatures.REALTIME)) return errorResponse(Errors.FORBIDDEN);
 
-    const caller = await getCallerInfo(env.DB, meta.project_id, user.userId);
+    const caller = await resolveAccess(env.DB, meta.project_id, user.userId);
     if (caller === null) return errorResponse(Errors.FORBIDDEN);
     if (ROLE_RANK[caller.role] < ROLE_RANK["editor"]) return errorResponse(Errors.FORBIDDEN);
 
@@ -138,7 +133,7 @@ export async function handleDocs(
   if (docId && subResource === "revisions" && subId && request.method === "GET") {
     const meta = await env.DB.prepare("SELECT project_id FROM docs WHERE id = ?").bind(docId).first<{ project_id: string }>();
     if (!meta) return errorResponse(Errors.NOT_FOUND);
-    const caller = await getCallerInfo(env.DB, meta.project_id, user.userId);
+    const caller = await resolveAccess(env.DB, meta.project_id, user.userId);
     if (caller === null) return errorResponse(Errors.FORBIDDEN);
     if (caller.role === "limited") {
       const share = await env.DB.prepare("SELECT id FROM doc_shares WHERE doc_id = ? AND user_id = ?").bind(docId, user.userId).first();
@@ -157,7 +152,7 @@ export async function handleDocs(
   if (docId && subResource === "revisions" && !subId && request.method === "GET") {
     const meta = await env.DB.prepare("SELECT project_id FROM docs WHERE id = ?").bind(docId).first<{ project_id: string }>();
     if (!meta) return errorResponse(Errors.NOT_FOUND);
-    const caller = await getCallerInfo(env.DB, meta.project_id, user.userId);
+    const caller = await resolveAccess(env.DB, meta.project_id, user.userId);
     if (caller === null) return errorResponse(Errors.FORBIDDEN);
     if (caller.role === "limited") {
       const share = await env.DB.prepare("SELECT id FROM doc_shares WHERE doc_id = ? AND user_id = ?").bind(docId, user.userId).first();
@@ -173,7 +168,7 @@ export async function handleDocs(
   if (docId && request.method === "GET") {
     const meta = await env.DB.prepare("SELECT project_id FROM docs WHERE id = ?").bind(docId).first<{ project_id: string }>();
     if (!meta) return errorResponse(Errors.NOT_FOUND);
-    const caller = await getCallerInfo(env.DB, meta.project_id, user.userId);
+    const caller = await resolveAccess(env.DB, meta.project_id, user.userId);
     if (caller === null) return errorResponse(Errors.FORBIDDEN);
     let myPermission: string | null = null;
     // limited has no project-wide read access — a doc_share is required.
@@ -208,7 +203,7 @@ export async function handleDocs(
     const doc = await env.DB.prepare("SELECT * FROM docs WHERE id = ?").bind(docId).first<DocUpdateRow>();
     if (!doc) return errorResponse(Errors.NOT_FOUND);
 
-    const caller = await getCallerInfo(env.DB, doc.project_id, user.userId);
+    const caller = await resolveAccess(env.DB, doc.project_id, user.userId);
     if (caller === null) return errorResponse(Errors.FORBIDDEN);
     const isUpliftedEdit = ROLE_RANK[caller.role] < ROLE_RANK["editor"];
     if (isUpliftedEdit) {
@@ -261,7 +256,7 @@ export async function handleDocs(
     const doc = await env.DB.prepare("SELECT project_id FROM docs WHERE id = ?").bind(docId).first<{ project_id: string }>();
     if (!doc) return errorResponse(Errors.NOT_FOUND);
 
-    const caller = await getCallerInfo(env.DB, doc.project_id, user.userId);
+    const caller = await resolveAccess(env.DB, doc.project_id, user.userId);
     if (caller === null) return errorResponse(Errors.FORBIDDEN);
     if (ROLE_RANK[caller.role] < ROLE_RANK["editor"]) return errorResponse(Errors.FORBIDDEN);
 

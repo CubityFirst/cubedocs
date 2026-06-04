@@ -1,4 +1,4 @@
-import { okResponse, errorResponse, Errors } from "../lib";
+import { okResponse, errorResponse, Errors, normalizeEmail } from "../lib";
 import { verifyPassword, hashPassword, needsRehash, DUMMY_PASSWORD_HASH } from "../password";
 import { signJwt } from "../jwt";
 import { verifyTurnstile } from "../turnstile";
@@ -23,7 +23,7 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
 
   const row = await env.DB.prepare(
     "SELECT id, email, name, password_hash, created_at, moderation, totp_secret, force_password_change, is_admin, email_verified FROM users WHERE email = ?",
-  ).bind(body.email.toLowerCase()).first<{
+  ).bind(normalizeEmail(body.email)).first<{
     id: string; email: string; name: string; password_hash: string; created_at: string; moderation: number; totp_secret: string | null; force_password_change: number; is_admin: number; email_verified: number;
   }>();
 

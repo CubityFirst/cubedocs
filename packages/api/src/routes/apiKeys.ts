@@ -1,5 +1,6 @@
-import { okResponse, errorResponse, Errors, ROLE_RANK, type Role, type Session } from "../lib";
+import { okResponse, errorResponse, Errors, ROLE_RANK, type Session } from "../lib";
 import type { Env } from "../index";
+import { resolveAccess } from "../lib/access";
 import { generateApiKeySecret, hashApiKey, keyDisplayPrefix, type ApiKeyScope } from "../lib/apiKeys";
 
 // JWT-authenticated management of a user's OWN scoped API keys, under a site
@@ -47,9 +48,7 @@ export async function handleApiKeys(request: Request, env: Env, user: Session, u
 
   // Caller must be an accepted member of the site to manage keys for it. 404
   // (not 403) matches how the rest of the API hides sites you're not in.
-  const membership = await env.DB.prepare(
-    "SELECT role FROM project_members WHERE project_id = ? AND user_id = ? AND accepted = 1",
-  ).bind(projectId, user.userId).first<{ role: Role }>();
+  const membership = await resolveAccess(env.DB, projectId, user.userId);
   if (!membership) return errorResponse(Errors.NOT_FOUND);
 
   // GET /projects/:id/api-keys — list the caller's OWN active keys for this site.

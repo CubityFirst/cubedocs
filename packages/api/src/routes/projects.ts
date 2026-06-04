@@ -1,14 +1,9 @@
 import { okResponse, errorResponse, Errors, ROLE_RANK, ProjectFeatures, type Session, type Project, type Role } from "../lib";
 import { upsertFtsRow, deleteFtsForProject } from "../lib/fts";
+import { resolveRole } from "../lib/access";
 import type { Env } from "../index";
 
 const VANITY_SLUG_REGEX = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/;
-
-async function getCallerRole(db: D1Database, projectId: string, userId: string): Promise<Role | null> {
-  const row = await db.prepare("SELECT role FROM project_members WHERE project_id = ? AND user_id = ? AND accepted = 1")
-    .bind(projectId, userId).first<{ role: Role }>();
-  return row?.role ?? null;
-}
 
 export async function handleProjects(
   request: Request,
@@ -30,7 +25,7 @@ export async function handleProjects(
 
     // GET — any member can fetch
     if (request.method === "GET") {
-      const role = await getCallerRole(env.DB, projectId, user.userId);
+      const role = await resolveRole(env.DB, projectId, user.userId);
       if (role === null) return errorResponse(Errors.NOT_FOUND);
       const obj = await env.ASSETS.get(r2Key);
       if (!obj) return errorResponse(Errors.NOT_FOUND);
@@ -45,7 +40,7 @@ export async function handleProjects(
 
     // POST — admin or owner uploads
     if (request.method === "POST") {
-      const role = await getCallerRole(env.DB, projectId, user.userId);
+      const role = await resolveRole(env.DB, projectId, user.userId);
       if (role === null) return errorResponse(Errors.NOT_FOUND);
       if (ROLE_RANK[role] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
       const contentType = request.headers.get("Content-Type") ?? "";
@@ -71,7 +66,7 @@ export async function handleProjects(
 
     // DELETE — admin or owner clears
     if (request.method === "DELETE") {
-      const role = await getCallerRole(env.DB, projectId, user.userId);
+      const role = await resolveRole(env.DB, projectId, user.userId);
       if (role === null) return errorResponse(Errors.NOT_FOUND);
       if (ROLE_RANK[role] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
       await env.ASSETS.delete(r2Key);
@@ -90,22 +85,36 @@ export async function handleProjects(
     const rows = await env.DB.prepare(
       `SELECT p.id, p.name, p.description, p.owner_id, p.created_at, p.published_at,
               p.changelog_mode, p.ai_enabled, p.ai_summarization_type,
-              p.graph_enabled, p.features, p.logo_square_updated_at,
-              pm.role, pm.is_favourite,
+              p.graph_enabled, p.features, p.organization_id, p.logo_square_updated_at,
+              pm.role, pm.is_favourite, pm.is_hidden,
+              o.name AS organization_name,
               (SELECT COUNT(*) FROM docs WHERE project_id = p.id) as doc_count,
               (SELECT COUNT(*) FROM project_members WHERE project_id = p.id AND accepted = 1) as member_count
        FROM projects p
        INNER JOIN project_members pm ON pm.project_id = p.id
+       LEFT JOIN organizations o ON o.id = p.organization_id
        WHERE pm.user_id = ? AND pm.accepted = 1
        ORDER BY pm.is_favourite DESC, p.created_at DESC`,
-    ).bind(user.userId).all<Project & { role: Role; is_favourite: number; doc_count: number; member_count: number }>();
+    ).bind(user.userId).all<Project & { role: Role; is_favourite: number; is_hidden: number; doc_count: number; member_count: number; organization_id: string | null; organization_name: string | null }>();
     return okResponse(rows.results);
   }
 
   // POST /projects
   if (!projectId && request.method === "POST") {
-    const body = await request.json<{ name: string; description?: string }>();
+    const body = await request.json<{ name: string; description?: string; organizationId?: string }>();
     if (!body.name) return errorResponse(Errors.BAD_REQUEST);
+
+    // Optional: create the site directly inside an org. Org-level gate (checked
+    // against organization_members here, not a per-site role) — caller must be
+    // an admin+ of that org.
+    let organizationId: string | null = null;
+    if (body.organizationId) {
+      const orgRole = await env.DB.prepare(
+        "SELECT role FROM organization_members WHERE organization_id = ? AND user_id = ? AND accepted = 1",
+      ).bind(body.organizationId, user.userId).first<{ role: Role }>();
+      if (!orgRole || ROLE_RANK[orgRole.role] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
+      organizationId = body.organizationId;
+    }
 
     // Look up owner's name from auth worker
     const authHeader = request.headers.get("Authorization");
@@ -123,14 +132,14 @@ export async function handleProjects(
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     await env.DB.prepare(
-      "INSERT INTO projects (id, name, description, owner_id, created_at) VALUES (?, ?, ?, ?, ?)",
-    ).bind(id, body.name, body.description ?? null, user.userId, now).run();
+      "INSERT INTO projects (id, name, description, owner_id, created_at, organization_id) VALUES (?, ?, ?, ?, ?, ?)",
+    ).bind(id, body.name, body.description ?? null, user.userId, now, organizationId).run();
 
     await env.DB.prepare(
       "INSERT INTO project_members (id, project_id, user_id, email, name, role, invited_by, created_at, accepted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)",
     ).bind(crypto.randomUUID(), id, user.userId, user.email, ownerName, "owner", user.userId, now).run();
 
-    return okResponse({ id, name: body.name, ownerId: user.userId, createdAt: now }, 201);
+    return okResponse({ id, name: body.name, ownerId: user.userId, createdAt: now, organizationId }, 201);
   }
 
   // GET /projects/:id/contents?folderId=… — bundled folder + doc + file listing
@@ -139,7 +148,7 @@ export async function handleProjects(
   // auth-checked round trip. Limited members see only docs they have shares
   // for, the ancestor folders to those docs, no files, and no counts.
   if (projectId && parts[1] === "contents" && request.method === "GET") {
-    const role = await getCallerRole(env.DB, projectId, user.userId);
+    const role = await resolveRole(env.DB, projectId, user.userId);
     if (role === null) return errorResponse(Errors.NOT_FOUND);
 
     const folderId = url.searchParams.get("folderId");
@@ -299,27 +308,44 @@ export async function handleProjects(
 
   // GET /projects/:id — any member can view
   if (projectId && request.method === "GET") {
-    const role = await getCallerRole(env.DB, projectId, user.userId);
+    const role = await resolveRole(env.DB, projectId, user.userId);
     if (role === null) return errorResponse(Errors.NOT_FOUND);
-    const row = await env.DB.prepare("SELECT * FROM projects WHERE id = ?").bind(projectId).first<Project>();
+    const row = await env.DB.prepare(
+      "SELECT p.*, o.name AS organization_name FROM projects p LEFT JOIN organizations o ON o.id = p.organization_id WHERE p.id = ?",
+    ).bind(projectId).first<Project & { organization_name: string | null }>();
     if (!row) return errorResponse(Errors.NOT_FOUND);
     return okResponse({ ...row, role });
   }
 
-  // PATCH /projects/:id/favourite — toggle favourite for current user
+  // PATCH /projects/:id/favourite — toggle favourite for current user.
+  // Favourite and hidden are mutually exclusive: favouriting a site clears the
+  // hidden flag (the two are opposite intents — see /hidden below).
   if (projectId && parts[1] === "favourite" && request.method === "PATCH") {
     const row = await env.DB.prepare("SELECT is_favourite FROM project_members WHERE project_id = ? AND user_id = ? AND accepted = 1")
       .bind(projectId, user.userId).first<{ is_favourite: number }>();
     if (row === null) return errorResponse(Errors.NOT_FOUND);
     const next = row.is_favourite ? 0 : 1;
-    await env.DB.prepare("UPDATE project_members SET is_favourite = ? WHERE project_id = ? AND user_id = ?")
-      .bind(next, projectId, user.userId).run();
-    return okResponse({ is_favourite: next });
+    await env.DB.prepare("UPDATE project_members SET is_favourite = ?, is_hidden = CASE WHEN ? = 1 THEN 0 ELSE is_hidden END WHERE project_id = ? AND user_id = ?")
+      .bind(next, next, projectId, user.userId).run();
+    return okResponse({ is_favourite: next, is_hidden: next === 1 ? 0 : undefined });
+  }
+
+  // PATCH /projects/:id/hidden — toggle hidden for current user. Hidden sites
+  // are filtered out of the dashboard grid and every sidebar list (the inverse
+  // of favourites). Hiding a site also clears its favourite flag.
+  if (projectId && parts[1] === "hidden" && request.method === "PATCH") {
+    const row = await env.DB.prepare("SELECT is_hidden FROM project_members WHERE project_id = ? AND user_id = ? AND accepted = 1")
+      .bind(projectId, user.userId).first<{ is_hidden: number }>();
+    if (row === null) return errorResponse(Errors.NOT_FOUND);
+    const next = row.is_hidden ? 0 : 1;
+    await env.DB.prepare("UPDATE project_members SET is_hidden = ?, is_favourite = CASE WHEN ? = 1 THEN 0 ELSE is_favourite END WHERE project_id = ? AND user_id = ?")
+      .bind(next, next, projectId, user.userId).run();
+    return okResponse({ is_hidden: next, is_favourite: next === 1 ? 0 : undefined });
   }
 
   // PATCH /projects/:id — admin or owner
   if (projectId && request.method === "PATCH") {
-    const role = await getCallerRole(env.DB, projectId, user.userId);
+    const role = await resolveRole(env.DB, projectId, user.userId);
     if (role === null) return errorResponse(Errors.NOT_FOUND);
     if (ROLE_RANK[role] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
 
@@ -389,7 +415,7 @@ export async function handleProjects(
   // POST /projects/:id/reindex — owner only, rebuilds the FTS index for all docs in this project
   const subPath = url.pathname.replace(/^\/projects\/[^/]+/, "");
   if (projectId && subPath === "/reindex" && request.method === "POST") {
-    const role = await getCallerRole(env.DB, projectId, user.userId);
+    const role = await resolveRole(env.DB, projectId, user.userId);
     if (role !== "owner") return errorResponse(Errors.FORBIDDEN);
 
     const rows = await env.DB.prepare("SELECT id, title FROM docs WHERE project_id = ?")
@@ -411,7 +437,7 @@ export async function handleProjects(
 
   // DELETE /projects/:id — owner only
   if (projectId && request.method === "DELETE") {
-    const role = await getCallerRole(env.DB, projectId, user.userId);
+    const role = await resolveRole(env.DB, projectId, user.userId);
     if (role !== "owner") return errorResponse(Errors.NOT_FOUND);
 
     // Collect all docs and their revisions for R2 cleanup

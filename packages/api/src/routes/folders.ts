@@ -1,11 +1,6 @@
 import { okResponse, errorResponse, Errors, ROLE_RANK, folderInProject, wouldCreateFolderCycle, type Session, type Folder, type Role } from "../lib";
 import type { Env } from "../index";
-
-async function getCallerRole(db: D1Database, projectId: string, userId: string): Promise<Role | null> {
-  const row = await db.prepare("SELECT role FROM project_members WHERE project_id = ? AND user_id = ? AND accepted = 1")
-    .bind(projectId, userId).first<{ role: Role }>();
-  return row?.role ?? null;
-}
+import { resolveRole } from "../lib/access";
 
 export async function handleFolders(
   request: Request,
@@ -22,7 +17,7 @@ export async function handleFolders(
     const projectId = params.get("projectId");
     if (!projectId) return errorResponse(Errors.BAD_REQUEST);
 
-    const role = await getCallerRole(env.DB, projectId, user.userId);
+    const role = await resolveRole(env.DB, projectId, user.userId);
     if (role === null) return errorResponse(Errors.FORBIDDEN);
 
     const parentId = params.get("parentId");
@@ -108,7 +103,7 @@ export async function handleFolders(
     const projectId = params.get("projectId");
     if (!projectId) return errorResponse(Errors.BAD_REQUEST);
 
-    const role = await getCallerRole(env.DB, projectId, user.userId);
+    const role = await resolveRole(env.DB, projectId, user.userId);
     if (role === null) return errorResponse(Errors.FORBIDDEN);
     if (role === "limited") return okResponse({});
 
@@ -146,7 +141,7 @@ export async function handleFolders(
     const body = await request.json<{ name: string; projectId: string; parentId?: string | null; type?: string }>();
     if (!body.name || !body.projectId) return errorResponse(Errors.BAD_REQUEST);
 
-    const role = await getCallerRole(env.DB, body.projectId, user.userId);
+    const role = await resolveRole(env.DB, body.projectId, user.userId);
     if (role === null) return errorResponse(Errors.FORBIDDEN);
     if (ROLE_RANK[role] < ROLE_RANK["editor"]) return errorResponse(Errors.FORBIDDEN);
 
@@ -172,7 +167,7 @@ export async function handleFolders(
       .bind(folderId).first<Folder & { type: string }>();
     if (!folder) return errorResponse(Errors.NOT_FOUND);
 
-    const role = await getCallerRole(env.DB, folder.project_id, user.userId);
+    const role = await resolveRole(env.DB, folder.project_id, user.userId);
     if (role === null) return errorResponse(Errors.FORBIDDEN);
     if (ROLE_RANK[role] < ROLE_RANK["editor"]) return errorResponse(Errors.FORBIDDEN);
 
@@ -212,7 +207,7 @@ export async function handleFolders(
       .bind(folderId).first<{ project_id: string }>();
     if (!folder) return errorResponse(Errors.NOT_FOUND);
 
-    const role = await getCallerRole(env.DB, folder.project_id, user.userId);
+    const role = await resolveRole(env.DB, folder.project_id, user.userId);
     if (role === null) return errorResponse(Errors.FORBIDDEN);
     if (ROLE_RANK[role] < ROLE_RANK["editor"]) return errorResponse(Errors.FORBIDDEN);
 

@@ -1,5 +1,6 @@
 import { okResponse, errorResponse, Errors, type Session } from "../lib";
 import type { Env } from "../index";
+import { resolveAccess } from "../lib/access";
 
 export async function handleAi(
   request: Request,
@@ -13,31 +14,36 @@ export async function handleAi(
     const body = await request.json<{ docId: string }>();
     if (!body.docId) return errorResponse(Errors.BAD_REQUEST);
 
-    // Get doc and verify membership in one query. doc_ai_summaries lives in its
-    // own table so the docs row stays narrow; LEFT JOIN gives us the cached
-    // summary when one exists.
+    // Fetch the doc + cached summary. Membership is resolved separately via
+    // resolveAccess so org trickle-down grants the same access here as on every
+    // other per-site route (an org-only member must not be denied summarize).
+    // doc_ai_summaries lives in its own table so the docs row stays narrow;
+    // LEFT JOIN gives us the cached summary when one exists.
     const doc = await env.DB.prepare(
-      `SELECT d.id, d.title, d.project_id, d.updated_at, pm.role AS caller_role,
+      `SELECT d.id, d.title, d.project_id, d.updated_at,
               s.summary AS ai_summary, s.version AS ai_summary_version
        FROM docs d
-       INNER JOIN project_members pm ON pm.project_id = d.project_id
        LEFT JOIN doc_ai_summaries s ON s.doc_id = d.id
-       WHERE d.id = ? AND pm.user_id = ? AND pm.accepted = 1`,
-    ).bind(body.docId, user.userId).first<{
+       WHERE d.id = ?`,
+    ).bind(body.docId).first<{
       id: string;
       title: string;
       project_id: string;
       updated_at: string;
-      caller_role: string;
       ai_summary: string | null;
       ai_summary_version: string | null;
     }>();
     if (!doc) return errorResponse(Errors.NOT_FOUND);
 
+    // Effective role on the doc's site (direct OR via the site's org). 404 hides
+    // the doc from non-members, mirroring docs.ts.
+    const access = await resolveAccess(env.DB, doc.project_id, user.userId);
+    if (!access) return errorResponse(Errors.NOT_FOUND);
+
     // A `limited` member has no project-wide read access — a doc_share is
     // required to read this doc (mirrors the gate in docs.ts). Without this,
     // summarizing would leak the body of any project doc to a limited member.
-    if (doc.caller_role === "limited") {
+    if (access.role === "limited") {
       const hasShare = await env.DB.prepare(
         "SELECT id FROM doc_shares WHERE doc_id = ? AND user_id = ? LIMIT 1",
       ).bind(doc.id, user.userId).first();

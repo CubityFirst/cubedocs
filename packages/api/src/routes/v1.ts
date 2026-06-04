@@ -1,5 +1,6 @@
 import { okResponse, errorResponse, Errors, ROLE_RANK, folderInProject, type Role } from "../lib";
 import type { Env } from "../index";
+import { resolveAccess } from "../lib/access";
 import {
   authenticateApiKey,
   scopeAllowsWrite,
@@ -35,10 +36,11 @@ interface CallerInfo {
 // The owner's live membership on the key's site (accepted members only — a
 // pending invite grants nothing). This is the authorization floor.
 async function liveCaller(env: Env, projectId: string, userId: string): Promise<CallerInfo | null> {
-  const row = await env.DB.prepare(
-    "SELECT role, name FROM project_members WHERE project_id = ? AND user_id = ? AND accepted = 1",
-  ).bind(projectId, userId).first<{ role: Role; name: string }>();
-  return row ? { role: row.role, name: row.name } : null;
+  // Effective role: includes org trickle-down (a key's floor reflects the
+  // owner's CURRENT authority, direct or via the site's org). Scope/canInvite
+  // remain independent ceilings checked by the callers.
+  const access = await resolveAccess(env.DB, projectId, userId);
+  return access ? { role: access.role, name: access.name } : null;
 }
 
 async function readJson<T>(request: Request): Promise<T | null> {

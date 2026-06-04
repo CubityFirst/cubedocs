@@ -2,6 +2,7 @@ import { okResponse, errorResponse, Errors, ROLE_RANK, type Role } from "../lib"
 import { authenticate } from "../auth";
 import type { Env } from "../index";
 import type { Session } from "../lib";
+import { resolveRole } from "../lib/access";
 
 const VALID_INVITE_ROLES: Role[] = ["limited", "viewer", "editor", "admin"];
 
@@ -15,12 +16,6 @@ interface InviteLinkRow {
   created_by: string;
   created_at: string;
   is_active: number;
-}
-
-async function getCallerRole(db: D1Database, projectId: string, userId: string): Promise<Role | null> {
-  const row = await db.prepare("SELECT role FROM project_members WHERE project_id = ? AND user_id = ? AND accepted = 1")
-    .bind(projectId, userId).first<{ role: Role }>();
-  return row?.role ?? null;
 }
 
 function rowToLink(r: InviteLinkRow) {
@@ -49,7 +44,7 @@ export async function handleInviteLinks(
   const projectId = match[1];
   const linkId = match[2] || null;
 
-  const callerRole = await getCallerRole(env.DB, projectId, user.userId);
+  const callerRole = await resolveRole(env.DB, projectId, user.userId);
   if (callerRole === null) return errorResponse(Errors.NOT_FOUND);
   if (ROLE_RANK[callerRole] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
 
@@ -164,7 +159,7 @@ export async function handleInvitePublic(
     // keeps minting its original role — letting a removed admin re-grant
     // themselves access. Managing invite links requires admin+, and an admin
     // may not grant admin (mirrors the POST creation rule above).
-    const creatorRole = await getCallerRole(env.DB, link.project_id, link.created_by);
+    const creatorRole = await resolveRole(env.DB, link.project_id, link.created_by);
     if (
       creatorRole === null ||
       ROLE_RANK[creatorRole] < ROLE_RANK["admin"] ||

@@ -62,6 +62,12 @@ A narrow public REST surface under **`/v1`** on the API worker (reachable at `ht
 
 **Critical invariant:** API keys are authenticated by `authenticateApiKey` and wired **only** into the `/v1` router — never through the shared JWT `authenticate()`. A key sent to any other route fails JWT parsing → 401, which is what stops a scoped key from escaping its site/scope ceiling. Do not route keys through `authenticate()`.
 
+## Organizations (a level above sites)
+
+An **organization** is a collection of sites (`projects`) with **trickle-down roles**: an org member's role applies to every site in the org (org owner→site owner, admin→admin, editor→editor, viewer→viewer). A site belongs to at most one org (nullable `projects.organization_id`, `ON DELETE SET NULL`). Schema (API DB) in `0054_add_organizations.sql`: `organizations`, `organization_members` (roles `viewer|editor|admin|owner`, no `limited`). **Anything touching `organizations`/`organization_members`, `routes/organizations.ts`, `lib/access.ts`, the `organizationId` arg on `POST /projects`, the org pages (`OrgPage`, `OrgSettingsPage`, the "Your Orgs" dashboard section, `openCreateOrg`), or the pending-invites union belongs to this system** — see `memories/Organizations.md`.
+
+**Critical invariant — `lib/access.ts` is the single per-site access-check boundary.** Every authenticated per-site authorization gate resolves the caller's *effective* role via `resolveAccess`/`resolveRole` = the higher `ROLE_RANK` of (direct `project_members` row, accepted `organization_members` role for the site's org). **Do NOT re-introduce a local `getCallerRole` or an inline `SELECT role FROM project_members …` for a caller-access gate.** Direct `project_members` queries remain ONLY for: target-row escalation guards (members/docShares), attribution joins (`author_id`/`uploaded_by`), the `GET /projects` "Your Sites" list, the site members-list *contents*, and **attach's site-owner check** (which must be the caller's *direct* role, never effective). Org trickle-down flows into `/v1`'s `liveCaller` too (the key's role floor), while scope/`canInvite` stay independent ceilings. Orgs live entirely in the API DB (no auth-DB coupling / triple-redeploy).
+
 ## Tests
 
 Tests exist — run them before reporting work as done when changes are testable.

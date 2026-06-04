@@ -1,6 +1,7 @@
-import { okResponse, errorResponse, Errors, ROLE_RANK, type Session, type Role } from "../lib";
+import { okResponse, errorResponse, Errors, ROLE_RANK, type Session } from "../lib";
 import { reindexProject } from "../lib/docLinks";
 import type { Env } from "../index";
+import { resolveAccess } from "../lib/access";
 
 const REINDEX_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
 
@@ -69,9 +70,7 @@ export async function handleGraph(
   if (!match) return errorResponse(Errors.NOT_FOUND);
   const projectId = match[1];
 
-  const member = await env.DB.prepare(
-    "SELECT role FROM project_members WHERE project_id = ? AND user_id = ? AND accepted = 1",
-  ).bind(projectId, user.userId).first<{ role: Role }>();
+  const member = await resolveAccess(env.DB, projectId, user.userId);
   if (!member) return errorResponse(Errors.FORBIDDEN);
 
   const proj = await env.DB.prepare("SELECT graph_enabled, graph_tag_colors FROM projects WHERE id = ?")
@@ -127,9 +126,7 @@ export async function handleGraphReindex(
   if (!match) return errorResponse(Errors.NOT_FOUND);
   const projectId = match[1];
 
-  const member = await env.DB.prepare(
-    "SELECT role FROM project_members WHERE project_id = ? AND user_id = ? AND accepted = 1",
-  ).bind(projectId, user.userId).first<{ role: Role }>();
+  const member = await resolveAccess(env.DB, projectId, user.userId);
   if (!member) return errorResponse(Errors.FORBIDDEN);
   if (ROLE_RANK[member.role] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
 

@@ -1,12 +1,7 @@
 import { Zip, ZipPassThrough } from "fflate";
 import { errorResponse, Errors, ROLE_RANK, type Role, type Session } from "../lib";
 import type { Env } from "../index";
-
-async function getCallerRole(db: D1Database, projectId: string, userId: string): Promise<Role | null> {
-  const row = await db.prepare("SELECT role FROM project_members WHERE project_id = ? AND user_id = ? AND accepted = 1")
-    .bind(projectId, userId).first<{ role: Role }>();
-  return row?.role ?? null;
-}
+import { resolveRole } from "../lib/access";
 
 function sanitizeSegment(name: string): string {
   const cleaned = name
@@ -60,7 +55,7 @@ export async function handleProjectExport(
   const projectId = url.pathname.replace(/^\/projects\//, "").replace(/\/export$/, "");
   if (!projectId) return errorResponse(Errors.BAD_REQUEST);
 
-  const role = await getCallerRole(env.DB, projectId, user.userId);
+  const role = await resolveRole(env.DB, projectId, user.userId);
   if (role === null) return errorResponse(Errors.NOT_FOUND);
   if (ROLE_RANK[role] < ROLE_RANK["admin"]) return errorResponse(Errors.FORBIDDEN);
 

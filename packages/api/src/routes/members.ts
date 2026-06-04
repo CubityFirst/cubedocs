@@ -1,5 +1,6 @@
 import { okResponse, errorResponse, Errors, ROLE_RANK, type Role, type Member } from "../lib";
 import type { Env } from "../index";
+import { resolveRole } from "../lib/access";
 import type { Session } from "../lib";
 import { resolvePersonalPlan, type PersonalPlan } from "../../../auth/src/plan";
 
@@ -34,7 +35,7 @@ interface MemberPlanInfo {
 // placeholders in IN(). Map keys are user ids; values include the
 // resolved plan plus the chosen ring style so the members list can
 // render each supporter's customised avatar.
-async function loadMemberPlans(env: Env, userIds: string[]): Promise<Map<string, MemberPlanInfo>> {
+export async function loadMemberPlans(env: Env, userIds: string[]): Promise<Map<string, MemberPlanInfo>> {
   const plans = new Map<string, MemberPlanInfo>();
   if (userIds.length === 0) return plans;
 
@@ -68,12 +69,6 @@ async function loadMemberPlans(env: Env, userIds: string[]): Promise<Map<string,
   return plans;
 }
 
-async function getCallerRole(db: D1Database, projectId: string, userId: string): Promise<Role | null> {
-  const row = await db.prepare("SELECT role FROM project_members WHERE project_id = ? AND user_id = ? AND accepted = 1")
-    .bind(projectId, userId).first<{ role: Role }>();
-  return row?.role ?? null;
-}
-
 export async function handleMembers(
   request: Request,
   env: Env,
@@ -86,7 +81,7 @@ export async function handleMembers(
   const projectId = match[1];
   const targetUserId = match[2] || null;
 
-  const callerRole = await getCallerRole(env.DB, projectId, user.userId);
+  const callerRole = await resolveRole(env.DB, projectId, user.userId);
   if (callerRole === null) return errorResponse(Errors.NOT_FOUND);
 
   // GET /projects/:id/members — admin/owner can list

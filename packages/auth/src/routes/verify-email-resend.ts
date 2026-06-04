@@ -1,4 +1,4 @@
-import { okResponse } from "../lib";
+import { okResponse, normalizeEmail } from "../lib";
 import { createVerificationToken } from "../verification";
 import { sendVerificationEmail } from "../email";
 import type { Env } from "../index";
@@ -9,7 +9,7 @@ export async function handleVerifyEmailResend(request: Request, env: Env): Promi
   // Always return ok — don't leak whether an email exists or is already verified
   if (!body.email || typeof body.email !== "string") return okResponse({ sent: true });
 
-  const email = body.email.toLowerCase().trim();
+  const email = normalizeEmail(body.email);
 
   const row = await env.DB.prepare(
     "SELECT id FROM users WHERE email = ? AND email_verified = 0",

@@ -50,6 +50,7 @@ interface Project {
   ai_summarization_type: string;
   graph_enabled: number;
   is_favourite: number;
+  is_hidden: number;
   features: number;
   logo_square_updated_at: string | null;
 }
@@ -125,6 +126,7 @@ export interface DocsLayoutContext {
   addDoc: (doc: { id: string; title: string; display_title?: string | null; folder_id?: string | null; tags?: string | null }) => void;
   setBreadcrumbs: Dispatch<SetStateAction<BreadcrumbItem[]>>;
   openCreateSite: () => void;
+  openCreateOrg: () => void;
 }
 
 const PAGE_SIZE = 10;
@@ -235,6 +237,12 @@ export function DocsLayout() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // org creation
+  const [creatingOrg, setCreatingOrg] = useState(false);
+  const [orgName, setOrgName] = useState("");
+  const [orgError, setOrgError] = useState<string | null>(null);
+  const [orgSaving, setOrgSaving] = useState(false);
+
   // doc creation (instant, no form)
   const [creatingDoc, setCreatingDoc] = useState(false);
 
@@ -269,6 +277,9 @@ export function DocsLayout() {
   const projectMatch = useMatch("/projects/:projectId/*");
   const projectId = projectMatch?.params.projectId ?? null;
   const currentProject = projectId ? projects.find(p => p.id === projectId) ?? null : null;
+  // Hidden sites are kept out of every sidebar list (the inverse of favourites),
+  // but the one you're actively viewing stays listed so the switcher can mark it.
+  const visibleProjects = projects.filter(p => !p.is_hidden || p.id === projectId);
 
   // Recently accessed docs/files for the current project. Re-read on route
   // change AND when DocPage / FilePage push a new entry — pushes happen
@@ -398,6 +409,30 @@ export function DocsLayout() {
     }
   }
 
+  async function handleCreateOrg(e: React.FormEvent) {
+    e.preventDefault();
+    setOrgSaving(true);
+    setOrgError(null);
+    try {
+      const result = await apiFetchJson<{ id: string }>("/api/organizations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: orgName }),
+      });
+      if (result.ok && result.data) {
+        setCreatingOrg(false);
+        setOrgName("");
+        navigate(`/orgs/${result.data.id}`);
+      } else {
+        setOrgError("Failed to create organization.");
+      }
+    } catch {
+      setOrgError("Could not connect to the server.");
+    } finally {
+      setOrgSaving(false);
+    }
+  }
+
   async function handleNewDoc() {
     if (!projectId || creatingDoc) return;
     setCreatingDoc(true);
@@ -461,6 +496,7 @@ export function DocsLayout() {
     addDoc,
     setBreadcrumbs,
     openCreateSite: () => setCreating(true),
+    openCreateOrg: () => setCreatingOrg(true),
   };
 
   return (
@@ -494,7 +530,7 @@ export function DocsLayout() {
               </button>
               <ProjectSwitcher
                 currentProject={currentProject}
-                projects={projects}
+                projects={visibleProjects}
                 onSelect={id => navigate(`/projects/${id}`)}
               />
               <NavLink
@@ -594,7 +630,7 @@ export function DocsLayout() {
           /* ── Overview sidebar ── */
           <ScrollArea className="flex-1 px-2 py-3 app-sidebar-scroller">
             <nav className="flex flex-col gap-1">
-              {projects.map(p => (
+              {visibleProjects.map(p => (
                 <Button
                   key={p.id}
                   variant="ghost"
@@ -759,6 +795,37 @@ export function DocsLayout() {
               </DialogClose>
               <Button type="submit" disabled={saving}>
                 {saving ? "Creating…" : "Create site"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={creatingOrg} onOpenChange={open => { if (!open) { setCreatingOrg(false); setOrgError(null); setOrgName(""); } }}>
+        <DialogContent className="sm:max-w-md" hideClose>
+          <DialogHeader className="pb-2">
+            <DialogTitle>New organization</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleCreateOrg} className="flex flex-col gap-5 py-2">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="org-name">Name</Label>
+              <Input
+                id="org-name"
+                placeholder="My Organization"
+                value={orgName}
+                onChange={e => setOrgName(e.target.value)}
+                required
+                autoFocus
+              />
+            </div>
+            {orgError && <p className="text-sm text-destructive">{orgError}</p>}
+            <DialogFooter className="pt-2">
+              <DialogClose asChild>
+                <Button type="button" variant="outline" disabled={orgSaving}>
+                  Cancel
+                </Button>
+              </DialogClose>
+              <Button type="submit" disabled={orgSaving}>
+                {orgSaving ? "Creating…" : "Create organization"}
               </Button>
             </DialogFooter>
           </form>

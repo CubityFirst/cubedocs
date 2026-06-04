@@ -734,6 +734,8 @@ export function UserSettingsPage() {
         }
         if (json.error === "invalid_totp") return "Invalid authenticator code.";
         if (json.error === "invalid_backup_code") return "Invalid backup code.";
+        if (json.error === "owns_projects") return "Delete or transfer the sites you own before deleting your account.";
+        if (json.error === "owns_organizations") return "Delete the organizations you own before deleting your account.";
         return "Failed to delete account. Please try again.";
       } catch {
         return "Could not connect to the server.";

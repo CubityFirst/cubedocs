@@ -1,5 +1,5 @@
 import zxcvbn from "zxcvbn";
-import { okResponse, errorResponse, Errors } from "../lib";
+import { okResponse, errorResponse, Errors, normalizeEmail } from "../lib";
 import { hashPassword } from "../password";
 import { verifyTurnstile } from "../turnstile";
 import { createVerificationToken } from "../verification";
@@ -19,6 +19,11 @@ export async function handleRegister(request: Request, env: Env): Promise<Respon
     return errorResponse(Errors.BAD_REQUEST);
   }
 
+  if (typeof body.email !== "string") return errorResponse(Errors.BAD_REQUEST);
+  const email = normalizeEmail(body.email);
+  // A whitespace-only address passes the truthy check above but trims to empty.
+  if (!email) return errorResponse(Errors.BAD_REQUEST);
+
   if (zxcvbn(body.password).score < 3) {
     return errorResponse(Errors.BAD_REQUEST);
   }
@@ -27,7 +32,7 @@ export async function handleRegister(request: Request, env: Env): Promise<Respon
   if (!turnstileValid) return errorResponse(Errors.BAD_REQUEST);
 
   const existing = await env.DB.prepare("SELECT id FROM users WHERE email = ?")
-    .bind(body.email.toLowerCase())
+    .bind(email)
     .first();
 
   if (existing) return errorResponse(Errors.CONFLICT);
@@ -39,28 +44,28 @@ export async function handleRegister(request: Request, env: Env): Promise<Respon
 
   await env.DB.prepare(
     "INSERT INTO users (id, email, name, password_hash, created_at, email_verified) VALUES (?, ?, ?, ?, ?, ?)",
-  ).bind(id, body.email.toLowerCase(), body.name, passwordHash, now, requireVerification ? 0 : 1).run();
+  ).bind(id, email, body.name, passwordHash, now, requireVerification ? 0 : 1).run();
 
   if (requireVerification) {
     const verificationToken = await createVerificationToken(env, id);
     const verifyUrl = `${env.APP_ORIGIN}/verify-email?token=${verificationToken}`;
-    await sendVerificationEmail(env, body.email.toLowerCase(), verifyUrl);
-    return okResponse({ verificationSent: true, email: body.email.toLowerCase() }, 201);
+    await sendVerificationEmail(env, email, verifyUrl);
+    return okResponse({ verificationSent: true, email }, 201);
   }
 
   const expiresAt = Date.now() + SESSION_TTL_MS;
   const sid = await createSession(env, id, request, expiresAt);
   const token = await signJwt(
-    { userId: id, email: body.email.toLowerCase(), expiresAt, isAdmin: false, sid },
+    { userId: id, email, expiresAt, isAdmin: false, sid },
     env.JWT_SECRET,
   );
 
   return okResponse(
     {
       verificationSent: false,
-      email: body.email.toLowerCase(),
+      email,
       token,
-      user: { id, email: body.email.toLowerCase(), name: body.name, createdAt: now },
+      user: { id, email, name: body.name, createdAt: now },
     },
     201,
   );

@@ -1,6 +1,7 @@
 import { okResponse, errorResponse, Errors, type Session, type Role } from "../lib";
 import { sanitizeFtsQuery } from "../lib/fts";
 import type { Env } from "../index";
+import { resolveRole } from "../lib/access";
 
 interface SearchResult {
   doc_id: string;
@@ -20,13 +21,6 @@ interface TagSearchResult {
   tags: string[];
 }
 
-async function getCallerRole(db: D1Database, projectId: string, userId: string): Promise<Role | null> {
-  const row = await db.prepare(
-    "SELECT role FROM project_members WHERE project_id = ? AND user_id = ? AND accepted = 1",
-  ).bind(projectId, userId).first<{ role: Role }>();
-  return row?.role ?? null;
-}
-
 export async function handleSearch(
   request: Request,
   env: Env,
@@ -40,7 +34,7 @@ export async function handleSearch(
   const tag = url.searchParams.get("tag")?.trim();
   if (!projectId || (!q && !tag)) return errorResponse(Errors.BAD_REQUEST);
 
-  const role = await getCallerRole(env.DB, projectId, user.userId);
+  const role = await resolveRole(env.DB, projectId, user.userId);
   if (!role) return errorResponse(Errors.FORBIDDEN);
 
   if (tag !== undefined && tag !== null) {
