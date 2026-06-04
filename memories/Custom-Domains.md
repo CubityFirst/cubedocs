@@ -34,6 +34,15 @@ The row caches CF state so the settings UI renders without hitting CF on every l
 - **Site deletion** must release the CF hostname too, because `cf_hostname_id` lives only in the `project_custom_domains` row and that row cascades away with the project (`ON DELETE CASCADE`). All three delete paths call `releaseCustomDomain(env, projectId)` **before** `DELETE FROM projects`: owner self-delete (`api/routes/projects.ts`), account deletion (`api/index.ts`), and admin delete (`admin/routes/projects.ts`, which imports the helper cross-package and needs its own `CF_ZONE_ID`/`CUSTOM_DOMAIN_CNAME_TARGET` vars + `CF_API_TOKEN` secret — else the release is a no-op and an admin delete leaks the hostname).
 - Without this, a deleted site would orphan the CF custom hostname: it keeps billing and, since the hostname is globally unique in the zone, blocks any later site from re-adding it.
 
+## Certificate renewal / which DNS records are permanent
+
+Custom hostnames are created **non-wildcard** (`wildcard: false`) with **TXT DCV**. After the cert issues and the hostname is Active:
+- **CNAME `their.domain → publish.yourannex.com`** — **permanent**: routes traffic AND is what lets renewal succeed.
+- **Ownership TXT (`_cf-custom-hostname.*`)** — one-time; removable once Active.
+- **SSL DCV TXT (`_acme-challenge.*`)** — removable once the cert is issued. At **renewal Cloudflare auto-validates via HTTP DCV** (not the TXT), which succeeds as long as the hostname still points at our SaaS target (the CNAME stays) and the customer has no CAA record blocking Cloudflare's CA. Cloudflare answers the HTTP challenge at the edge for the managed cert, so the `*/*` Worker route does NOT interfere. → the UI's "can be removed" notes in `deriveDnsRecords` are correct *for our non-wildcard certs*.
+- **Exception:** wildcard custom hostnames WOULD need the TXT to persist for renewal — but we never create wildcard hostnames.
+- **Bulletproof alternative (optional, NOT implemented): DCV Delegation** — customer adds a one-time CNAME `_acme-challenge.their.domain → their.domain.<validation-target>.dcv.cloudflare.com`; Cloudflare then manages DCV tokens for every renewal automatically (zone must stay active; don't remove the CNAME). Would require `deriveDnsRecords` to emit the delegation CNAME instead of the SSL validation TXT.
+
 ## Serving model / invariants
 
 - A custom domain serves a **published, read-only** site only — never the authenticated app (sessions/JWT are per-origin). Unpublished/unmapped host → `/public/site-by-host` 404 → CustomDomainApp shows a "not live yet" 404.
@@ -46,11 +55,11 @@ The row caches CF state so the settings UI renders without hitting CF on every l
 **Lives on a DEDICATED zone — `yourannex.com` (zone id `397deb54a68d306201a295d1793fe84c`), NOT `cubityfir.st`.** The SaaS catch-all is a zone-wide `*/*` Worker route, which on a shared zone hijacks every other host (it once made `i.cubityfir.st` serve the SPA shell instead of R2 objects). A dedicated zone with nothing else on it makes `*/*` safe by construction — `cubityfir.st` keeps zero SaaS routes, so its `i.`/apex/subdomains are untouched with no carve-outs to maintain. (The app itself still serves on `docs.cubityfir.st` via the frontend's exact `custom_domain` route — only customer custom hostnames go through `yourannex.com`.)
 
 1. **Enable Cloudflare for SaaS** on the `yourannex.com` zone (paid add-on).
-2. **Fallback origin**: create an originless record `service.yourannex.com AAAA 100::` (proxied) and set it as the zone's SaaS fallback origin.
-3. **CNAME target**: create a proxied record `cname.yourannex.com AAAA 100::` (orange cloud) — the hostname customers point their CNAME at.
+2. **CNAME target**: create a proxied record `publish.yourannex.com AAAA 100::` (orange cloud) — the hostname customers point their CNAME at.
+3. **Fallback origin**: set the zone's SaaS fallback origin to `publish.yourannex.com` (the same proxied record doubles as the fallback origin, so the apex stays free). Must reach **Active**.
 4. **Worker route**: add `*/*` → `annex-frontend` on the `yourannex.com` zone (the "Workers as your fallback origin" pattern). This is declared in `packages/frontend/wrangler.toml` (`pattern="*/*" zone_name="yourannex.com"`), so deploying the frontend creates it.
-5. **Config** (`packages/api/wrangler.toml`): `CF_ZONE_ID = "397deb54a68d306201a295d1793fe84c"`, `CUSTOM_DOMAIN_CNAME_TARGET = "cname.yourannex.com"`, and `wrangler secret put CF_API_TOKEN` (token scoped to the **yourannex.com** zone with **SSL and Certificates: Edit**).
-6. Customers then add: a **CNAME** `their.domain → cname.yourannex.com`, plus the **TXT** ownership + SSL-DCV records shown in Site Settings.
+5. **Config** (`packages/api/wrangler.toml`): `CF_ZONE_ID = "397deb54a68d306201a295d1793fe84c"`, `CUSTOM_DOMAIN_CNAME_TARGET = "publish.yourannex.com"`, and `wrangler secret put CF_API_TOKEN` (token scoped to the **yourannex.com** zone with **SSL and Certificates: Edit**).
+6. Customers then add: a **CNAME** `their.domain → publish.yourannex.com`, plus the **TXT** ownership + SSL-DCV records shown in Site Settings.
 
 **Cleanup of the old shared-zone setup:** delete the stale `*/*` Worker route on the `cubityfir.st` zone (wrangler won't remove it — it only manages routes in the frontend toml, which now targets `yourannex.com`). No carve-out routes (`*.cubityfir.st/*` → None) are needed once `cubityfir.st` has no `*/*`.
 
