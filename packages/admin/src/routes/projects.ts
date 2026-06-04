@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { upsertFtsRow } from "../../../api/src/lib/fts";
+import { releaseCustomDomain } from "../../../api/src/lib/customDomains";
 import { writeAdminAudit } from "../audit";
 import type { AppEnv } from "../index";
 
@@ -124,6 +125,12 @@ projectsRouter.delete("/:id", async (c) => {
   }
   stmts.push(c.env.DB.prepare("DELETE FROM docs_fts WHERE project_id = ?").bind(projectId));
   stmts.push(c.env.DB.prepare("DELETE FROM projects WHERE id = ?").bind(projectId));
+
+  // Release the Cloudflare custom hostname (if any) before the batch deletes
+  // the project + its cascading project_custom_domains row. Best-effort no-op
+  // when CF isn't configured on the admin worker.
+  await releaseCustomDomain(c.env, projectId);
+
   await c.env.DB.batch(stmts);
 
   await writeAdminAudit(c.env, session, "project.delete", "project", projectId, {

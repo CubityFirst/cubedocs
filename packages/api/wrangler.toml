@@ -44,7 +44,7 @@ ENVIRONMENT = "production"
 # and fill to enable). When CF_ZONE_ID or CF_API_TOKEN is unset, the custom-
 # domain endpoints report "not configured" and never call Cloudflare.
 CUSTOM_DOMAIN_CNAME_TARGET = "docs.cubityfir.st"
-# CF_ZONE_ID = "<cubityfir.st zone id>"
+CF_ZONE_ID = "14eabaaf9e2760f169a63e27c78f9b62"
 
 # Per-user limiter for the invite-by-email lookup. The auth worker's
 # /lookup also has its own coarser IP-keyed limiter — this one caps any

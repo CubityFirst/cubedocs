@@ -27,6 +27,14 @@ export interface Env {
   // Customer Portal, webhook); admin reaches the Stripe API directly
   // here to keep the cancel-on-grant path on a single worker.
   STRIPE_SECRET_KEY: string;
+  // Cloudflare-for-SaaS custom domains (see api/src/lib/customDomains.ts).
+  // Used only to release a site's custom hostname when an admin deletes the
+  // site. Optional: when unset, releaseCustomDomain() is a no-op (the owner
+  // can still remove the domain from Site Settings before deletion). Must
+  // match the api worker's values to actually deregister on admin delete.
+  CF_API_TOKEN?: string;
+  CF_ZONE_ID?: string;
+  CUSTOM_DOMAIN_CNAME_TARGET?: string;
 }
 
 // Shared Hono env for the app and the sub-routers. The admin session is

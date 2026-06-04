@@ -1,6 +1,7 @@
 import { okResponse, errorResponse, Errors, ROLE_RANK, ProjectFeatures, type Session, type Project, type Role } from "../lib";
 import { upsertFtsRow, deleteFtsForProject } from "../lib/fts";
 import { resolveRole } from "../lib/access";
+import { releaseCustomDomain } from "../lib/customDomains";
 import type { Env } from "../index";
 
 const VANITY_SLUG_REGEX = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/;
@@ -468,6 +469,10 @@ export async function handleProjects(
         `DELETE FROM asset_revisions WHERE asset_type = 'doc' AND asset_id IN (${docIds.map(() => "?").join(",")})`,
       ).bind(...docIds).run();
     }
+
+    // Release the Cloudflare custom hostname (if any) before the project row —
+    // and its cascading project_custom_domains row — is deleted.
+    await releaseCustomDomain(env, projectId);
 
     await env.DB.prepare("DELETE FROM projects WHERE id = ?").bind(projectId).run();
     await deleteFtsForProject(env.DB, projectId);

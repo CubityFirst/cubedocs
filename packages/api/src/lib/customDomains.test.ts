@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   normalizeHostname,
   isValidHostname,
@@ -6,6 +6,7 @@ import {
   deriveStatus,
   collectVerificationErrors,
   customDomainsConfigured,
+  releaseCustomDomain,
   type CfCustomHostname,
 } from "./customDomains";
 
@@ -111,5 +112,75 @@ describe("customDomainsConfigured", () => {
     expect(
       customDomainsConfigured({ CF_API_TOKEN: "t", CF_ZONE_ID: "z", CUSTOM_DOMAIN_CNAME_TARGET: "docs.cubityfir.st" }),
     ).toBe(true);
+  });
+});
+
+describe("releaseCustomDomain", () => {
+  const CONFIG = { CF_API_TOKEN: "t", CF_ZONE_ID: "zone1", CUSTOM_DOMAIN_CNAME_TARGET: "docs.cubityfir.st" };
+
+  // Minimal D1 stub: prepare().bind().first() resolves to `row` (and records
+  // the SQL/params so we can assert the lookup happened — or didn't).
+  function fakeDb(row: { cf_hostname_id: string | null } | null) {
+    const calls: { sql: string; params: unknown[] }[] = [];
+    const DB = {
+      prepare(sql: string) {
+        return {
+          bind(...params: unknown[]) {
+            calls.push({ sql, params });
+            return { first: async () => row };
+          },
+        };
+      },
+    } as unknown as D1Database;
+    return { DB, calls };
+  }
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it("no-ops (no DB read, no CF call) when not configured", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const { DB, calls } = fakeDb({ cf_hostname_id: "cf123" });
+    await releaseCustomDomain({ DB }, "proj1"); // no CF creds
+    expect(calls).toHaveLength(0);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not call Cloudflare when the site has no mapped domain", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const { DB, calls } = fakeDb(null);
+    await releaseCustomDomain({ ...CONFIG, DB }, "proj1");
+    expect(calls).toHaveLength(1); // looked up the row
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("deletes the Cloudflare custom hostname when one is mapped", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify({ success: true, result: { id: "cf123" } }), { status: 200 }),
+      );
+    const { DB } = fakeDb({ cf_hostname_id: "cf123" });
+    await releaseCustomDomain({ ...CONFIG, DB }, "proj1");
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(String(url)).toBe("https://api.cloudflare.com/client/v4/zones/zone1/custom_hostnames/cf123");
+    expect((init as RequestInit).method).toBe("DELETE");
+  });
+
+  it("never throws when Cloudflare errors (best-effort cleanup)", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ success: false, errors: [{ message: "boom" }] }), { status: 500 }),
+    );
+    const { DB } = fakeDb({ cf_hostname_id: "cf123" });
+    await expect(releaseCustomDomain({ ...CONFIG, DB }, "proj1")).resolves.toBeUndefined();
+  });
+
+  it("never throws when the DB read fails", async () => {
+    const DB = {
+      prepare() {
+        return { bind() { return { first: async () => { throw new Error("db down"); } }; } };
+      },
+    } as unknown as D1Database;
+    await expect(releaseCustomDomain({ ...CONFIG, DB }, "proj1")).resolves.toBeUndefined();
   });
 });

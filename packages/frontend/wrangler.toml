@@ -20,3 +20,13 @@ service = "annex-auth"
 [[routes]]
 pattern = "docs.cubityfir.st"
 custom_domain = true
+
+# Cloudflare-for-SaaS fallback route: catches every custom hostname that
+# customers CNAME to docs.cubityfir.st (and any other host on the zone without a
+# more-specific route) and serves it from this worker in host-mode. Required for
+# custom domains to resolve — without it, arbitrary SaaS hostnames have no Worker
+# route, fall through to the originless fallback origin, and return 522.
+# Exact custom_domain routes (docs/admin.cubityfir.st) take precedence over this.
+[[routes]]
+pattern = "*/*"
+zone_name = "cubityfir.st"

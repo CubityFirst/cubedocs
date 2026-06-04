@@ -17,6 +17,7 @@ import { handlePublicApi } from "./routes/v1";
 import { handleApiKeys } from "./routes/apiKeys";
 import { handleOrganizations } from "./routes/organizations";
 import { handleCustomDomain } from "./routes/customDomains";
+import { releaseCustomDomain } from "./lib/customDomains";
 import { DocCollabRoom } from "./collab/DocCollabRoom";
 import { resolvePersonalPlan } from "../../auth/src/plan";
 import { resolveAvatar, parseVariant, avatarKey, deleteAllAvatarVariants } from "./avatar";
@@ -559,6 +560,9 @@ export default {
           "SELECT id FROM projects WHERE owner_id = ?",
         ).bind(session.userId).all<{ id: string }>();
         for (const proj of ownedProjects.results) {
+          // Release each site's Cloudflare custom hostname before its row (and
+          // cascading project_custom_domains row) is deleted.
+          await releaseCustomDomain(env, proj.id);
           await env.DB.prepare("DELETE FROM projects WHERE id = ?").bind(proj.id).run();
         }
 

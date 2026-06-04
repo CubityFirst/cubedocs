@@ -18,7 +18,7 @@ The row caches CF state so the settings UI renders without hitting CF on every l
 
 ## Key files
 
-- `packages/api/src/lib/customDomains.ts` — Cloudflare API client (`cfCreateCustomHostname`/`cfGetCustomHostname`/`cfDeleteCustomHostname`) + **pure helpers** `isValidHostname`, `normalizeHostname`, `deriveDnsRecords`, `deriveStatus`, `collectVerificationErrors`, `customDomainsConfigured`. Tests: `customDomains.test.ts`.
+- `packages/api/src/lib/customDomains.ts` — Cloudflare API client (`cfCreateCustomHostname`/`cfGetCustomHostname`/`cfDeleteCustomHostname`) + **pure helpers** `isValidHostname`, `normalizeHostname`, `deriveDnsRecords`, `deriveStatus`, `collectVerificationErrors`, `customDomainsConfigured`, and `releaseCustomDomain(env, projectId)` (best-effort CF-hostname deregistration on site delete — see below). Tests: `customDomains.test.ts`.
 - `packages/api/src/routes/customDomains.ts` — `handleCustomDomain` for `/projects/:id/domain` (GET/PUT/DELETE) + `/projects/:id/domain/refresh` (POST). Gates: caller **admin+** (effective role via `resolveRole`) **and** site has `CUSTOM_LINK` flag. PUT validates the hostname, rejects our own zone apex + already-claimed hosts, retires the old CF hostname if the host changed, creates the CF custom hostname (SSL method `txt`, type `dv`), caches state.
 - `packages/api/src/index.ts` — route wired before the generic `/projects` handler; `Env` gains `CF_API_TOKEN?`, `CF_ZONE_ID?`, `CUSTOM_DOMAIN_CNAME_TARGET?`.
 - `packages/api/src/routes/public.ts` — `GET /public/site-by-host?host=` resolves a mapped host → `{ projectId, vanitySlug, name }` (published sites only).
@@ -26,6 +26,12 @@ The row caches CF state so the settings UI renders without hitting CF on every l
 - `packages/frontend/src/CustomDomainApp.tsx` — booted by `main.tsx` when `isCustomDomain()`. Resolves host→project once, then serves **site-only** routes (`/`, `/:docId`) under `SiteRouteContext{hostMode:true}`. No auth/app routes.
 - `PublicDocPage.tsx` / `SearchPalette.tsx` — base-path/host aware: all in-site links go through `siteHref`/`href(...)`. Path mode → `/s/<slug>/<docId>`; host mode → `/<docId>`.
 - Settings UI: `SiteSettingsPage.tsx` → Site group → "Custom Link & Domain" (the `#custom-domain` card lives inside the `features & 1` block). Admin app flag label: "Custom Link & Domain" (`ProjectsPage.tsx`).
+
+## Deletion / cleanup
+
+- **Explicit unmap** (`DELETE /projects/:id/domain`) calls `cfDeleteCustomHostname` then drops the row.
+- **Site deletion** must release the CF hostname too, because `cf_hostname_id` lives only in the `project_custom_domains` row and that row cascades away with the project (`ON DELETE CASCADE`). All three delete paths call `releaseCustomDomain(env, projectId)` **before** `DELETE FROM projects`: owner self-delete (`api/routes/projects.ts`), account deletion (`api/index.ts`), and admin delete (`admin/routes/projects.ts`, which imports the helper cross-package and needs its own `CF_ZONE_ID`/`CUSTOM_DOMAIN_CNAME_TARGET` vars + `CF_API_TOKEN` secret — else the release is a no-op and an admin delete leaks the hostname).
+- Without this, a deleted site would orphan the CF custom hostname: it keeps billing and, since the hostname is globally unique in the zone, blocks any later site from re-adding it.
 
 ## Serving model / invariants
 

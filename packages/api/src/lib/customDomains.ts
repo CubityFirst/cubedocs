@@ -224,3 +224,33 @@ export async function cfDeleteCustomHostname(
     throw e;
   }
 }
+
+// Best-effort deregistration of a site's Cloudflare custom hostname, to be
+// called BEFORE the project (and its cascading `project_custom_domains` row) is
+// deleted — `cf_hostname_id` lives only in that row, so once it cascades away we
+// can no longer tell Cloudflare to release the hostname.
+//
+// Without this, deleting a site orphans the custom hostname in the CF SaaS zone:
+// it keeps billing as an active custom hostname, and because the hostname is
+// globally unique in the zone, Cloudflare will reject any later attempt to
+// re-add it from another site (even though our own DB row is long gone).
+//
+// No-op when custom domains aren't configured (no CF creds) or the site has no
+// mapped domain. Never throws — site deletion must not be blocked by a CF
+// hiccup; an orphaned hostname is recoverable, a half-deleted site is worse.
+export async function releaseCustomDomain(
+  env: CustomDomainEnv & { DB: D1Database },
+  projectId: string,
+): Promise<void> {
+  if (!customDomainsConfigured(env)) return;
+  try {
+    const row = await env.DB.prepare(
+      "SELECT cf_hostname_id FROM project_custom_domains WHERE project_id = ?",
+    ).bind(projectId).first<{ cf_hostname_id: string | null }>();
+    if (row?.cf_hostname_id) {
+      await cfDeleteCustomHostname(env, row.cf_hostname_id);
+    }
+  } catch {
+    // Best-effort: never block project deletion on CF cleanup.
+  }
+}

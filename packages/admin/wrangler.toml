@@ -30,6 +30,14 @@ service = "annex-auth"
 pattern = "admin.cubityfir.st"
 custom_domain = true
 
+[vars]
+# Cloudflare-for-SaaS custom domains — used ONLY to release a site's custom
+# hostname when an admin deletes the site (mirrors the api worker). Must match
+# the api worker's values. When CF_ZONE_ID / CF_API_TOKEN are unset,
+# releaseCustomDomain() is a safe no-op. See memories/Custom-Domains.md.
+CF_ZONE_ID = "14eabaaf9e2760f169a63e27c78f9b62"
+CUSTOM_DOMAIN_CNAME_TARGET = "docs.cubityfir.st"
+
 [[unsafe.bindings]]
 name = "RATE_LIMITER_ADMIN"
 type = "ratelimit"
@@ -54,3 +62,6 @@ simple = { limit = 10, period = 60 }
 #   STRIPE_SECRET_KEY  (sk_test_... or sk_live_... — same value as auth
 #                       worker; only used for admin-driven cancellations
 #                       triggered from the user details panel)
+#   CF_API_TOKEN       (same token as the api worker — zone-scoped, SSL and
+#                       Certificates: Edit; only used to release a custom
+#                       hostname on admin-driven site delete)
