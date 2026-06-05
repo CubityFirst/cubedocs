@@ -647,7 +647,7 @@ export function PublicDocPage() {
           "md:relative md:inset-auto md:z-auto md:transition-none md:shrink-0",
           sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         )}>
-        <aside className={cn("flex h-full flex-col border-r border-border overflow-hidden w-64 md:transition-[width] md:duration-200", !sidebarOpen && "md:w-0")}>
+        <aside className={cn("flex h-full flex-col border-r border-border bg-background overflow-hidden w-64 md:transition-[width] md:duration-200", !sidebarOpen && "md:w-0")}>
           <div className="flex h-20 items-center gap-2 px-4">
             {hasToken && (
               <button
