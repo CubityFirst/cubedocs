@@ -25,6 +25,10 @@ import { handleWebauthnCredentialsDelete } from "./routes/webauthn-credentials-d
 import { handleTotpBackupCodesGenerate } from "./routes/totp-backup-codes-generate";
 import { handleAdminHandoffStart } from "./routes/admin-handoff-start";
 import { handleAdminHandoffExchange } from "./routes/admin-handoff-exchange";
+import { handleOAuthAuthorize } from "./routes/oauth-authorize";
+import { handleOAuthToken } from "./routes/oauth-token";
+import { handleOAuthUserinfo } from "./routes/oauth-userinfo";
+import { handleOAuthDiscovery, handleOAuthJwks } from "./routes/oauth-discovery";
 import { handleVerifyEmail } from "./routes/verify-email";
 import { handleVerifyEmailResend } from "./routes/verify-email-resend";
 import { handleDeleteAccount } from "./routes/delete-account";
@@ -42,6 +46,13 @@ export interface Env {
   JWT_ISSUER: string;
   ADMIN_APP_ORIGIN: string;
   APP_ORIGIN: string;
+  // "Sign in with Annex" OIDC provider. OIDC_ISSUER is the dedicated identity
+  // origin (https://auth.cubityfir.st); OIDC_AUTHORIZE_URL is the app-origin
+  // authorization page; OIDC_PRIVATE_KEY is the RS256 signing key (RSA private
+  // JWK as a JSON string, set via `wrangler secret put OIDC_PRIVATE_KEY`).
+  OIDC_ISSUER: string;
+  OIDC_AUTHORIZE_URL: string;
+  OIDC_PRIVATE_KEY: string;
   TURNSTILE_SECRET: string;
   WEBAUTHN_RP_ID: string;
   WEBAUTHN_RP_NAME: string;
@@ -59,6 +70,7 @@ export interface Env {
   RATE_LIMITER_LOOKUP: { limit(opts: { key: string }): Promise<{ success: boolean }> };
   RATE_LIMITER_AUTH: { limit(opts: { key: string }): Promise<{ success: boolean }> };
   RATE_LIMITER_EMAIL_VERIFY: { limit(opts: { key: string }): Promise<{ success: boolean }> };
+  RATE_LIMITER_OIDC: { limit(opts: { key: string }): Promise<{ success: boolean }> };
   STRIPE_SECRET_KEY: string;
   STRIPE_WEBHOOK_SECRET: string;
   DEV_QUICK_LOGIN?: string;
@@ -69,9 +81,14 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
+    // Public OIDC endpoints are cross-origin by nature (called by connected
+    // services from their own origins), so they advertise `*`. Every other
+    // route stays locked to the app origin.
+    const corsOrigin = isPublicOidcPath(url.pathname) ? "*" : "https://docs.cubityfir.st";
+
     // CORS preflight
     if (request.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: corsHeaders() });
+      return new Response(null, { status: 204, headers: corsHeaders(corsOrigin) });
     }
 
     const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
@@ -80,17 +97,17 @@ export default {
     try {
       if (url.pathname === "/register" && request.method === "POST") {
         const { success } = await env.RATE_LIMITER_AUTH.limit({ key: ip });
-        if (!success) return addCorsHeaders(errorResponse(Errors.RATE_LIMITED));
+        if (!success) return addCorsHeaders(errorResponse(Errors.RATE_LIMITED), corsOrigin);
         response = await handleRegister(request, env);
       } else if (url.pathname === "/login" && request.method === "POST") {
         const { success } = await env.RATE_LIMITER_AUTH.limit({ key: ip });
-        if (!success) return addCorsHeaders(errorResponse(Errors.RATE_LIMITED));
+        if (!success) return addCorsHeaders(errorResponse(Errors.RATE_LIMITED), corsOrigin);
         response = await handleLogin(request, env);
       } else if (url.pathname === "/verify" && request.method === "GET") {
         response = await handleVerify(request, env, ctx);
       } else if (url.pathname === "/lookup" && request.method === "POST") {
         const { success } = await env.RATE_LIMITER_LOOKUP.limit({ key: ip });
-        if (!success) return addCorsHeaders(errorResponse(Errors.RATE_LIMITED));
+        if (!success) return addCorsHeaders(errorResponse(Errors.RATE_LIMITED), corsOrigin);
         response = await handleLookup(request, env);
       } else if (url.pathname === "/lookup-by-id" && request.method === "POST") {
         response = await handleLookupById(request, env);
@@ -120,27 +137,54 @@ export default {
         response = await handleForceChangePassword(request, env);
       } else if (url.pathname === "/verify-email" && request.method === "POST") {
         const { success } = await env.RATE_LIMITER_EMAIL_VERIFY.limit({ key: ip });
-        if (!success) return addCorsHeaders(errorResponse(Errors.RATE_LIMITED));
+        if (!success) return addCorsHeaders(errorResponse(Errors.RATE_LIMITED), corsOrigin);
         response = await handleVerifyEmail(request, env);
       } else if (url.pathname === "/verify-email/resend" && request.method === "POST") {
         const { success } = await env.RATE_LIMITER_EMAIL_VERIFY.limit({ key: ip });
-        if (!success) return addCorsHeaders(errorResponse(Errors.RATE_LIMITED));
+        if (!success) return addCorsHeaders(errorResponse(Errors.RATE_LIMITED), corsOrigin);
         response = await handleVerifyEmailResend(request, env);
       } else if (url.pathname === "/admin/handoff/start" && request.method === "POST") {
         response = await handleAdminHandoffStart(request, env);
       } else if (url.pathname === "/admin/handoff/exchange" && request.method === "POST") {
         response = await handleAdminHandoffExchange(request, env);
+      } else if (url.pathname === "/oauth/authorize" && request.method === "POST") {
+        // Browser-facing authorize step, reached via the app's /api proxy with
+        // the signed-in user's Bearer token. Mints a single-use code.
+        response = await handleOAuthAuthorize(request, env);
+      } else if (url.pathname === "/oauth/token" && request.method === "POST") {
+        // Public token endpoint (server-to-server). Dedicated, higher-ceiling
+        // IP cap on its own binding: a confidential client's backend exchanges
+        // every user's code from a single egress IP, so the login-grade 10/min
+        // limiter would throttle legitimate logins. Rejections use the OAuth
+        // error shape (RFC 6749), not the internal {ok,error} envelope.
+        const { success } = await env.RATE_LIMITER_OIDC.limit({ key: `oidc-token:${ip}` });
+        if (!success) {
+          return addCorsHeaders(
+            Response.json(
+              { error: "temporarily_unavailable", error_description: "rate limit exceeded" },
+              { status: 429, headers: { "Cache-Control": "no-store" } },
+            ),
+            corsOrigin,
+          );
+        }
+        response = await handleOAuthToken(request, env);
+      } else if (url.pathname === "/oauth/userinfo" && (request.method === "GET" || request.method === "POST")) {
+        response = await handleOAuthUserinfo(request, env);
+      } else if (url.pathname === "/oauth/jwks" && request.method === "GET") {
+        response = handleOAuthJwks(request, env);
+      } else if (url.pathname === "/.well-known/openid-configuration" && request.method === "GET") {
+        response = handleOAuthDiscovery(request, env);
       } else if (url.pathname === "/webauthn/register/start" && request.method === "POST") {
         response = await handleWebauthnRegisterStart(request, env);
       } else if (url.pathname === "/webauthn/register/finish" && request.method === "POST") {
         response = await handleWebauthnRegisterFinish(request, env);
       } else if (url.pathname === "/webauthn/auth/start" && request.method === "POST") {
         const { success } = await env.RATE_LIMITER_AUTH.limit({ key: ip });
-        if (!success) return addCorsHeaders(errorResponse(Errors.RATE_LIMITED));
+        if (!success) return addCorsHeaders(errorResponse(Errors.RATE_LIMITED), corsOrigin);
         response = await handleWebauthnAuthStart(request, env);
       } else if (url.pathname === "/webauthn/auth/finish" && request.method === "POST") {
         const { success } = await env.RATE_LIMITER_AUTH.limit({ key: ip });
-        if (!success) return addCorsHeaders(errorResponse(Errors.RATE_LIMITED));
+        if (!success) return addCorsHeaders(errorResponse(Errors.RATE_LIMITED), corsOrigin);
         response = await handleWebauthnAuthFinish(request, env);
       } else if (url.pathname === "/webauthn/credentials" && request.method === "POST") {
         response = await handleWebauthnCredentialsList(request, env);
@@ -178,7 +222,7 @@ export default {
       response = errorResponse(Errors.INTERNAL);
     }
 
-    return addCorsHeaders(response);
+    return addCorsHeaders(response, corsOrigin);
   },
 
   // Weekly sweep of long-dead session rows. Login does opportunistic GC for
@@ -193,17 +237,29 @@ export default {
   },
 };
 
-function corsHeaders(): HeadersInit {
+// Public OIDC endpoints served to connected services from their own origins.
+// `/oauth/authorize` is intentionally NOT here — it's reached internally via
+// the API worker's service binding and stays locked to the app origin.
+function isPublicOidcPath(pathname: string): boolean {
+  return (
+    pathname === "/oauth/token" ||
+    pathname === "/oauth/userinfo" ||
+    pathname === "/oauth/jwks" ||
+    pathname === "/.well-known/openid-configuration"
+  );
+}
+
+function corsHeaders(origin: string): HeadersInit {
   return {
-    "Access-Control-Allow-Origin": "https://docs.cubityfir.st",
+    "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
   };
 }
 
-function addCorsHeaders(response: Response): Response {
+function addCorsHeaders(response: Response, origin: string): Response {
   const headers = new Headers(response.headers);
-  for (const [k, v] of Object.entries(corsHeaders())) {
+  for (const [k, v] of Object.entries(corsHeaders(origin))) {
     headers.set(k, v);
   }
   return new Response(response.body, { status: response.status, headers });

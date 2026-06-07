@@ -4,6 +4,7 @@ import { applyThemeToRoot, pathUsesUserTheme, DEFAULT_THEME_PREFS } from "@/lib/
 import { DocsLayout } from "./layouts/DocsLayout";
 import { LandingPage } from "./pages/LandingPage";
 import { LoginPage } from "./pages/LoginPage";
+import { OAuthAuthorizePage } from "./pages/OAuthAuthorizePage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { CheckEmailPage } from "./pages/CheckEmailPage";
 import { VerifyEmailPage } from "./pages/VerifyEmailPage";
@@ -49,6 +50,7 @@ export function App() {
       <Routes location={backgroundLocation ?? location}>
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/oauth/authorize" element={<OAuthAuthorizePage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/check-email" element={<CheckEmailPage />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />

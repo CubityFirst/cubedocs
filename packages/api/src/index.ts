@@ -78,6 +78,7 @@ export default {
         url.pathname === "/verify-email" ||
         url.pathname === "/verify-email/resend" ||
         url.pathname === "/admin/handoff/start" ||
+        url.pathname === "/oauth/authorize" ||
         url.pathname === "/dev/quick-login"
       ) {
         return env.AUTH.fetch(new Request(`https://auth${url.pathname}`, request));
