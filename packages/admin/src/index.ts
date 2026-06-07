@@ -4,6 +4,7 @@ import { requireAdminSession, verifySession, type AdminSession } from "./auth";
 import { usersRouter } from "./routes/users";
 import { projectsRouter } from "./routes/projects";
 import { auditRouter } from "./routes/audit";
+import { oauthRouter } from "./routes/oauth";
 
 export interface Env {
   DB: D1Database;
@@ -110,10 +111,13 @@ app.use("/api/projects", enforceAdmin);
 app.use("/api/projects/*", enforceAdmin);
 app.use("/api/audit", enforceAdmin);
 app.use("/api/audit/*", enforceAdmin);
+app.use("/api/oauth-clients", enforceAdmin);
+app.use("/api/oauth-clients/*", enforceAdmin);
 
 app.route("/api/users", usersRouter);
 app.route("/api/projects", projectsRouter);
 app.route("/api/audit", auditRouter);
+app.route("/api/oauth-clients", oauthRouter);
 
 app.all("*", (c) => c.env.SITE_ASSETS.fetch(c.req.raw));
 

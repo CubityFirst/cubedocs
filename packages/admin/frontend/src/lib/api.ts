@@ -342,3 +342,94 @@ export async function exchangeAdminHandoff(code: string, callbackUrl: string): P
   if (!json.ok || !json.data) throw new AdminHandoffError(json.error ?? "unknown");
   return json.data;
 }
+
+// ---------------------------------------------------------------------------
+// "Sign in with Annex" — OIDC client management
+// ---------------------------------------------------------------------------
+
+export interface OAuthClient {
+  client_id: string;
+  client_name: string;
+  is_public: boolean;
+  redirect_uris: string[];
+  allowed_scopes: string;
+  trusted: boolean;
+  disabled: boolean;
+  created_at: number;
+}
+
+// The create/rotate responses additionally carry the plaintext secret, which
+// the server returns exactly ONCE and never stores.
+export interface CreatedOAuthClient {
+  client_id: string;
+  client_secret: string | null;
+  client_name: string;
+  is_public: boolean;
+  redirect_uris: string[];
+  allowed_scopes: string;
+  trusted: boolean;
+  disabled: boolean;
+}
+
+export interface CreateOAuthClientInput {
+  name: string;
+  redirect_uris: string[];
+  scopes?: string;
+  trusted?: boolean;
+  public?: boolean;
+}
+
+// Map the server's machine error codes to operator-friendly messages.
+function oauthClientError(error?: string): string {
+  if (error === "invalid_redirect_uri") return "Every redirect URI must be a valid https URL (or localhost for dev).";
+  if (error === "invalid_scope") return "Scopes must be a subset of 'openid profile email' and include openid.";
+  if (error === "public_client_no_secret") return "Public clients have no secret to rotate.";
+  return error ?? "Request failed";
+}
+
+export async function listOAuthClients(signal?: AbortSignal): Promise<OAuthClient[]> {
+  const res = await authFetch("/api/oauth-clients", { signal });
+  const json = (await res.json()) as { ok: boolean; data?: { clients: OAuthClient[] }; error?: string };
+  if (!json.ok || !json.data) throw new Error(json.error ?? "Failed to load OAuth clients");
+  return json.data.clients;
+}
+
+export async function createOAuthClient(input: CreateOAuthClientInput): Promise<CreatedOAuthClient> {
+  const res = await authFetch("/api/oauth-clients", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const json = (await res.json()) as { ok: boolean; data?: CreatedOAuthClient; error?: string };
+  if (!json.ok || !json.data) throw new Error(oauthClientError(json.error));
+  return json.data;
+}
+
+export async function setOAuthClientDisabled(clientId: string, disabled: boolean): Promise<void> {
+  const res = await authFetch("/api/oauth-clients/set-disabled", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ client_id: clientId, disabled }),
+  });
+  await readOk(res, "Failed to update client");
+}
+
+export async function deleteOAuthClient(clientId: string): Promise<void> {
+  const res = await authFetch("/api/oauth-clients/delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ client_id: clientId }),
+  });
+  await readOk(res, "Failed to delete client");
+}
+
+export async function rotateOAuthClientSecret(clientId: string): Promise<string> {
+  const res = await authFetch("/api/oauth-clients/rotate-secret", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ client_id: clientId }),
+  });
+  const json = (await res.json()) as { ok: boolean; data?: { client_secret: string }; error?: string };
+  if (!json.ok || !json.data) throw new Error(oauthClientError(json.error));
+  return json.data.client_secret;
+}

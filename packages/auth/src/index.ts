@@ -29,6 +29,13 @@ import { handleOAuthAuthorize } from "./routes/oauth-authorize";
 import { handleOAuthToken } from "./routes/oauth-token";
 import { handleOAuthUserinfo } from "./routes/oauth-userinfo";
 import { handleOAuthDiscovery, handleOAuthJwks } from "./routes/oauth-discovery";
+import {
+  handleOAuthClientCreate,
+  handleOAuthClientDelete,
+  handleOAuthClientRotateSecret,
+  handleOAuthClientSetDisabled,
+  handleOAuthClientsList,
+} from "./routes/oauth-clients";
 import { handleVerifyEmail } from "./routes/verify-email";
 import { handleVerifyEmailResend } from "./routes/verify-email-resend";
 import { handleDeleteAccount } from "./routes/delete-account";
@@ -174,6 +181,19 @@ export default {
         response = handleOAuthJwks(request, env);
       } else if (url.pathname === "/.well-known/openid-configuration" && request.method === "GET") {
         response = handleOAuthDiscovery(request, env);
+      } else if (url.pathname === "/admin/oauth/clients" && request.method === "GET") {
+        // Admin-only OIDC client management. Reached via the admin worker's
+        // AUTH service binding (NOT a public route); each handler re-checks
+        // the admin session.
+        response = await handleOAuthClientsList(request, env);
+      } else if (url.pathname === "/admin/oauth/clients" && request.method === "POST") {
+        response = await handleOAuthClientCreate(request, env);
+      } else if (url.pathname === "/admin/oauth/clients/set-disabled" && request.method === "POST") {
+        response = await handleOAuthClientSetDisabled(request, env);
+      } else if (url.pathname === "/admin/oauth/clients/delete" && request.method === "POST") {
+        response = await handleOAuthClientDelete(request, env);
+      } else if (url.pathname === "/admin/oauth/clients/rotate-secret" && request.method === "POST") {
+        response = await handleOAuthClientRotateSecret(request, env);
       } else if (url.pathname === "/webauthn/register/start" && request.method === "POST") {
         response = await handleWebauthnRegisterStart(request, env);
       } else if (url.pathname === "/webauthn/register/finish" && request.method === "POST") {

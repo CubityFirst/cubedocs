@@ -10,6 +10,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
 import { UsersPage } from "./pages/UsersPage";
 import { AuditPage } from "./pages/AuditPage";
+import { OAuthClientsPage } from "./pages/OAuthClientsPage";
 
 function AdminLayout({
   session,
@@ -50,6 +51,13 @@ function AdminLayout({
           >
             <Link to="/audit">Audit</Link>
           </Button>
+          <Button
+            variant={location.pathname === "/oauth-clients" ? "secondary" : "ghost"}
+            size="sm"
+            asChild
+          >
+            <Link to="/oauth-clients">OAuth</Link>
+          </Button>
         </nav>
 
         <div className="ml-auto flex items-center gap-3">
@@ -65,6 +73,7 @@ function AdminLayout({
           <Route path="/" element={<UsersPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/audit" element={<AuditPage />} />
+          <Route path="/oauth-clients" element={<OAuthClientsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

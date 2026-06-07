@@ -86,7 +86,9 @@ in its `wrangler.toml`); the browser-facing **authorization_endpoint is a SPA pa
 the app origin** `docs.cubityfir.st/oauth/authorize` because the user's Annex session
 lives there. **Anything touching `oauth_clients`/`oauth_codes` (`0028_*`), `src/oidc.ts`,
 `routes/oauth-*.ts`, the `/oauth/authorize` proxy, the `RATE_LIMITER_OIDC` binding,
-`OAuthAuthorizePage`, the `OIDC_*` vars/secret, or the `scripts/{gen-oidc-key,register-oauth-client}.mjs`
+`OAuthAuthorizePage`, the `OIDC_*` vars/secret, the admin client-management surface
+(`packages/admin` `routes/oauth.ts` proxy + `OAuthClientsPage` "OAuth" tab → auth worker
+`/admin/oauth/clients*`), or the `scripts/{gen-oidc-key,register-oauth-client}.mjs`
 helpers belongs to this system** — see `memories/Oidc-Provider.md` and `docs/oauth/README.md`.
 
 **Critical invariants:** exact redirect-URI match only (no wildcards; never redirect to an

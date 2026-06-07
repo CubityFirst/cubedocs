@@ -23,6 +23,13 @@ Generalizes the single-purpose admin handoff (`admin_handoffs`, 0009).
   builders. Unit-tested in `oidc.test.ts` (PKCE RFC vectors, alg-confusion,
   exact redirect match, RS256 round-trip).
 - `packages/auth/src/routes/oauth-{authorize,token,userinfo,discovery}.ts`.
+- `packages/auth/src/routes/oauth-clients.ts` — **admin-only** client CRUD
+  (`/admin/oauth/clients` GET/POST + `/set-disabled`, `/delete`, `/rotate-secret`).
+  NOT on the public routes; reached only via the admin worker's `AUTH` binding;
+  each handler re-checks `session.isAdmin`. Secrets generated/hashed here.
+- Admin UI: `packages/admin/src/routes/oauth.ts` (thin proxy under
+  `/api/oauth-clients`, gated by `enforceAdmin`) + `packages/admin/frontend/src/pages/OAuthClientsPage.tsx`
+  (the "OAuth" nav tab — register/list/disable/rotate/delete; secret shown once).
 - `packages/auth/src/index.ts` — routing + **path-aware CORS** (public OIDC
   paths = `*`; everything else locked to the app origin) + `RATE_LIMITER_OIDC`.
 - `packages/auth/migrations/0028_add_oauth_clients.sql` — `oauth_clients`

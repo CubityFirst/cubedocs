@@ -86,6 +86,18 @@ Annex secret is ever shared with a connected service.
 
 ## Registering a connected service
 
+### Option A — Admin dashboard (recommended)
+
+In the admin app (`admin.cubityfir.st`) → **OAuth** tab → **Register client**.
+Enter a name, the exact redirect URI(s), scopes, and whether it's trusted /
+public. The `client_id` + `client_secret` are shown **once** in a dialog (with
+copy buttons and the discovery URL) — store the secret immediately. The same
+page lists existing clients and lets you disable/enable, rotate the secret, or
+delete them. (Backed by admin-only endpoints on the auth worker, proxied through
+the admin worker — `packages/admin/src/routes/oauth.ts` → `auth` `/admin/oauth/clients*`.)
+
+### Option B — CLI
+
 ```bash
 node scripts/register-oauth-client.mjs \
   --name "My Dashboard" \
@@ -102,8 +114,8 @@ It prints the `client_id` + `client_secret` (**secret shown once**) and writes a
 cd packages/auth && npx wrangler d1 execute cubedocs-auth --remote --file <printed path>
 ```
 
-Then put `client_id` + `client_secret` (+ the discovery URL) into the connected
-service's config and follow [`CONSUMER_PROMPT.md`](./CONSUMER_PROMPT.md).
+Either way, put `client_id` + `client_secret` (+ the discovery URL) into the
+connected service's config and follow [`CONSUMER_PROMPT.md`](./CONSUMER_PROMPT.md).
 
 - `redirect_uris` are matched **exactly** — register the precise callback URL(s),
   including scheme, host, port, and path. No wildcards or trailing-slash slack.
