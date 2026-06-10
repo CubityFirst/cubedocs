@@ -215,14 +215,9 @@ export function LandingPage() {
             </p>
             <div className="l-hero-ctas">
               <Link className="l-btn-primary" to="/register">Create your Annex →</Link>
-              <a
-                className="l-btn-ghost"
-                href="https://docs.cubityfir.st/s/help/"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
+              <Link className="l-btn-ghost" to="/demo">
                 See a demo
-              </a>
+              </Link>
             </div>
           </div>
           <EditorMockup />

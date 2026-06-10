@@ -7,6 +7,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { OAuthAuthorizePage } from "./pages/OAuthAuthorizePage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { CheckEmailPage } from "./pages/CheckEmailPage";
+import { DemoPage } from "./pages/DemoPage";
 import { VerifyEmailPage } from "./pages/VerifyEmailPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { ProjectPage } from "./pages/ProjectPage";
@@ -53,6 +54,7 @@ export function App() {
         <Route path="/oauth/authorize" element={<OAuthAuthorizePage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/check-email" element={<CheckEmailPage />} />
+        <Route path="/demo" element={<DemoPage />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route element={<DocsLayout />}>
           <Route path="/dashboard" element={<DashboardPage />} />

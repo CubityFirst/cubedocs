@@ -7,6 +7,7 @@ import { isCustomDomain } from "@/lib/siteUrl";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { applyFontVarsToRoot, readFontPrefsCookie } from "@/lib/fonts";
 import { applyThemeToRoot, readThemePrefsCookie, pathUsesUserTheme, DEFAULT_THEME_PREFS } from "@/lib/theme";
+import { isDemoMode } from "@/lib/demo";
 import "./pwa";
 
 // Apply the user's saved font choices before React mounts so PublicDocPage and
@@ -35,12 +36,25 @@ if (import.meta.env.VITE_BRANCH === "dev") {
 // root (host mode); on our own app hosts we run the full app.
 const Root = isCustomDomain() ? CustomDomainApp : App;
 
-createRoot(document.getElementById("app")!).render(
-  <StrictMode>
-    <BrowserRouter>
-      <TooltipProvider>
-        <Root />
-      </TooltipProvider>
-    </BrowserRouter>
-  </StrictMode>,
-);
+async function boot() {
+  // Demo mode answers every /api call from an in-memory dataset. The patch
+  // must be in place before React mounts (pages fetch in their first effects),
+  // and the module is dynamically imported so the demo dataset stays out of
+  // the normal boot path.
+  if (isDemoMode()) {
+    const { installDemoServer } = await import("@/lib/demoServer");
+    installDemoServer();
+  }
+
+  createRoot(document.getElementById("app")!).render(
+    <StrictMode>
+      <BrowserRouter>
+        <TooltipProvider>
+          <Root />
+        </TooltipProvider>
+      </BrowserRouter>
+    </StrictMode>,
+  );
+}
+
+void boot();

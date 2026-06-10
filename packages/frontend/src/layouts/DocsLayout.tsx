@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Kbd } from "@/components/ui/kbd";
 import { clearToken, getToken } from "@/lib/auth";
+import { isDemoMode, exitDemoMode } from "@/lib/demo";
 import { apiFetch, apiFetchJson } from "@/lib/apiFetch";
 import { type FontChoice, DEFAULT_READING_FONT, DEFAULT_EDITING_FONT, DEFAULT_UI_FONT, resolveFontChoice, readFontPrefsCookie, writeFontPrefsCookie, applyFontVarsToRoot } from "@/lib/fonts";
 import { type ThemeMode, resolveThemeMode, readThemePrefsCookie, writeThemePrefsCookie, applyThemeToRoot } from "@/lib/theme";
@@ -400,7 +401,7 @@ export function DocsLayout() {
         setDescription("");
         navigate(`/projects/${result.data.id}`);
       } else {
-        setError("Failed to create site.");
+        setError(result.error ?? "Failed to create site.");
       }
     } catch {
       setError("Could not connect to the server.");
@@ -424,7 +425,7 @@ export function DocsLayout() {
         setOrgName("");
         navigate(`/orgs/${result.data.id}`);
       } else {
-        setOrgError("Failed to create organization.");
+        setOrgError(result.error ?? "Failed to create organization.");
       }
     } catch {
       setOrgError("Could not connect to the server.");
@@ -500,8 +501,24 @@ export function DocsLayout() {
   };
 
   return (
-    <div className="relative h-screen overflow-hidden bg-background text-foreground">
-      <div className="flex h-full">
+    <div className="relative flex h-screen flex-col overflow-hidden bg-background text-foreground">
+      {isDemoMode() && (
+        <div className="z-30 flex shrink-0 flex-wrap items-center justify-center gap-x-4 gap-y-1 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-center text-xs font-medium text-amber-600 dark:text-amber-400 sm:text-sm">
+          <span>This is a demo environment, any changes you make here are local, and will not be saved.</span>
+          <button
+            type="button"
+            onClick={() => {
+              exitDemoMode();
+              // Full reload so the demo fetch patch and in-memory data are dropped.
+              window.location.replace("/");
+            }}
+            className="shrink-0 rounded-md border border-amber-500/40 px-2 py-0.5 text-xs transition-colors hover:bg-amber-500/20"
+          >
+            Exit demo
+          </button>
+        </div>
+      )}
+      <div className="flex min-h-0 flex-1">
       {/* Backdrop — mobile only: closes sidebar when tapping the content area */}
       {sidebarOpen && (
         <div

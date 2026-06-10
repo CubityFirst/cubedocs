@@ -48,6 +48,10 @@ Authentication uses `Authorization: Bearer <JWT>` headers. JWTs are issued by th
 
 **Supported notation:** see `memories/Dice-Notation.md` — read that file when you need details on dice notation syntax (table of examples, reroll/keep/explode/success-count behavior, operator precedence).
 
+## Demo Mode
+
+The landing page's "See a demo" links to **`/demo`**, a local-only sandbox: a sessionStorage flag (`lib/demo.ts`) makes `main.tsx` install `lib/demoServer.ts`, which patches `window.fetch` and answers every `/api/*` call from an in-memory dataset (one "Demo Site", seeded docs/files/revisions; site/org creation refused; anonymous auth endpoints like `/api/login` pass through). The real DocsLayout/Dashboard/FileManager/DocPage run unmodified; `getToken()` hands out a fake JWT while the flag is set, and DocsLayout shows the "this is a demo environment" banner. Nothing persists — the store dies on reload. Tests: `e2e/tests/demo.spec.ts` (needs only the frontend dev server).
+
 ## Annex Ink + Stripe
 
 Personal supporter subscription ($5/mo) with Stripe billing, comp-grant override, animated avatar ring, admin grant/revoke/cancel controls, and a webhook proxy through the frontend worker. **Anything touching the `user_billing` table (Stripe ids, `personal_plan_*`, `granted_plan_*`), the cosmetic-pref columns on `user_preferences` (`personal_plan_style`, `personal_presence_color`, `personal_crit_sparkles`), `billing.ts`, `stripe-webhook.ts`, the billing UI in user settings or the admin user-details sheet, or the `InkBillingCard` belongs to this system** — see `memories/Ink-Stripe.md` for schema, plan resolution rules, webhook flow, deploy/dev setup, and ops cheatsheet.
