@@ -127,11 +127,10 @@ const DEMO_IMAGE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="800" heig
     </g>
   </g>
   <text x="400" y="300" text-anchor="middle" font-family="Georgia, serif" font-size="22" fill="#c7d2fe">An annex for your mind</text>
-  <text x="400" y="350" text-anchor="middle" font-family="monospace" font-size="13" fill="#64748b">this image is served from memory — nothing in the demo is saved</text>
 </svg>`;
 
-const DEMO_NOTES_TXT = `Session zero — planning notes
-==============================
+const DEMO_NOTES_TXT = `Session zero planning notes
+===========================
 
 This is a plain demo file. In a real site you can upload images, audio,
 PDFs and arbitrary attachments alongside your documents.
@@ -143,7 +142,7 @@ PDFs and arbitrary attachments alongside your documents.
 
 const WELCOME_CONTENT = `# Welcome to the Annex demo
 
-This is a live, fully working copy of Annex running entirely in your browser tab. Everything you do here — editing, creating docs, uploading files — happens locally and is thrown away when you leave.
+This is a live, fully working copy of Annex. Everything you do here, from editing to creating docs and uploading files, stays inside the demo and is cleared when you leave.
 
 > [!tip] Go ahead, break things
 > Click the pencil icon in the top right to edit this document. Your changes will "save" and show up everywhere, but only inside this demo.
@@ -167,13 +166,13 @@ This is a live, fully working copy of Annex running entirely in your browser tab
 | Full-text search | \`Ctrl+K\` anywhere in a site |
 | Files & images | Upload via the File Manager |
 
-Here's an image served straight out of the demo's memory:
+Here's a sample image:
 
 ![demo-illustration.svg](/api/files/${FILE_IMAGE}/content)
 
 ## Ready for the real thing?
 
-When you create your own Annex, everything here works the same — plus publishing, members and roles, realtime co-editing, document history, and more.
+When you create your own Annex, everything here works the same, plus publishing, members and roles, realtime co-editing, document history, and more.
 `;
 
 const TOUR_CONTENT = `# Editor tour
@@ -187,7 +186,7 @@ Annex documents are markdown underneath, edited through a WYSIWYG editor (CodeMi
 ## Callouts
 
 > [!note]
-> Thirteen callout types, with aliases — note, tip, warning, danger, question, quote, and friends.
+> Thirteen callout types, with aliases: note, tip, warning, danger, question, quote, and friends.
 
 > [!warning] Foldable callouts
 > Add \`+\` or \`-\` after the type to make a callout start open or closed.
@@ -204,7 +203,7 @@ interface Doc {
 
 ## Dice
 
-Annex has a full dice-notation roller — click any die to roll it:
+Annex has a full dice-notation roller. Click any die to roll it:
 
 - Standard: \`dice: 2d6+3\`
 - Keep highest: \`dice: 4d6kh3\`
@@ -228,7 +227,7 @@ tags: [sample, coffee]
 
 # Coffee brewing guide
 
-A sample doc — Annex is at home with anything structured: specs, runbooks, recipes, trip plans.
+A sample doc. Annex is at home with anything structured: specs, runbooks, recipes, trip plans.
 
 > [!quote] House rule
 > "Weigh everything. Guessing is how you end up with sad coffee."
@@ -257,7 +256,7 @@ Let the dice pick today's brew: \`dice: 1d[V60,French press,Aeropress,Cold brew]
 function seed(): Store {
   return {
     projectName: "Demo Site",
-    projectDescription: "A sandbox site preloaded with sample docs and files. Poke around — nothing you do here is saved.",
+    projectDescription: "A sandbox site preloaded with sample docs and files. Poke around, nothing you do here is saved.",
     isFavourite: 1,
     isHidden: 0,
     folders: [
@@ -735,7 +734,7 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
 
   // --- AI ---
   if (seg[0] === "ai" && seg[1] === "summarize" && method === "POST") {
-    return ok({ summary: "AI summaries aren't available in the demo — in a real site this is a generated summary of the document." });
+    return ok({ summary: "AI summaries aren't available in the demo. In a real site this is a generated summary of the document." });
   }
 
   return notFound("not_available_in_demo");
