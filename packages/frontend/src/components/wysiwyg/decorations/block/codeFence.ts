@@ -2,6 +2,8 @@ import { Decoration } from "@codemirror/view";
 import { cursorTouches, type Visitor } from "../types";
 import { CodeFenceWidget } from "../../widgets/CodeFenceWidget";
 import { MermaidWidget } from "../../widgets/MermaidWidget";
+import { JuxtaposeWidget } from "../../widgets/JuxtaposeWidget";
+import { parseJuxtapose } from "@/lib/juxtapose";
 
 export const visitCodeFence: Visitor = ({ node, state, sel, reveal, decos }) => {
   const startLine = state.doc.lineAt(node.from);
@@ -40,6 +42,23 @@ export const visitCodeFence: Visitor = ({ node, state, sel, reveal, decos }) => 
   const code = codeFrom !== null && codeTo !== null
     ? state.doc.sliceString(codeFrom, codeTo)
     : "";
+
+  // A `juxtapose` fence is a before/after image comparison slider, not code.
+  // Reading mode (reveal === false) gets the interactive draggable widget;
+  // editing mode gets a static preview that reveals the raw block on click.
+  // An unparseable block falls through to normal code-fence rendering.
+  if (lang === "juxtapose") {
+    const cfg = parseJuxtapose(code);
+    if (cfg) {
+      decos.push(
+        Decoration.replace({
+          widget: new JuxtaposeWidget(cfg, !reveal),
+          block: true,
+        }).range(startLine.from, endLine.to),
+      );
+      return;
+    }
+  }
 
   // Mermaid renders an async SVG diagram (React); everything else is static
   // highlighted HTML and uses the lightweight plain-DOM widget.

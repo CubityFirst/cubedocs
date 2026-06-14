@@ -4,6 +4,7 @@ import {
   Bold,
   ChevronDown,
   Code,
+  Columns2,
   Image,
   Italic,
   Link as LinkIcon,
@@ -82,6 +83,7 @@ interface WysiwygToolbarProps {
   onTable: (rows: number, cols: number) => void;
   onCallout: (type: string) => void;
   onImage: () => void;
+  onCompare: () => void;
   onUndo: () => void;
   onRedo: () => void;
   onFind: () => void;
@@ -217,6 +219,7 @@ export function WysiwygToolbar({
   onTable,
   onCallout,
   onImage,
+  onCompare,
   onUndo,
   onRedo,
   onFind,
@@ -315,6 +318,11 @@ export function WysiwygToolbar({
         {/* Image */}
         <ToolButton title="Insert image" onMouseDown={(e) => { e.preventDefault(); onImage(); }}>
           <Image />
+        </ToolButton>
+
+        {/* Image comparison slider */}
+        <ToolButton title="Insert image comparison" onMouseDown={(e) => { e.preventDefault(); onCompare(); }}>
+          <Columns2 />
         </ToolButton>
 
         <ToolbarSeparator />

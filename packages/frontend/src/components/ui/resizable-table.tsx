@@ -324,7 +324,7 @@ export function ResizableTable({ columns, checkboxColumn = true, storageKey, sor
                     onLayoutChange={makeLayoutHandler(seg)}
                   >
                     {seg.cols.flatMap(({ col, idx }, j) => [
-                      j > 0 ? <ResizableHandle key={`h${idx}`} /> : null,
+                      j > 0 ? <ResizableHandle key={`h${idx}`} withHandle className="bg-transparent" /> : null,
                       <ResizablePanel
                         key={`p${idx}`}
                         id={`col-${idx}`}
@@ -339,7 +339,7 @@ export function ResizableTable({ columns, checkboxColumn = true, storageKey, sor
               </div>
               {needsDragHandle && (
                 <div
-                  className="relative flex w-px shrink-0 items-center justify-center cursor-col-resize bg-border after:absolute after:inset-y-0 after:left-1/2 after:w-1 after:-translate-x-1/2 hover:bg-ring transition-colors"
+                  className="relative flex w-px shrink-0 items-center justify-center cursor-col-resize after:absolute after:inset-y-0 after:left-1/2 after:w-1 after:-translate-x-1/2"
                   onMouseDown={e => startSegDrag(seg, e)}
                 >
                   <div className="z-10 flex h-4 w-3 items-center justify-center rounded-xs border bg-border">

@@ -31,7 +31,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Bold, ClipboardPaste, Copy, Italic, Link as LinkIcon, List, ListChecks, ListOrdered, Pilcrow, Scissors, Strikethrough, Type, Underline } from "lucide-react";
+import { ColorPicker } from "@/components/ui/color-picker";
+import { Bold, Check, ClipboardPaste, Copy, Italic, Link as LinkIcon, List, ListChecks, ListOrdered, Loader2, Pilcrow, Scissors, Strikethrough, Type, Underline, Upload } from "lucide-react";
 import { WysiwygToolbar, defaultActiveFormats, type ActiveFormats } from "./WysiwygToolbar";
 import "./styles.css";
 
@@ -714,6 +715,85 @@ export function WysiwygEditor({
     view.focus();
   }, [imageAlt, imageUrl]);
 
+  // ── Image comparison slider (juxtapose fenced block) ──────────────────────
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [cmpBefore, setCmpBefore] = useState("");
+  const [cmpAfter, setCmpAfter] = useState("");
+  const [cmpBeforeLabel, setCmpBeforeLabel] = useState("");
+  const [cmpAfterLabel, setCmpAfterLabel] = useState("");
+  const [cmpOrientation, setCmpOrientation] = useState<"horizontal" | "vertical">("horizontal");
+  const [cmpHandle, setCmpHandle] = useState<"arrows" | "bar">("arrows");
+  const [cmpColorMode, setCmpColorMode] = useState<"default" | "accent" | "custom">("default");
+  const [cmpCustomColor, setCmpCustomColor] = useState("#3b82f6");
+  const [cmpUploading, setCmpUploading] = useState<null | "before" | "after">(null);
+  const compareRangeRef = useRef<{ from: number; to: number }>({ from: 0, to: 0 });
+  const cmpBeforeFileRef = useRef<HTMLInputElement>(null);
+  const cmpAfterFileRef = useRef<HTMLInputElement>(null);
+
+  const handleOpenCompareDialog = useCallback(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const sel = view.state.selection.main;
+    compareRangeRef.current = { from: sel.from, to: sel.to };
+    setCmpBefore("");
+    setCmpAfter("");
+    setCmpBeforeLabel("");
+    setCmpAfterLabel("");
+    setCmpOrientation("horizontal");
+    setCmpHandle("arrows");
+    setCmpColorMode("default");
+    setCmpCustomColor("#3b82f6");
+    setCmpUploading(null);
+    setCompareOpen(true);
+  }, []);
+
+  const handleCompareUpload = useCallback(async (which: "before" | "after", file: File) => {
+    const handler = onPasteImageRef.current;
+    if (!handler) return;
+    setCmpUploading(which);
+    try {
+      const { url } = await handler(file);
+      if (which === "before") setCmpBefore(url);
+      else setCmpAfter(url);
+    } catch {
+      // onPasteImage surfaces upload failures via toast.
+    } finally {
+      setCmpUploading(null);
+    }
+  }, []);
+
+  const handleSubmitCompare = useCallback((e: React.FormEvent) => {
+    e.preventDefault();
+    const view = viewRef.current;
+    if (!view) return;
+    const before = cmpBefore.trim();
+    const after = cmpAfter.trim();
+    if (!before || !after) return;
+    const bLabel = cmpBeforeLabel.trim();
+    const aLabel = cmpAfterLabel.trim();
+    const lines = ["```juxtapose"];
+    lines.push(`before: ${before}${bLabel ? ` "${bLabel}"` : ""}`);
+    lines.push(`after: ${after}${aLabel ? ` "${aLabel}"` : ""}`);
+    if (cmpOrientation === "vertical") lines.push("orientation: vertical");
+    if (cmpHandle === "bar") lines.push("handle: bar");
+    if (cmpColorMode === "accent") lines.push("accent: theme");
+    else if (cmpColorMode === "custom") lines.push(`accent: ${cmpCustomColor.trim()}`);
+    lines.push("```");
+    const block = lines.join("\n");
+
+    // Keep the fence on its own lines: prepend a newline unless we're already at
+    // a line start, and always follow with one.
+    const { from, to } = compareRangeRef.current;
+    const atLineStart = from === 0 || view.state.doc.sliceString(from - 1, from) === "\n";
+    const insert = `${atLineStart ? "" : "\n"}${block}\n`;
+    view.dispatch({
+      changes: { from, to, insert },
+      selection: { anchor: from + insert.length },
+    });
+    setCompareOpen(false);
+    view.focus();
+  }, [cmpBefore, cmpAfter, cmpBeforeLabel, cmpAfterLabel, cmpOrientation, cmpHandle, cmpColorMode, cmpCustomColor]);
+
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [linkText, setLinkText] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
@@ -776,6 +856,7 @@ export function WysiwygEditor({
         onTable={handleTable}
         onCallout={handleCallout}
         onImage={handleOpenImageDialog}
+        onCompare={handleOpenCompareDialog}
         onUndo={handleUndo}
         onRedo={handleRedo}
         onFind={handleFind}
@@ -924,6 +1005,143 @@ export function WysiwygEditor({
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setImageDialogOpen(false)}>Cancel</Button>
             <Button type="submit" disabled={!imageUrl.trim()}>Insert</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+    <Dialog open={compareOpen} onOpenChange={setCompareOpen}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Insert image comparison</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmitCompare} className="flex flex-col gap-4">
+          {(["before", "after"] as const).map((which) => {
+            const url = which === "before" ? cmpBefore : cmpAfter;
+            const setUrl = which === "before" ? setCmpBefore : setCmpAfter;
+            const label = which === "before" ? cmpBeforeLabel : cmpAfterLabel;
+            const setLabel = which === "before" ? setCmpBeforeLabel : setCmpAfterLabel;
+            const fileRef = which === "before" ? cmpBeforeFileRef : cmpAfterFileRef;
+            const uploading = cmpUploading === which;
+            return (
+              <div key={which} className="flex flex-col gap-2 rounded-md border border-border p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium capitalize">{which} image</span>
+                  {url && <Check className="h-4 w-4 text-green-600" aria-label="Image set" />}
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    aria-label={`${which} image URL`}
+                    placeholder="Image URL"
+                    value={url}
+                    onChange={e => setUrl(e.target.value)}
+                  />
+                  {onPasteImage && (
+                    <>
+                      <input
+                        ref={fileRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={e => {
+                          const file = e.target.files?.[0];
+                          if (file) handleCompareUpload(which, file);
+                          e.target.value = "";
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="shrink-0 gap-1.5"
+                        disabled={uploading}
+                        onClick={() => fileRef.current?.click()}
+                      >
+                        {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                        Upload
+                      </Button>
+                    </>
+                  )}
+                </div>
+                <Input
+                  aria-label={`${which} label`}
+                  placeholder="Label (optional)"
+                  value={label}
+                  onChange={e => setLabel(e.target.value)}
+                />
+              </div>
+            );
+          })}
+          <div className="flex flex-col gap-1.5">
+            <Label>Orientation</Label>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant={cmpOrientation === "horizontal" ? "default" : "outline"}
+                className="flex-1"
+                onClick={() => setCmpOrientation("horizontal")}
+              >
+                Horizontal
+              </Button>
+              <Button
+                type="button"
+                variant={cmpOrientation === "vertical" ? "default" : "outline"}
+                className="flex-1"
+                onClick={() => setCmpOrientation("vertical")}
+              >
+                Vertical
+              </Button>
+            </div>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>Handle style</Label>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant={cmpHandle === "arrows" ? "default" : "outline"}
+                className="flex-1"
+                onClick={() => setCmpHandle("arrows")}
+              >
+                Circle + arrows
+              </Button>
+              <Button
+                type="button"
+                variant={cmpHandle === "bar" ? "default" : "outline"}
+                className="flex-1"
+                onClick={() => setCmpHandle("bar")}
+              >
+                Slim grip bar
+              </Button>
+            </div>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>Handle colour</Label>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant={cmpColorMode === "default" ? "default" : "outline"}
+                onClick={() => setCmpColorMode("default")}
+              >
+                Default
+              </Button>
+              <Button
+                type="button"
+                variant={cmpColorMode === "accent" ? "default" : "outline"}
+                onClick={() => setCmpColorMode("accent")}
+              >
+                Theme accent
+              </Button>
+              <Button
+                type="button"
+                variant={cmpColorMode === "custom" ? "default" : "outline"}
+                onClick={() => setCmpColorMode("custom")}
+              >
+                Custom
+              </Button>
+              {cmpColorMode === "custom" && <ColorPicker value={cmpCustomColor} onChange={setCmpCustomColor} />}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setCompareOpen(false)}>Cancel</Button>
+            <Button type="submit" disabled={!cmpBefore.trim() || !cmpAfter.trim() || cmpUploading !== null}>Insert</Button>
           </DialogFooter>
         </form>
       </DialogContent>
