@@ -1,8 +1,8 @@
-import { okResponse, errorResponse, Errors, ROLE_RANK, serveR2Object, folderInProject, type Role } from "../lib";
+import { okResponse, errorResponse, Errors, ROLE_RANK, serveR2Object, isInlineSafeMime, folderInProject, type Role } from "../lib";
 import type { Env } from "../index";
 import { resolveRole } from "../lib/access";
-import { signContentToken, verifyContentToken, CONTENT_TOKEN_TTL_SECONDS } from "../lib/contentToken";
-import { presignR2GetUrl } from "../lib/r2Presign";
+import { signContentToken, verifyContentToken } from "../lib/contentToken";
+import { presignR2GetUrl, PRESIGN_URL_TTL_SECONDS } from "../lib/r2Presign";
 
 const MAX_SIZE = 50 * 1024 * 1024; // 50MB
 
@@ -93,8 +93,15 @@ export async function handleFiles(
     // For video, hand back a presigned R2 URL so playback streams straight from
     // R2 (range/seek with zero per-request Worker hits). Null when R2 S3 creds
     // aren't configured — the client then falls back to the token route above.
-    const contentStreamUrl = record.mime_type.startsWith("video/")
-      ? await presignR2GetUrl(env, `files/${record.id}`, CONTENT_TOKEN_TTL_SECONDS)
+    // Gated to the exact inline-safe video allowlist (not just `video/*`) since
+    // the direct R2 path skips fileServeHeaders' nosniff; the response-type
+    // override then forces a Worker-controlled Content-Type/Disposition.
+    const safeName = record.name.replace(/["\\\r\n\t]/g, "_");
+    const contentStreamUrl = record.mime_type.startsWith("video/") && isInlineSafeMime(record.mime_type)
+      ? await presignR2GetUrl(env, `files/${record.id}`, PRESIGN_URL_TTL_SECONDS, {
+          contentType: record.mime_type,
+          contentDisposition: `inline; filename="${safeName}"`,
+        })
       : null;
     return okResponse({ ...record, content_token: contentToken, content_stream_url: contentStreamUrl });
   }

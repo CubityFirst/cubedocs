@@ -215,7 +215,7 @@ export function FilePage() {
 
       {file.mime_type === "application/pdf" && contentUrl && (
         <div className="mt-6 overflow-hidden rounded-lg border border-border bg-muted/30">
-          <iframe src={contentUrl} title={file.name} className="h-[75vh] w-full" />
+          <iframe src={contentUrl} title={file.name} referrerPolicy="no-referrer" className="h-[75vh] w-full" />
         </div>
       )}
 

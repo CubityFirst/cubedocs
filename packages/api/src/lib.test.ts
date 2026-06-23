@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { fileServeHeaders, folderInProject, wouldCreateFolderCycle, parseByteRange, serveR2Object } from "./lib";
+import { fileServeHeaders, folderInProject, wouldCreateFolderCycle, parseByteRange, serveR2Object, isInlineSafeMime } from "./lib";
 
 // Minimal D1-ish stub: prepare().bind().first() resolves to the queued result.
 function dbReturning(result: unknown) {
@@ -86,6 +86,30 @@ describe("fileServeHeaders (stored-XSS defence)", () => {
     const h = fileServeHeaders(null, "x");
     expect(h["Content-Type"]).toBe("application/octet-stream");
     expect(h["Content-Disposition"]).toContain("attachment");
+  });
+
+  it("sets Referrer-Policy: no-referrer so a token URL can't leak via Referer", () => {
+    expect(fileServeHeaders("image/png", "cat.png")["Referrer-Policy"]).toBe("no-referrer");
+    expect(fileServeHeaders("text/html", "evil.html")["Referrer-Policy"]).toBe("no-referrer");
+  });
+});
+
+describe("isInlineSafeMime", () => {
+  it("accepts allowlisted inline types (incl. video), case/param-insensitive", () => {
+    expect(isInlineSafeMime("video/mp4")).toBe(true);
+    expect(isInlineSafeMime("video/quicktime")).toBe(true);
+    expect(isInlineSafeMime("VIDEO/WEBM")).toBe(true);
+    expect(isInlineSafeMime("video/mp4; codecs=avc1")).toBe(true);
+    expect(isInlineSafeMime("image/png")).toBe(true);
+  });
+
+  it("rejects non-allowlisted / dangerous / empty types", () => {
+    expect(isInlineSafeMime("video/x-matroska")).toBe(false); // mkv not on the list
+    expect(isInlineSafeMime("text/html")).toBe(false);
+    expect(isInlineSafeMime("image/svg+xml")).toBe(false);
+    expect(isInlineSafeMime("application/octet-stream")).toBe(false);
+    expect(isInlineSafeMime(null)).toBe(false);
+    expect(isInlineSafeMime("")).toBe(false);
   });
 });
 

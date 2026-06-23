@@ -165,20 +165,32 @@ const INLINE_SAFE_MIME = new Set([
   "text/plain",
 ]);
 
+// True when a stored blob's declared MIME type is on the inline-render
+// allowlist — safe to serve with its real Content-Type and an inline
+// disposition. Used by fileServeHeaders and to gate which videos are eligible
+// for direct-from-R2 presigned streaming.
+export function isInlineSafeMime(mimeType: string | null): boolean {
+  const base = (mimeType ?? "").toLowerCase().split(";")[0].trim();
+  return INLINE_SAFE_MIME.has(base);
+}
+
 // Headers for serving a stored blob safely. `inline` (with the declared
 // Content-Type) only for the allowlist; otherwise download as octet-stream.
 // `nosniff` blocks MIME-sniffing so e.g. an HTML payload uploaded as image/png
-// can't be re-interpreted as a document. The filename is stripped of quotes,
-// backslashes and control chars to prevent Content-Disposition header injection.
+// can't be re-interpreted as a document. `Referrer-Policy: no-referrer` keeps a
+// capability-token URL (loaded e.g. as a PDF <iframe> document) from leaking the
+// token via the Referer of any sub-request the served content makes. The
+// filename is stripped of quotes, backslashes and control chars to prevent
+// Content-Disposition header injection.
 export function fileServeHeaders(mimeType: string | null, filename: string): Record<string, string> {
   const declared = (mimeType ?? "").trim();
-  const base = declared.toLowerCase().split(";")[0].trim();
-  const safe = INLINE_SAFE_MIME.has(base);
+  const safe = isInlineSafeMime(declared);
   const safeName = (filename || "file").replace(/["\\\r\n\t]/g, "_");
   return {
     "Content-Type": safe ? declared : "application/octet-stream",
     "Content-Disposition": `${safe ? "inline" : "attachment"}; filename="${safeName}"`,
     "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
   };
 }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { r2PresignConfigured, presignR2GetUrl } from "./r2Presign";
+import { r2PresignConfigured, presignR2GetUrl, PRESIGN_URL_TTL_SECONDS } from "./r2Presign";
 
 const FULL = {
   R2_ACCESS_KEY_ID: "AKIAEXAMPLE",
@@ -39,5 +39,22 @@ describe("presignR2GetUrl", () => {
   it("clamps expiry to the SigV4 7-day maximum", async () => {
     const url = await presignR2GetUrl(FULL, "files/x", 30 * 24 * 60 * 60);
     expect(new URL(url!).searchParams.get("X-Amz-Expires")).toBe(String(7 * 24 * 60 * 60));
+  });
+
+  it("uses a tighter video TTL than the 6h content token", () => {
+    expect(PRESIGN_URL_TTL_SECONDS).toBe(3 * 60 * 60);
+  });
+
+  it("folds response-type/disposition overrides into the signed query string", async () => {
+    const url = await presignR2GetUrl(FULL, "files/x", 3600, {
+      contentType: "video/mp4",
+      contentDisposition: 'inline; filename="clip.mp4"',
+    });
+    const u = new URL(url!);
+    expect(u.searchParams.get("response-content-type")).toBe("video/mp4");
+    expect(u.searchParams.get("response-content-disposition")).toBe('inline; filename="clip.mp4"');
+    // Overrides must be inside the signed set (X-Amz-SignedHeaders/Signature present),
+    // so they can't be swapped by the client without breaking the signature.
+    expect(u.searchParams.get("X-Amz-Signature")).toBeTruthy();
   });
 });
