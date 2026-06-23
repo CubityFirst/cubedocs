@@ -1,7 +1,8 @@
 import { okResponse, errorResponse, Errors, ROLE_RANK, serveR2Object, folderInProject, type Role } from "../lib";
 import type { Env } from "../index";
 import { resolveRole } from "../lib/access";
-import { signContentToken, verifyContentToken } from "../lib/contentToken";
+import { signContentToken, verifyContentToken, CONTENT_TOKEN_TTL_SECONDS } from "../lib/contentToken";
+import { presignR2GetUrl } from "../lib/r2Presign";
 
 const MAX_SIZE = 50 * 1024 * 1024; // 50MB
 
@@ -89,7 +90,13 @@ export async function handleFiles(
     // <audio>/<iframe> can stream this file's bytes by URL (those elements can't
     // send the Authorization header on their range/seek subrequests).
     const contentToken = await signContentToken(env.JWT_SECRET, record.id, Math.floor(Date.now() / 1000));
-    return okResponse({ ...record, content_token: contentToken });
+    // For video, hand back a presigned R2 URL so playback streams straight from
+    // R2 (range/seek with zero per-request Worker hits). Null when R2 S3 creds
+    // aren't configured — the client then falls back to the token route above.
+    const contentStreamUrl = record.mime_type.startsWith("video/")
+      ? await presignR2GetUrl(env, `files/${record.id}`, CONTENT_TOKEN_TTL_SECONDS)
+      : null;
+    return okResponse({ ...record, content_token: contentToken, content_stream_url: contentStreamUrl });
   }
 
   // GET /files?projectId=xxx[&folderId=yyy] — list files (any member except limited)

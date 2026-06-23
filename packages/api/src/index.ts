@@ -39,6 +39,14 @@ export interface Env {
   CF_API_TOKEN?: string;
   CF_ZONE_ID?: string;
   CUSTOM_DOMAIN_CNAME_TARGET?: string;
+  // R2 S3-API credentials for presigning direct video stream URLs (see
+  // lib/r2Presign.ts). Optional: when unset, video falls back to the in-Worker
+  // token streaming route. ACCESS_KEY_ID + SECRET_ACCESS_KEY are secrets;
+  // ACCOUNT_ID + BUCKET_NAME are vars.
+  R2_ACCESS_KEY_ID?: string;
+  R2_SECRET_ACCESS_KEY?: string;
+  R2_ACCOUNT_ID?: string;
+  R2_BUCKET_NAME?: string;
   RATE_LIMITER_INVITE_LOOKUP: { limit(opts: { key: string }): Promise<{ success: boolean }> };
   // Per-API-key limiter for the public /v1 surface (keyed by `apikey:<id>`).
   RATE_LIMITER_API?: { limit(opts: { key: string }): Promise<{ success: boolean }> };

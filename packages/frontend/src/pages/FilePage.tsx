@@ -21,6 +21,9 @@ interface FileRecord {
   // Short-lived capability token for streaming this file's bytes by URL, so
   // <video>/<audio>/<iframe> (which can't send the auth header) can seek/stream.
   content_token?: string;
+  // Presigned R2 URL for video — streams directly from R2 (no Worker in the byte
+  // path). Present only for video when R2 S3 creds are configured server-side.
+  content_stream_url?: string | null;
 }
 
 function FileTypeIcon({ mimeType, className }: { mimeType: string; className?: string }) {
@@ -125,6 +128,10 @@ export function FilePage() {
     ? `/api/files/${file.id}/content?token=${encodeURIComponent(file.content_token)}`
     : null;
 
+  // Video prefers a presigned R2 URL (streams direct from R2, no Worker per
+  // range request); falls back to the Worker token route when presigning is off.
+  const videoSrc = file?.content_stream_url ?? contentUrl;
+
   async function handleDownload() {
     if (!file) return;
     setDownloading(true);
@@ -198,9 +205,9 @@ export function FilePage() {
         </div>
       )}
 
-      {file.mime_type.startsWith("video/") && contentUrl && (
+      {file.mime_type.startsWith("video/") && videoSrc && (
         <div className="mt-6 overflow-hidden rounded-lg border border-border bg-black">
-          <video controls preload="metadata" src={contentUrl} className="max-h-[70vh] w-full bg-black">
+          <video controls preload="metadata" src={videoSrc} className="max-h-[70vh] w-full bg-black">
             Your browser does not support embedded video playback.
           </video>
         </div>

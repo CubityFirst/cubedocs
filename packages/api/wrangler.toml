@@ -48,6 +48,16 @@ ENVIRONMENT = "production"
 CUSTOM_DOMAIN_CNAME_TARGET = "publish.yourannex.com"
 CF_ZONE_ID = "397deb54a68d306201a295d1793fe84c"
 
+# Direct-from-R2 presigned video streaming (see lib/r2Presign.ts). The bucket
+# name matches the [[r2_buckets]] binding above. Set R2_ACCOUNT_ID to your CF
+# account id, and the two secrets via:
+#   npx wrangler secret put R2_ACCESS_KEY_ID
+#   npx wrangler secret put R2_SECRET_ACCESS_KEY
+# (create an R2 API token with Object Read for cubedocs-assets). When any of the
+# four is unset, video falls back to the in-Worker token streaming route.
+R2_BUCKET_NAME = "cubedocs-assets"
+# R2_ACCOUNT_ID = "<your-cloudflare-account-id>"
+
 # Per-user limiter for the invite-by-email lookup. The auth worker's
 # /lookup also has its own coarser IP-keyed limiter — this one caps any
 # single account from scraping the email→user map even when multiple
