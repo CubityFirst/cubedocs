@@ -11,6 +11,16 @@ export async function handleAi(
   const action = url.pathname.replace(/^\/ai\/?/, "").split("/")[0];
 
   if (action === "summarize" && request.method === "POST") {
+    // Killswitch for the paid, external OpenAI dependency. Checked before any
+    // DB/R2 work so a kill takes effect with zero load. Defaults to enabled when
+    // the flag/binding is unavailable (local dev or a flag-service outage) — a
+    // deliberate-off switch, not fail-closed. The frontend degrades gracefully
+    // (it only renders the summary block when a summary is present).
+    const aiEnabled = env.FLAGS ? await env.FLAGS.getBooleanValue("ai-summaries", true) : true;
+    if (!aiEnabled) {
+      return Response.json({ ok: false, error: "ai_disabled", status: 503 }, { status: 503 });
+    }
+
     const body = await request.json<{ docId: string }>();
     if (!body.docId) return errorResponse(Errors.BAD_REQUEST);
 

@@ -77,6 +77,12 @@ name = "RATE_LIMITER_API"
 namespace_id = "2002"
 simple = { limit = 120, period = 60 }
 
+# Cloudflare Flagship feature flags. Shared app with the auth worker. Flags in use:
+#   api              (default on)  — killswitch for the whole /v1 public API surface (v1.ts).
+#   custom-theming   (default off) — per-user gate for custom themes (index.ts).
+#   ai-summaries     (default on)  — killswitch for the OpenAI summarize endpoint (routes/ai.ts).
+#   realtime-collab  (default on)  — killswitch for new collab WS connections (handleCollabUpgrade).
+# When the binding is unavailable (local dev) the code falls back to each call's default.
 [[flagship]]
 binding = "FLAGS"
 app_id = "08fb610f-b8ed-4a60-afcf-7f5fe6b9f948"

@@ -767,6 +767,16 @@ export default {
 async function handleCollabUpgrade(request: Request, url: URL, env: Env, docId: string): Promise<Response> {
   if (!env.DOC_COLLAB) return new Response("Not available", { status: 503 });
 
+  // Global killswitch for realtime collab, on top of the per-project REALTIME
+  // feature bit checked below. Lets ops stop new DocCollabRoom connections during
+  // an incident (the DO holds live sockets + persists to R2) without a redeploy.
+  // Checked before auth/DB work so a kill takes effect with zero load. Defaults
+  // to enabled when the flag/binding is unavailable (local dev / flag outage).
+  // Note: this refuses NEW upgrades only — already-open sockets stay until they
+  // reconnect; use the /collab/reset endpoint to force-drop a specific room.
+  const collabEnabled = env.FLAGS ? await env.FLAGS.getBooleanValue("realtime-collab", true) : true;
+  if (!collabEnabled) return new Response("Realtime collaboration is temporarily disabled", { status: 503 });
+
   // Token arrives as a query param (browsers can't set headers on WS).
   // Re-wrap it as a Bearer header so authenticate() / the AUTH service binding handles it
   // the same way every other route does — works in local dev without JWT_SECRET.
