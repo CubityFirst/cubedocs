@@ -8,7 +8,8 @@
     "build": "tsc",
     "deploy": "pnpm exec wrangler deploy",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
     "aws4fetch": "^1.0.20",

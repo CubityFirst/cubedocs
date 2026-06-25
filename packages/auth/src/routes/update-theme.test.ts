@@ -43,12 +43,15 @@ describe("handleUpdateTheme", () => {
     expect((await handleUpdateTheme(req({ theme: "dark" }), env)).status).toBe(401);
   });
 
-  it("returns 403 when the user is not a global admin", async () => {
+  // The admin / custom-theming gate intentionally lives in the API worker's
+  // PATCH /me/theme, NOT in this handler — so a non-admin session still writes
+  // here. This guards against the handler accidentally growing its own gate.
+  it("does not self-gate on admin (gate lives in the API worker's PATCH /me/theme)", async () => {
     vi.mocked(requireAuthenticatedSession).mockResolvedValue({ ...adminSession, isAdmin: false });
     const { env, prepare } = makeEnv();
     const res = await handleUpdateTheme(req({ theme: "light" }), env);
-    expect(res.status).toBe(403);
-    expect(prepare).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(prepare).toHaveBeenCalled();
   });
 
   it("rejects a missing / unknown theme", async () => {
