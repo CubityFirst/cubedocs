@@ -7,6 +7,14 @@ interface Props extends React.ComponentPropsWithoutRef<"img"> {
   projectId?: string;
   /** Public mode: rewrites /api/files/ to /api/public/files/?projectId= and skips auth. */
   isPublic?: boolean;
+  /**
+   * Declared MIME type of the source. When set and the fetched blob's type
+   * differs (e.g. an SVG the API serves as application/octet-stream so it can't
+   * be navigated to as a scriptable document), the blob is re-wrapped with this
+   * type so the <img> decoder accepts it. <img>-loaded SVG can't run script, so
+   * this stays XSS-safe.
+   */
+  mimeType?: string;
 }
 
 // Module-level dedup so concurrent renders of the same image src share a single
@@ -31,7 +39,7 @@ function getImageBlob(src: string): Promise<Blob | null> {
   return p;
 }
 
-export function AuthenticatedImage({ src, alt, projectId, isPublic, ...props }: Props) {
+export function AuthenticatedImage({ src, alt, projectId, isPublic, mimeType, ...props }: Props) {
   const [resolvedSrc, setResolvedSrc] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -58,20 +66,25 @@ export function AuthenticatedImage({ src, alt, projectId, isPublic, ...props }: 
     let blobUrl: string | null = null;
     let cancelled = false;
     const fetchSrc = projectId ? `${src}?projectId=${projectId}` : src;
-    getImageBlob(fetchSrc).then(blob => {
+    getImageBlob(fetchSrc).then(async blob => {
       if (cancelled) return;
-      if (blob) {
-        blobUrl = URL.createObjectURL(blob);
-        setResolvedSrc(blobUrl);
-      } else {
-        setFailed(true);
-      }
+      if (!blob) { setFailed(true); return; }
+      // The API serves non-inline-safe images (notably SVG) as
+      // application/octet-stream so they can't be navigated to as scriptable
+      // documents. The <img> decoder won't accept octet-stream, so re-wrap the
+      // bytes with the declared type. <img>-loaded SVG can't run script.
+      const typed = mimeType && blob.type !== mimeType
+        ? new Blob([await blob.arrayBuffer()], { type: mimeType })
+        : blob;
+      if (cancelled) return;
+      blobUrl = URL.createObjectURL(typed);
+      setResolvedSrc(blobUrl);
     });
     return () => {
       cancelled = true;
       if (blobUrl) URL.revokeObjectURL(blobUrl);
     };
-  }, [src, projectId, isPublic]);
+  }, [src, projectId, isPublic, mimeType]);
 
   if (failed) {
     return (

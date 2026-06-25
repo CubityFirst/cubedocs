@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
-import { Folder, FileText, House, Plus, FolderPlus, Search, X, Download, Upload, Image, FileCode, FileArchive, File, Music, Video, Trash2, Pencil, Link, Sparkles } from "lucide-react";
+import { Folder, FileText, House, Plus, FolderPlus, Search, X, Download, Upload, Trash2, Pencil, Link, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiFetch, apiFetchJson } from "@/lib/apiFetch";
 import { sortFolders, sortDocs, sortFiles, type SortDir } from "@/lib/fileSort";
 import { UserProfileCard } from "@/components/UserProfileCard";
+import { FileTypeIcon } from "@/components/FileTypeIcon";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
@@ -50,15 +51,6 @@ interface FileItem {
   created_at: string;
   uploader_name?: string;
   uploader_role?: Role | null;
-}
-
-function FileIcon({ mimeType, className }: { mimeType: string; className?: string }) {
-  if (mimeType.startsWith("image/")) return <Image className={className} />;
-  if (mimeType.startsWith("audio/")) return <Music className={className} />;
-  if (mimeType.startsWith("video/")) return <Video className={className} />;
-  if (mimeType === "application/json" || mimeType.startsWith("text/")) return <FileCode className={className} />;
-  if (mimeType.includes("zip") || mimeType.includes("tar") || mimeType.includes("gzip") || mimeType.includes("archive")) return <FileArchive className={className} />;
-  return <File className={className} />;
 }
 
 function formatBytes(bytes: number): string {
@@ -836,7 +828,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                   {
                     content: (
                       <div className="group flex items-center w-full min-w-0">
-                        <FileIcon mimeType={file.mime_type} className="h-4 w-4 shrink-0 mr-2 text-muted-foreground/60" />
+                        <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-4 w-4 shrink-0 mr-2 text-muted-foreground/60" />
                         <span className="text-sm truncate">{file.name}</span>
                         {canEdit && (
                           <button

@@ -1,11 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useOutletContext, useLocation, useNavigate } from "react-router-dom";
-import { Image, FileCode, FileArchive, FileText, File, Music, Video, Download, Link, Check } from "lucide-react";
+import { Download, Link, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { AuthenticatedImage } from "@/components/AuthenticatedImage";
 import { AudioVisualizer } from "@/components/AudioVisualizer";
+import { FileTypeIcon } from "@/components/FileTypeIcon";
+import { CodeBlock } from "@/components/CodeBlock";
 import { apiFetch, apiFetchJson } from "@/lib/apiFetch";
+import { fileKind, guessLanguage } from "@/lib/fileKind";
 import { pushRecentItem } from "@/lib/recentDocs";
 import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
 
@@ -26,31 +29,10 @@ interface FileRecord {
   content_stream_url?: string | null;
 }
 
-function FileTypeIcon({ mimeType, className }: { mimeType: string; className?: string }) {
-  if (mimeType.startsWith("image/")) return <Image className={className} />;
-  if (mimeType.startsWith("audio/")) return <Music className={className} />;
-  if (mimeType.startsWith("video/")) return <Video className={className} />;
-  if (mimeType === "application/json" || mimeType.startsWith("text/")) return <FileCode className={className} />;
-  if (mimeType.includes("zip") || mimeType.includes("tar") || mimeType.includes("gzip") || mimeType.includes("archive")) return <FileArchive className={className} />;
-  if (mimeType === "application/pdf") return <FileText className={className} />;
-  return <File className={className} />;
-}
-
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-// Files we render inline as decoded UTF-8 text. Covers text/* (text/plain,
-// text/markdown, text/csv, …) plus a few structured-text application/* types.
-function isTextFile(mimeType: string): boolean {
-  return (
-    mimeType.startsWith("text/") ||
-    mimeType === "application/json" ||
-    mimeType === "application/xml" ||
-    mimeType === "application/javascript"
-  );
 }
 
 // Guard rail so a huge log/dump doesn't lock up the tab — preview the first
@@ -102,7 +84,7 @@ export function FilePage() {
           // Media (audio/video/pdf) streams directly from the content URL via a
           // capability token — no blob fetch. Text is fetched + decoded here so
           // we can render it inline (and cap the preview size).
-          if (isTextFile(result.data.mime_type)) {
+          if (fileKind(result.data.mime_type, result.data.name) === "text") {
             apiFetch(`/api/files/${fileId}/content`)
               .then(r => r.arrayBuffer())
               .then(buf => {
@@ -166,11 +148,13 @@ export function FilePage() {
     );
   }
 
+  const kind = fileKind(file.mime_type, file.name);
+
   return (
     <div className="mx-auto max-w-2xl px-6 py-10">
       <div className="flex items-center gap-4">
         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-border bg-muted">
-          <FileTypeIcon mimeType={file.mime_type} className="h-6 w-6 text-muted-foreground" />
+          <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-6 w-6 text-muted-foreground" />
         </div>
         <div className="min-w-0">
           <h1 className="truncate text-xl font-semibold">{file.name}</h1>
@@ -187,25 +171,26 @@ export function FilePage() {
         <dd>{formatDate(file.created_at)}</dd>
       </dl>
 
-      {file.mime_type.startsWith("image/") && (
+      {kind === "image" && (
         <div className="mt-6 overflow-hidden rounded-lg border border-border bg-muted/30">
           <AuthenticatedImage
             src={`/api/files/${file.id}/content`}
             alt={file.name}
             projectId={projectId}
+            mimeType={file.mime_type}
             className="max-h-[60vh] w-full object-contain"
           />
         </div>
       )}
 
-      {file.mime_type.startsWith("audio/") && contentUrl && (
+      {kind === "audio" && contentUrl && (
         <div className="mt-6 rounded-lg border border-border bg-muted/30 p-4">
           <AudioVisualizer audioRef={audioRef} className="mb-3 h-20 text-primary" />
           <audio ref={audioRef} controls preload="metadata" src={contentUrl} className="w-full" />
         </div>
       )}
 
-      {file.mime_type.startsWith("video/") && videoSrc && (
+      {kind === "video" && videoSrc && (
         <div className="mt-6 overflow-hidden rounded-lg border border-border bg-black">
           <video controls preload="metadata" src={videoSrc} className="max-h-[70vh] w-full bg-black">
             Your browser does not support embedded video playback.
@@ -213,21 +198,23 @@ export function FilePage() {
         </div>
       )}
 
-      {file.mime_type === "application/pdf" && contentUrl && (
+      {kind === "pdf" && contentUrl && (
         <div className="mt-6 overflow-hidden rounded-lg border border-border bg-muted/30">
           <iframe src={contentUrl} title={file.name} referrerPolicy="no-referrer" className="h-[75vh] w-full" />
         </div>
       )}
 
-      {isTextFile(file.mime_type) && textContent !== null && (
-        <div className="mt-6 overflow-hidden rounded-lg border border-border bg-muted/30">
-          <pre className="max-h-[75vh] overflow-auto p-4 text-sm leading-relaxed whitespace-pre-wrap break-words font-mono">
-            {textContent}
-          </pre>
+      {kind === "text" && textContent !== null && (
+        <div className="mt-6">
+          <CodeBlock
+            lang={guessLanguage(file.name)}
+            code={textContent}
+            className="[&>pre]:max-h-[75vh] [&>pre]:overflow-y-auto"
+          />
           {textTruncated && (
-            <div className="border-t border-border bg-muted/50 px-4 py-2 text-xs text-muted-foreground">
+            <p className="mt-2 text-xs text-muted-foreground">
               Preview truncated at {formatBytes(MAX_TEXT_PREVIEW_BYTES)}. Download the file to see the full contents.
-            </div>
+            </p>
           )}
         </div>
       )}
@@ -237,7 +224,7 @@ export function FilePage() {
           <Download className="h-4 w-4" />
           {downloading ? "Downloading…" : "Download"}
         </Button>
-        {(file.mime_type.startsWith("image/") || file.mime_type.startsWith("audio/")) && (
+        {(kind === "image" || kind === "audio") && (
           <Button
             variant="outline"
             className="gap-2"

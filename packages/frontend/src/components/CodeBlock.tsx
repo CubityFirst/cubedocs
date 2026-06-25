@@ -21,6 +21,9 @@ function highlight(code: string, lang: string): string | null {
 interface CodeBlockProps {
   lang: string;
   code: string;
+  /** Extra classes for the block container — e.g. a max-height + scroll cap when
+   *  previewing a whole file rather than an inline fence. */
+  className?: string;
 }
 
 /**
@@ -28,15 +31,15 @@ interface CodeBlockProps {
  * diagram and everything else to the Shiki highlighter. Kept hook-free so the
  * routing branch can't reorder hooks across renders.
  */
-export function CodeBlock({ lang, code }: CodeBlockProps) {
+export function CodeBlock({ lang, code, className }: CodeBlockProps) {
   if (lang === "mermaid") {
     return <MermaidDiagram code={code} />;
   }
-  return <ShikiCodeBlock lang={lang} code={code} />;
+  return <ShikiCodeBlock lang={lang} code={code} className={className} />;
 }
 
 /** Highlighted fenced code block using Shiki (github-dark-dimmed theme). */
-function ShikiCodeBlock({ lang, code }: CodeBlockProps) {
+function ShikiCodeBlock({ lang, code, className }: CodeBlockProps) {
   const [html, setHtml] = useState<string | null>(() => highlight(code, lang));
   const [copied, setCopied] = useState(false);
 
@@ -67,7 +70,7 @@ function ShikiCodeBlock({ lang, code }: CodeBlockProps) {
 
   if (html) {
     return (
-      <div className="not-prose relative my-4 rounded-md text-sm [&>pre]:overflow-x-auto [&>pre]:p-4">
+      <div className={`not-prose relative my-4 rounded-md text-sm [&>pre]:overflow-x-auto [&>pre]:p-4 ${className ?? ""}`}>
         {/* Shiki escapes all user code content — safe to set innerHTML */}
         <div dangerouslySetInnerHTML={{ __html: html }} />
         {copyButton}
@@ -77,7 +80,7 @@ function ShikiCodeBlock({ lang, code }: CodeBlockProps) {
 
   // Plain fallback shown only on the very first page load before Shiki is ready.
   return (
-    <div className="not-prose relative my-4">
+    <div className={`not-prose relative my-4 ${className ?? ""}`}>
       <pre className="overflow-x-auto rounded-md bg-[#22272e] p-4 text-sm text-[#adbac7]">
         <code>{code}</code>
       </pre>

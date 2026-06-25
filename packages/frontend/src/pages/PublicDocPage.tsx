@@ -11,6 +11,7 @@ import { GraphView, type GraphData } from "@/components/GraphView";
 import { LinkedDocsPanel } from "@/components/LinkedDocsPanel";
 import { NotFound404 } from "./NotFound404";
 import { AudioVisualizer } from "@/components/AudioVisualizer";
+import { FileTypeIcon } from "@/components/FileTypeIcon";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -19,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { getToken } from "@/lib/auth";
 import { useSiteRoute, siteHref } from "@/lib/siteUrl";
 import { cn } from "@/lib/utils";
-import { BookOpen, FileText, Folder, House, ChevronLeft, ChevronRight, Search, X, Image, FileCode, FileArchive, File, Music, Download, Network } from "lucide-react";
+import { BookOpen, FileText, Folder, House, ChevronLeft, ChevronRight, Search, X, Download, Network } from "lucide-react";
 
 interface Heading { level: number; text: string; id: string }
 
@@ -80,14 +81,6 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function FileTypeIcon({ mimeType, className }: { mimeType: string; className?: string }) {
-  if (mimeType.startsWith("image/")) return <Image className={className} />;
-  if (mimeType.startsWith("audio/")) return <Music className={className} />;
-  if (mimeType === "application/json" || mimeType.startsWith("text/")) return <FileCode className={className} />;
-  if (mimeType.includes("zip") || mimeType.includes("tar") || mimeType.includes("gzip") || mimeType.includes("archive")) return <FileArchive className={className} />;
-  return <File className={className} />;
 }
 
 function flattenDocs(folders: NavFolder[], docs: NavDoc[], parentId: string | null = null): NavDoc[] {
@@ -250,7 +243,7 @@ function NavTree({
             {depth > 0 && (
               <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 h-px w-3 bg-border" />
             )}
-            <FileTypeIcon mimeType={file.mime_type} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             <span className="truncate">{file.name}</span>
           </button>
         );
@@ -284,7 +277,7 @@ function PublicFileView({ file, projectId }: { file: NavFile; projectId: string 
     <div className="mx-auto max-w-2xl px-6 py-10">
       <div className="flex items-center gap-4">
         <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border border-border bg-muted">
-          <FileTypeIcon mimeType={file.mime_type} className="h-7 w-7 text-muted-foreground" />
+          <FileTypeIcon mimeType={file.mime_type} name={file.name} className="h-7 w-7 text-muted-foreground" />
         </div>
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold truncate">{file.name}</h1>
