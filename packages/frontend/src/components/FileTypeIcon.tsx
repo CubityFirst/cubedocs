@@ -1,4 +1,4 @@
-import { Image, Music, Video, FileCode, FileArchive, FileText, File } from "lucide-react";
+import { Image, Music, Video, FileCode, FileArchive, FileText, File, PenTool } from "lucide-react";
 import { fileKind } from "@/lib/fileKind";
 
 /**
@@ -13,6 +13,7 @@ export function FileTypeIcon({ mimeType, name, className }: { mimeType: string; 
     case "audio": return <Music className={className} />;
     case "video": return <Video className={className} />;
     case "pdf": return <FileText className={className} />;
+    case "drawing": return <PenTool className={className} />;
     case "text": return <FileCode className={className} />;
     case "archive": return <FileArchive className={className} />;
     default: return <File className={className} />;

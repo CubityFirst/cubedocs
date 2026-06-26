@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { fileServeHeaders, folderInProject, wouldCreateFolderCycle, parseByteRange, serveR2Object, isInlineSafeMime } from "./lib";
+import { fileServeHeaders, folderInProject, wouldCreateFolderCycle, parseByteRange, serveR2Object, isInlineSafeMime, isMutableFile, EXCALIDRAW_MIME } from "./lib";
 
 // Minimal D1-ish stub: prepare().bind().first() resolves to the queued result.
 function dbReturning(result: unknown) {
@@ -110,6 +110,23 @@ describe("isInlineSafeMime", () => {
     expect(isInlineSafeMime("application/octet-stream")).toBe(false);
     expect(isInlineSafeMime(null)).toBe(false);
     expect(isInlineSafeMime("")).toBe(false);
+  });
+});
+
+describe("isMutableFile (drawings-only content overwrite)", () => {
+  it("is true only for the Excalidraw vendor MIME, case/param-insensitive", () => {
+    expect(isMutableFile(EXCALIDRAW_MIME)).toBe(true);
+    expect(isMutableFile("application/vnd.excalidraw+json")).toBe(true);
+    expect(isMutableFile("APPLICATION/VND.EXCALIDRAW+JSON")).toBe(true);
+    expect(isMutableFile("application/vnd.excalidraw+json; charset=utf-8")).toBe(true);
+  });
+
+  it("is false for uploaded media / plain JSON / empty (keeps them immutable)", () => {
+    expect(isMutableFile("application/json")).toBe(false);
+    expect(isMutableFile("image/png")).toBe(false);
+    expect(isMutableFile("text/plain")).toBe(false);
+    expect(isMutableFile(null)).toBe(false);
+    expect(isMutableFile("")).toBe(false);
   });
 });
 

@@ -1,4 +1,4 @@
-import { okResponse, errorResponse, Errors, serveR2Object } from "../lib";
+import { okResponse, errorResponse, Errors, serveR2Object, isMutableFile } from "../lib";
 import { parseFrontmatter } from "../lib/frontmatter";
 import type { Env } from "../index";
 
@@ -165,22 +165,26 @@ export async function handlePublic(
     });
   }
 
-  // /public/files/:id/content — serve a file from a published project (images only)
+  // /public/files/:id/content — serve a file from a published project. Drawings
+  // (mutable files) version their ETag with updated_at and serve no-cache so an
+  // edit shows up on the published site; immutable media keep the long cache.
   if (parts[0] === "files" && parts[1] && parts[2] === "content") {
     const fileId = parts[1];
     const contextProjectId = url.searchParams.get("projectId");
     const meta = await env.DB.prepare(
-      "SELECT f.mime_type, f.name, f.size, p.published_at FROM files f JOIN projects p ON p.id = f.project_id WHERE f.id = ?" +
+      "SELECT f.mime_type, f.name, f.size, f.updated_at, p.published_at FROM files f JOIN projects p ON p.id = f.project_id WHERE f.id = ?" +
         (contextProjectId ? " AND (p.id = ? OR p.vanity_slug = ?)" : ""),
-    ).bind(...(contextProjectId ? [fileId, contextProjectId, contextProjectId] : [fileId])).first<{ mime_type: string; name: string; size: number; published_at: string | null }>();
+    ).bind(...(contextProjectId ? [fileId, contextProjectId, contextProjectId] : [fileId])).first<{ mime_type: string; name: string; size: number; updated_at: string | null; published_at: string | null }>();
     if (!meta || !meta.published_at) return errorResponse(Errors.NOT_FOUND);
 
+    const mutable = isMutableFile(meta.mime_type);
+    const version = meta.updated_at ? new Date(meta.updated_at).getTime() : 0;
     return serveR2Object(env.ASSETS, `files/${fileId}`, {
       mimeType: meta.mime_type,
       filename: meta.name,
       size: meta.size,
-      etag: `"${fileId}"`,
-      cacheControl: "public, max-age=3600",
+      etag: `"${fileId}-${version}"`,
+      cacheControl: mutable ? "public, no-cache" : "public, max-age=3600",
       request,
     });
   }

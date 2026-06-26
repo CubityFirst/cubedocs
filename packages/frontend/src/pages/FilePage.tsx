@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { useParams, useOutletContext, useLocation, useNavigate } from "react-router-dom";
 import { Download, Link, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -7,10 +7,16 @@ import { AuthenticatedImage } from "@/components/AuthenticatedImage";
 import { AudioVisualizer } from "@/components/AudioVisualizer";
 import { FileTypeIcon } from "@/components/FileTypeIcon";
 import { CodeBlock } from "@/components/CodeBlock";
+import { Spinner } from "@/components/ui/spinner";
 import { apiFetch, apiFetchJson } from "@/lib/apiFetch";
 import { fileKind, guessLanguage } from "@/lib/fileKind";
+import { isLightTheme } from "@/lib/theme";
 import { pushRecentItem } from "@/lib/recentDocs";
 import type { DocsLayoutContext, BreadcrumbItem } from "@/layouts/DocsLayout";
+
+// @excalidraw/excalidraw is a heavy chunk — keep it out of the main bundle and
+// only fetch it when a drawing is actually opened.
+const ExcalidrawCanvas = lazy(() => import("@/components/ExcalidrawCanvas"));
 
 interface FileRecord {
   id: string;
@@ -48,7 +54,7 @@ function formatDate(iso: string): string {
 
 export function FilePage() {
   const { projectId, fileId } = useParams<{ projectId: string; fileId: string }>();
-  const { setBreadcrumbs, projectName } = useOutletContext<DocsLayoutContext>();
+  const { setBreadcrumbs, projectName, myRole, theme, customColor } = useOutletContext<DocsLayoutContext>();
   const location = useLocation();
   const navigate = useNavigate();
   const [file, setFile] = useState<FileRecord | null>(null);
@@ -149,6 +155,26 @@ export function FilePage() {
   }
 
   const kind = fileKind(file.mime_type, file.name);
+
+  // Drawings render as a live canvas filling the content area — editor+ get the
+  // full editor + Save; everyone else gets a read-only (view-mode) canvas.
+  if (kind === "drawing") {
+    const canEdit = myRole === "editor" || myRole === "admin" || myRole === "owner";
+    const exTheme = isLightTheme({ mode: theme, customColor }) ? "light" : "dark";
+    return (
+      <div className="flex h-full flex-col">
+        <Suspense fallback={<div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground"><Spinner /> Loading editor…</div>}>
+          <ExcalidrawCanvas
+            contentUrl={`/api/files/${file.id}/content`}
+            fetcher={(u, init) => apiFetch(u, init)}
+            readOnly={!canEdit}
+            name={file.name}
+            theme={exTheme}
+          />
+        </Suspense>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-10">

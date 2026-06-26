@@ -1,4 +1,4 @@
-import { okResponse, errorResponse, Errors, ROLE_RANK, serveR2Object, isInlineSafeMime, folderInProject, type Role } from "../lib";
+import { okResponse, errorResponse, Errors, ROLE_RANK, serveR2Object, isInlineSafeMime, isMutableFile, folderInProject, type Role } from "../lib";
 import type { Env } from "../index";
 import { resolveRole } from "../lib/access";
 import { signContentToken, verifyContentToken } from "../lib/contentToken";
@@ -15,6 +15,7 @@ export interface FileRecord {
   folder_id: string | null;
   uploaded_by: string;
   created_at: string;
+  updated_at: string;
   uploader_name?: string;
   uploader_role?: string;
 }
@@ -36,9 +37,9 @@ export async function handleFiles(
   if (fileId && subResource === "content" && request.method === "GET") {
     const contextProjectId = url.searchParams.get("projectId");
     const meta = await env.DB.prepare(
-      "SELECT f.name, f.mime_type, f.size, f.project_id, p.published_at FROM files f JOIN projects p ON p.id = f.project_id WHERE f.id = ?" +
+      "SELECT f.name, f.mime_type, f.size, f.project_id, f.updated_at, p.published_at FROM files f JOIN projects p ON p.id = f.project_id WHERE f.id = ?" +
         (contextProjectId ? " AND f.project_id = ?" : ""),
-    ).bind(...(contextProjectId ? [fileId, contextProjectId] : [fileId])).first<{ name: string; mime_type: string; size: number; project_id: string; published_at: string | null }>();
+    ).bind(...(contextProjectId ? [fileId, contextProjectId] : [fileId])).first<{ name: string; mime_type: string; size: number; project_id: string; updated_at: string | null; published_at: string | null }>();
     if (!meta) return errorResponse(Errors.NOT_FOUND);
 
     const canUsePublishedAccess = !!meta.published_at;
@@ -59,16 +60,22 @@ export async function handleFiles(
       }
     }
 
-    // File content is immutable — file_id is keyed to a single uploaded blob, and
-    // PUT /files/:id only mutates name/folder. The strong ETag (the immutable id)
-    // enables 304 revalidation; Cache-Control: private keeps authenticated reads
-    // off shared caches.
+    // Uploaded media is immutable — file_id is keyed to a single blob and PUT
+    // /files/:id only mutates name/folder — so its content ETag is the bare id and
+    // it caches for a long time. Mutable files (Excalidraw drawings, overwritten by
+    // PUT /files/:id/content) version their ETag with updated_at ("<id>-<ms>") and
+    // serve no-cache, so a save always revalidates and never returns stale bytes.
+    // Cache-Control: private keeps authenticated reads off shared caches.
+    const mutable = isMutableFile(meta.mime_type);
+    const version = meta.updated_at ? new Date(meta.updated_at).getTime() : 0;
     return serveR2Object(env.ASSETS, `files/${fileId}`, {
       mimeType: meta.mime_type,
       filename: meta.name,
       size: meta.size,
-      etag: `"${fileId}"`,
-      cacheControl: canUsePublishedAccess ? "public, max-age=3600" : "private, max-age=300, must-revalidate",
+      etag: `"${fileId}-${version}"`,
+      cacheControl: mutable
+        ? (canUsePublishedAccess ? "public, no-cache" : "private, no-cache")
+        : (canUsePublishedAccess ? "public, max-age=3600" : "private, max-age=300, must-revalidate"),
       request,
     });
   }
@@ -117,7 +124,7 @@ export async function handleFiles(
 
     const folderId = url.searchParams.get("folderId");
     const baseSelect = `
-      SELECT f.id, f.name, f.mime_type, f.size, f.project_id, f.folder_id, f.uploaded_by, f.created_at,
+      SELECT f.id, f.name, f.mime_type, f.size, f.project_id, f.folder_id, f.uploaded_by, f.created_at, f.updated_at,
         COALESCE(pm.name, f.uploaded_by) AS uploader_name,
         pm.role AS uploader_role
       FROM files f
@@ -166,11 +173,45 @@ export async function handleFiles(
     });
 
     await env.DB.prepare(
-      "INSERT INTO files (id, name, mime_type, size, project_id, folder_id, uploaded_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-    ).bind(id, file.name, mimeType, file.size, projectId, folderId ?? null, user.userId, now).run();
+      "INSERT INTO files (id, name, mime_type, size, project_id, folder_id, uploaded_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    ).bind(id, file.name, mimeType, file.size, projectId, folderId ?? null, user.userId, now, now).run();
 
-    const record: FileRecord = { id, name: file.name, mime_type: mimeType, size: file.size, project_id: projectId, folder_id: folderId ?? null, uploaded_by: user.userId, created_at: now };
+    const record: FileRecord = { id, name: file.name, mime_type: mimeType, size: file.size, project_id: projectId, folder_id: folderId ?? null, uploaded_by: user.userId, created_at: now, updated_at: now };
     return okResponse(record, 201);
+  }
+
+  // PUT /files/:id/content — overwrite a drawing's bytes in place (editor+).
+  // Only mutable files (Excalidraw drawings) may be overwritten; uploaded media
+  // stay immutable (their content ETag / long cache assume the blob never changes).
+  if (fileId && subResource === "content" && request.method === "PUT") {
+    const meta = await env.DB.prepare("SELECT name, mime_type, project_id, updated_at FROM files WHERE id = ?")
+      .bind(fileId).first<{ name: string; mime_type: string; project_id: string; updated_at: string | null }>();
+    if (!meta) return errorResponse(Errors.NOT_FOUND);
+    if (!isMutableFile(meta.mime_type)) return errorResponse(Errors.BAD_REQUEST);
+
+    const role = await resolveRole(env.DB, meta.project_id, user.userId);
+    if (role === null) return errorResponse(Errors.FORBIDDEN);
+    if (ROLE_RANK[role] < ROLE_RANK["editor"]) return errorResponse(Errors.FORBIDDEN);
+
+    const body = await request.arrayBuffer();
+    if (body.byteLength > MAX_SIZE) {
+      return Response.json({ ok: false, error: "File too large. Maximum size is 50MB." }, { status: 400 });
+    }
+
+    // The content ETag is versioned by updated_at ms, so two saves within the same
+    // millisecond would collide and a no-cache revalidation could 304 to stale
+    // bytes. Force updated_at strictly forward of the previous value.
+    let nowMs = Date.now();
+    const prevMs = meta.updated_at ? new Date(meta.updated_at).getTime() : 0;
+    if (nowMs <= prevMs) nowMs = prevMs + 1;
+    const now = new Date(nowMs).toISOString();
+    // Re-use the stored MIME — a drawing stays a drawing; never trust the client's
+    // request Content-Type here (the editor PUTs application/json).
+    await env.ASSETS.put(`files/${fileId}`, body, { httpMetadata: { contentType: meta.mime_type } });
+    await env.DB.prepare("UPDATE files SET size = ?, updated_at = ? WHERE id = ?")
+      .bind(body.byteLength, now, fileId).run();
+
+    return okResponse({ id: fileId, size: body.byteLength, updated_at: now });
   }
 
   // PUT /files/:id — move to a different folder (editor+)
@@ -197,7 +238,7 @@ export async function handleFiles(
         .bind(body.folderId ?? null, fileId).run();
     }
     const updated = await env.DB.prepare(`
-      SELECT f.id, f.name, f.mime_type, f.size, f.project_id, f.folder_id, f.uploaded_by, f.created_at,
+      SELECT f.id, f.name, f.mime_type, f.size, f.project_id, f.folder_id, f.uploaded_by, f.created_at, f.updated_at,
         COALESCE(pm.name, f.uploaded_by) AS uploader_name,
         pm.role AS uploader_role
       FROM files f

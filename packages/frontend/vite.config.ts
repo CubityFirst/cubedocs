@@ -64,5 +64,11 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: "dist",
     },
+    define: {
+      // @excalidraw/excalidraw reads process.env.IS_PREACT at runtime; a Vite/React
+      // bundle has no `process` global, so without this the chunk throws
+      // "process is not defined" the moment the editor loads.
+      "process.env.IS_PREACT": JSON.stringify("false"),
+    },
   };
 });

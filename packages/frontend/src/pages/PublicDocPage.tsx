@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from "react";
 import { useSwipeGesture } from "@/hooks/useSwipeGesture";
+import { fileKind } from "@/lib/fileKind";
 import { SearchPalette } from "@/components/SearchPalette";
 import { useParams, useNavigate, NavLink, useLocation } from "react-router-dom";
 import { EditorView } from "@codemirror/view";
@@ -17,10 +18,14 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import { getToken } from "@/lib/auth";
 import { useSiteRoute, siteHref } from "@/lib/siteUrl";
 import { cn } from "@/lib/utils";
 import { BookOpen, FileText, Folder, House, ChevronLeft, ChevronRight, Search, X, Download, Network } from "lucide-react";
+
+// Heavy chunk — only loaded when a published drawing is opened.
+const ExcalidrawCanvas = lazy(() => import("@/components/ExcalidrawCanvas"));
 
 interface Heading { level: number; text: string; id: string }
 
@@ -308,6 +313,7 @@ function PublicFileView({ file, projectId }: { file: NavFile; projectId: string 
           <audio ref={audioRef} controls src={`/api/public/files/${file.id}/content?projectId=${projectId}`} className="w-full" />
         </div>
       )}
+
 
       <div className="mt-8">
         <Button onClick={handleDownload} disabled={downloading} className="gap-2">
@@ -818,6 +824,20 @@ export function PublicDocPage() {
                 </p>
               </div>
             )}
+          </div>
+        ) : selectedFile && fileKind(selectedFile.mime_type, selectedFile.name) === "drawing" ? (
+          // Drawings fill the entire right pane (full-bleed, not boxed) — a live
+          // read-only canvas the visitor can pan/zoom.
+          <div className="flex-1 min-h-0">
+            <Suspense fallback={<div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground"><Spinner /> Loading drawing…</div>}>
+              <ExcalidrawCanvas
+                contentUrl={`/api/public/files/${selectedFile.id}/content?projectId=${projectId ?? ""}`}
+                fetcher={(u, init) => fetch(u, init)}
+                readOnly
+                name={selectedFile.name}
+                theme={typeof document !== "undefined" && document.documentElement.classList.contains("dark") ? "dark" : "light"}
+              />
+            </Suspense>
           </div>
         ) : (
         <ScrollArea className="flex-1 public-doc-scroller">

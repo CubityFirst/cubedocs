@@ -40,6 +40,16 @@ describe("fileKind", () => {
     expect(fileKind("application/x-7z-compressed", "a.7z")).toBe("archive");
   });
 
+  it("classifies .excalidraw drawings by extension, never as text", () => {
+    // Browsers hand .excalidraw up as JSON or octet-stream — neither must win
+    // over the drawing classification (else it'd render as a JSON code block).
+    expect(fileKind("application/json", "diagram.excalidraw")).toBe("drawing");
+    expect(fileKind("application/octet-stream", "diagram.excalidraw")).toBe("drawing");
+    expect(fileKind("", "diagram.excalidraw")).toBe("drawing");
+    expect(fileKind("application/vnd.excalidraw+json", "diagram.excalidraw")).toBe("drawing");
+    expect(fileKind("application/json", "diagram.excalidraw")).not.toBe("text");
+  });
+
   it("falls back to 'other' for unknown binary", () => {
     expect(fileKind("application/octet-stream", "data.bin")).toBe("other");
     expect(fileKind("", "")).toBe("other");

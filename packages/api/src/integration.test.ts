@@ -218,6 +218,111 @@ describe.skipIf(!serversUp)("API — authenticated project + doc flow", () => {
   });
 });
 
+// ── Drawing files — mutable content (PUT /files/:id/content) ─────────────────
+// Drawings are the one file kind whose R2 blob may be overwritten in place. The
+// route must accept overwrites only for the Excalidraw vendor MIME, bust the
+// content ETag on save, and reject overwrites of immutable media.
+
+describe.skipIf(!serversUp)("API — drawing file content overwrite", () => {
+  let token = "";
+  let projectId = "";
+  let drawingId = "";
+  let textId = "";
+
+  const EXCALIDRAW_MIME = "application/vnd.excalidraw+json";
+  const emptyScene = JSON.stringify({ type: "excalidraw", version: 2, source: "test", elements: [], appState: {}, files: {} });
+
+  beforeAll(async () => {
+    const email = `draw-flow-${RUN_ID}@example.com`;
+    await fetch(`${API_URL}/register`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ email, password: PASSWORD, name: NAME, turnstileToken: TURNSTILE_TOKEN }),
+    });
+    const loginRes = await fetch(`${API_URL}/login`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ email, password: PASSWORD, turnstileToken: TURNSTILE_TOKEN }),
+    });
+    token = (await loginRes.json<{ data: { token: string } }>()).data?.token ?? "";
+
+    const projRes = await fetch(`${API_URL}/projects`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ name: "Drawing Test Project" }),
+    });
+    projectId = (await projRes.json<{ data: { id: string } }>()).data.id;
+
+    const drawForm = new FormData();
+    drawForm.append("file", new File([emptyScene], "diagram.excalidraw", { type: EXCALIDRAW_MIME }));
+    drawForm.append("projectId", projectId);
+    const drawRes = await fetch(`${API_URL}/files`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: drawForm,
+    });
+    drawingId = (await drawRes.json<{ data: { id: string } }>()).data.id;
+
+    const textForm = new FormData();
+    textForm.append("file", new File(["plain"], "notes.txt", { type: "text/plain" }));
+    textForm.append("projectId", projectId);
+    const textRes = await fetch(`${API_URL}/files`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: textForm,
+    });
+    textId = (await textRes.json<{ data: { id: string } }>()).data.id;
+  });
+
+  it("PUT /files/:id/content overwrites a drawing and busts the ETag", async () => {
+    const before = await fetch(`${API_URL}/files/${drawingId}/content`, { headers: { Authorization: `Bearer ${token}` } });
+    const etagBefore = before.headers.get("ETag");
+
+    const updated = JSON.stringify({ type: "excalidraw", version: 2, source: "test", elements: [{ id: "a", type: "rectangle" }], appState: {}, files: {} });
+    const putRes = await fetch(`${API_URL}/files/${drawingId}/content`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: updated,
+    });
+    expect(putRes.status).toBe(200);
+    const putBody = await putRes.json<{ ok: boolean; data: { size: number; updated_at: string } }>();
+    expect(putBody.ok).toBe(true);
+    expect(putBody.data.size).toBe(new TextEncoder().encode(updated).length);
+    expect(typeof putBody.data.updated_at).toBe("string");
+
+    const after = await fetch(`${API_URL}/files/${drawingId}/content`, { headers: { Authorization: `Bearer ${token}` } });
+    expect(after.headers.get("ETag")).not.toBe(etagBefore);
+    expect(await after.text()).toContain("rectangle");
+  });
+
+  it("rejects overwriting a non-drawing file with 400", async () => {
+    const res = await fetch(`${API_URL}/files/${textId}/content`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: "should not be allowed",
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects an unauthenticated content overwrite with 401", async () => {
+    const res = await fetch(`${API_URL}/files/${drawingId}/content`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: emptyScene,
+    });
+    expect(res.status).toBe(401);
+  });
+
+  afterAll(async () => {
+    if (projectId && token) {
+      await fetch(`${API_URL}/projects/${projectId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    }
+  });
+});
+
 // ── Public doc access — published-site semantics ─────────────────────────────
 // A published *site* intentionally exposes ALL of its docs regardless of the
 // per-doc published_at flag (which exists for other reasons). A doc is only

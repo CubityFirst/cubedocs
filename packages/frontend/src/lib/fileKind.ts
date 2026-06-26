@@ -10,7 +10,7 @@
 // player), and `.yaml`/`.toml`/`.csv`/`.py`/… commonly arrive as
 // `application/octet-stream` (which would otherwise fall through to download-only).
 
-export type FileKind = "image" | "audio" | "video" | "pdf" | "text" | "archive" | "other";
+export type FileKind = "image" | "audio" | "video" | "pdf" | "text" | "archive" | "drawing" | "other";
 
 // ext → Shiki grammar. Only grammars actually loaded in lib/shiki.ts appear here;
 // anything else resolves to "text" (plain, but still inside a styled code block).
@@ -50,6 +50,11 @@ const ARCHIVE_EXTENSIONS = new Set([
   "zip", "tar", "gz", "tgz", "bz2", "tbz2", "xz", "txz", "7z", "rar", "zst",
 ]);
 
+// Excalidraw native scene files — edited in place by the drawing editor and
+// rendered as a live canvas, never previewed as JSON text. Name-based only
+// (browsers hand .excalidraw up as application/json or application/octet-stream).
+const DRAWING_EXTENSIONS = new Set(["excalidraw"]);
+
 const TEXT_EXTENSIONS = new Set<string>([
   ...Object.keys(EXT_TO_LANG),
   ...PLAIN_TEXT_EXTENSIONS,
@@ -71,7 +76,9 @@ export function fileKind(mimeType: string | null | undefined, name = ""): FileKi
   const base = baseName(name);
   const ext = extensionOf(base);
 
-  // Name-based text/code detection wins over MIME (see file header).
+  // Name-based detection wins over MIME (see file header). Drawings first, so a
+  // .excalidraw (often application/json) never falls through to the text preview.
+  if (DRAWING_EXTENSIONS.has(ext)) return "drawing";
   if (TEXT_EXTENSIONS.has(ext) || TEXT_FILENAMES.has(base)) return "text";
   if (ARCHIVE_EXTENSIONS.has(ext)) return "archive";
 

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
-import { Folder, FileText, House, Plus, FolderPlus, Search, X, Download, Upload, Trash2, Pencil, Link, Sparkles } from "lucide-react";
+import { Folder, FileText, House, Plus, FolderPlus, Search, X, Download, Upload, Trash2, Pencil, Link, Sparkles, PenTool } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -14,6 +14,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator,
 import { useToast } from "@/hooks/use-toast";
 import { apiFetch, apiFetchJson } from "@/lib/apiFetch";
 import { sortFolders, sortDocs, sortFiles, type SortDir } from "@/lib/fileSort";
+import { emptyExcalidrawScene, EXCALIDRAW_MIME, EXCALIDRAW_EXT } from "@/lib/excalidraw";
 import { UserProfileCard } from "@/components/UserProfileCard";
 import { UserAvatar } from "@/components/UserAvatar";
 import { FileTypeIcon } from "@/components/FileTypeIcon";
@@ -185,6 +186,7 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
   const [newFolderName, setNewFolderName] = useState("");
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [creatingDoc, setCreatingDoc] = useState(false);
+  const [creatingDrawing, setCreatingDrawing] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const loadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -318,6 +320,27 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
       }
     } finally {
       setCreatingDoc(false);
+    }
+  }
+
+  async function handleNewDrawing() {
+    if (creatingDrawing) return;
+    setCreatingDrawing(true);
+    try {
+      // A drawing is just a file: POST an empty .excalidraw scene through the
+      // normal upload path (same access check + folder validation), then open it.
+      const blob = new Blob([emptyExcalidrawScene()], { type: EXCALIDRAW_MIME });
+      const file = new File([blob], `Untitled${EXCALIDRAW_EXT}`, { type: EXCALIDRAW_MIME });
+      const form = new FormData();
+      form.append("file", file);
+      form.append("projectId", projectId);
+      if (currentFolderId) form.append("folderId", currentFolderId);
+      const result = await apiFetchJson<FileItem>("/api/files", { method: "POST", body: form });
+      if (result.ok && result.data) {
+        navigate(`/projects/${projectId}/files/${result.data.id}`, { state: { isNew: true, folderPath: path } });
+      }
+    } finally {
+      setCreatingDrawing(false);
     }
   }
 
@@ -505,7 +528,8 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
   const uploadFileAndCreateDoc = useCallback(async (file: File) => {
     setUploadingCount(c => c + 1);
     try {
-      // .md / .txt files → import content as a new document
+      // .md / .txt files → import content as a new document. Everything else
+      // (including dropped .excalidraw drawings) falls through to a file upload.
       if (file.name.endsWith(".md") || file.name.endsWith(".txt")) {
         const content = await file.text();
         const title = file.name.replace(/\.(md|txt)$/i, "") || "Untitled";
@@ -521,9 +545,15 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
         return;
       }
 
-      // Everything else → upload as a native file entry
+      // Everything else → upload as a native file entry. Imported/dropped
+      // .excalidraw files arrive with an empty or application/json MIME, so
+      // re-type them to the vendor MIME — otherwise the API wouldn't treat them
+      // as mutable drawings and saving edits would 400 (isMutableFile).
+      const upload = file.name.toLowerCase().endsWith(EXCALIDRAW_EXT)
+        ? new File([file], file.name, { type: EXCALIDRAW_MIME })
+        : file;
       const form = new FormData();
-      form.append("file", file);
+      form.append("file", upload);
       form.append("projectId", projectId);
       if (currentFolderId) form.append("folderId", currentFolderId);
       const uploadResult = await apiFetchJson<FileItem>("/api/files", { method: "POST", body: form });
@@ -943,6 +973,12 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
           <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setShowNewFolder(true)}>
             <FolderPlus className="h-3.5 w-3.5" />
             New folder
+          </Button>
+        )}
+        {canEdit && (
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={handleNewDrawing} disabled={creatingDrawing}>
+            <PenTool className="h-3.5 w-3.5" />
+            {creatingDrawing ? "Creating…" : "New drawing"}
           </Button>
         )}
         {canEdit && (

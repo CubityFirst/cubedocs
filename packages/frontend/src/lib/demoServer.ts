@@ -376,6 +376,7 @@ function fileListing(f: DemoFile) {
     folder_id: f.folder_id,
     uploaded_by: DEMO_USER_ID,
     created_at: f.created_at,
+    updated_at: f.created_at,
     uploader_name: DEMO_USER_NAME,
     uploader_role: "owner",
   };
@@ -712,6 +713,14 @@ async function route(method: string, url: URL, input: RequestInfo | URL, init?: 
     }
     if (seg[2] === "content" && method === "GET") {
       return new Response(file.blob, { status: 200, headers: { "Content-Type": file.mime_type } });
+    }
+    // Drawings save in place — overwrite the in-memory blob so a reopen shows the
+    // edits (mirrors PUT /files/:id/content on the real API).
+    if (seg[2] === "content" && method === "PUT") {
+      const text = typeof init?.body === "string" ? init.body : "";
+      file.blob = new Blob([text], { type: file.mime_type });
+      file.size = file.blob.size;
+      return ok({ id: file.id, size: file.size, updated_at: file.created_at });
     }
   }
 

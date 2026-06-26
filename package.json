@@ -18,7 +18,7 @@
   "devDependencies": {
     "concurrently": "^9.0.0",
     "typescript": "^5.5.0",
-    "wrangler": "latest"
+    "wrangler": "^4.101.0"
   },
   "packageManager": "pnpm@10.32.1",
   "pnpm": {

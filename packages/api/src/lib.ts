@@ -174,6 +174,22 @@ export function isInlineSafeMime(mimeType: string | null): boolean {
   return INLINE_SAFE_MIME.has(base);
 }
 
+// Native Excalidraw scene format ({type:"excalidraw", elements, appState, files}).
+// Stored .excalidraw drawings carry this MIME so the server can tell them apart
+// from immutable uploaded media. Deliberately NOT on INLINE_SAFE_MIME — it serves
+// as octet-stream/attachment/nosniff; the editor reads the bytes via fetch(), so
+// the content-disposition is irrelevant and an inline JSON document stays inert.
+export const EXCALIDRAW_MIME = "application/vnd.excalidraw+json";
+
+// True for files whose R2 blob may be overwritten in place (PUT .../content).
+// Everything else stays immutable, so its content ETag can be the bare file id and
+// its bytes are safe to cache for a long time. Keyed on MIME (not the file name)
+// so a rename via PUT /files/:id can never flip a drawing back to "immutable", and
+// uploaded media can never be flipped mutable.
+export function isMutableFile(mimeType: string | null): boolean {
+  return (mimeType ?? "").toLowerCase().split(";")[0].trim() === EXCALIDRAW_MIME;
+}
+
 // Headers for serving a stored blob safely. `inline` (with the declared
 // Content-Type) only for the allowlist; otherwise download as octet-stream.
 // `nosniff` blocks MIME-sniffing so e.g. an HTML payload uploaded as image/png
