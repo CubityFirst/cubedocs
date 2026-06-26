@@ -445,13 +445,30 @@ export function PublicDocPage() {
     setNotFound(false);
     setSelectedFile(null);
     fetch(`/api/public/docs/${projectId}/${docId}`)
-      .then(r => {
-        if (r.status === 404) { setNotFound(true); return null; }
-        return r.json() as Promise<{ ok: boolean; data?: PublicData }>;
-      })
-      .then(json => {
-        if (json && json.ok && json.data) setData(json.data);
-        else if (json) setNotFound(true);
+      .then(r => (r.status === 404 ? null : r.json() as Promise<{ ok: boolean; data?: PublicData }>))
+      .then(async json => {
+        if (json && json.ok && json.data) { setData(json.data); return; }
+        // Not a doc — the id may be a published FILE (files/videos/audio/drawings
+        // are directly linkable too). Load the site nav and, if it matches a file,
+        // show the file view; otherwise it's a genuine 404.
+        const projJson = await fetch(`/api/public/projects/${projectId}`)
+          .then(r => r.json() as Promise<{ ok: boolean; data?: { id: string; name: string; vanity_slug: string | null; home_doc_id: string | null; graph_enabled: number; published_graph_enabled: number; logo_square_updated_at: string | null; logo_wide_updated_at: string | null; docs: NavDoc[]; folders: NavFolder[]; files: NavFile[] } }>)
+          .catch(() => null);
+        const p = projJson?.ok ? projJson.data : undefined;
+        const file = p?.files?.find(f => f.id === docId);
+        if (p && file) {
+          setData({
+            doc: { id: "", title: "", display_title: null, hide_title: null, content: "", showHeading: false, showLastUpdated: false, updatedAt: "" },
+            sitePublished: true,
+            project: { id: p.id, name: p.name, vanity_slug: p.vanity_slug, home_doc_id: p.home_doc_id, graph_enabled: p.graph_enabled, published_graph_enabled: p.published_graph_enabled, logo_square_updated_at: p.logo_square_updated_at, logo_wide_updated_at: p.logo_wide_updated_at },
+            docs: p.docs ?? [],
+            folders: p.folders ?? [],
+            files: p.files ?? [],
+          });
+          setSelectedFile(file);
+        } else {
+          setNotFound(true);
+        }
       })
       .catch(() => setNotFound(true))
       .finally(() => setLoading(false));
@@ -762,7 +779,7 @@ export function PublicDocPage() {
                       folders={data.folders ?? []}
                       docs={restDocs}
                       files={data.files ?? []}
-                      onFileClick={setSelectedFile}
+                      onFileClick={(file) => navigate(href(file.id))}
                       onDocClick={() => setSelectedFile(null)}
                       selectedFileId={selectedFile?.id ?? null}
                     />
