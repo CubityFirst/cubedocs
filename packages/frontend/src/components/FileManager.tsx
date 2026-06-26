@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiFetch, apiFetchJson } from "@/lib/apiFetch";
 import { sortFolders, sortDocs, sortFiles, type SortDir } from "@/lib/fileSort";
 import { UserProfileCard } from "@/components/UserProfileCard";
+import { UserAvatar } from "@/components/UserAvatar";
 import { FileTypeIcon } from "@/components/FileTypeIcon";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -106,6 +107,7 @@ function AuthorCell({ userId, name, role }: { userId?: string; name?: string; ro
     return (
       <UserProfileCard userId={userId} name={name}>
         <div className="flex items-center gap-2 min-w-0 text-sm text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
+          <UserAvatar userId={userId} name={name} className="h-5 w-5 shrink-0 text-[10px]" />
           <span className="truncate">{name}</span>
           {role && <RoleBadge role={role} />}
         </div>
