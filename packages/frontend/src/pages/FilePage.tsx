@@ -140,8 +140,8 @@ export function FilePage() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-2xl px-6 py-10">
-        <p className="text-sm text-muted-foreground">Loading…</p>
+      <div className="mx-auto flex max-w-2xl items-center gap-2 px-6 py-10 text-sm text-muted-foreground">
+        <Spinner /> Loading…
       </div>
     );
   }

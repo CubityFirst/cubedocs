@@ -626,8 +626,8 @@ export function PublicDocPage() {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center">
-        <p className="text-sm text-muted-foreground">Loading…</p>
+      <div className="flex h-screen items-center justify-center gap-2 text-sm text-muted-foreground">
+        <Spinner /> Loading…
       </div>
     );
   }
