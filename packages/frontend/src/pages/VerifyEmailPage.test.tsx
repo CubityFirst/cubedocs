@@ -1,0 +1,68 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter, Routes, Route } from "react-router-dom";
+import { VerifyEmailPage } from "./VerifyEmailPage";
+
+function renderAt(path: string) {
+  return render(
+    <MemoryRouter initialEntries={[path]}>
+      <Routes>
+        <Route path="/verify-email" element={<VerifyEmailPage />} />
+        <Route path="/dashboard" element={<div>DASHBOARD</div>} />
+        <Route path="/login" element={<div>LOGIN</div>} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+function mockFetchOnce(json: unknown) {
+  return vi.fn().mockResolvedValue({ json: () => Promise.resolve(json) });
+}
+
+beforeEach(() => {
+  window.localStorage.clear();
+});
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe("VerifyEmailPage", () => {
+  it("shows the failure/resend UI when there is no token", () => {
+    renderAt("/verify-email");
+    expect(screen.getByText(/invalid or has expired/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
+  });
+
+  it("verifies and redirects to the dashboard when a session token comes back", async () => {
+    vi.stubGlobal("fetch", mockFetchOnce({ ok: true, data: { verified: true, token: "jwt-123" } }));
+    renderAt("/verify-email?token=good");
+    await waitFor(() => expect(screen.getByText("DASHBOARD")).toBeInTheDocument());
+    // the returned JWT was persisted
+    expect(window.localStorage.getItem("token")).toBe("jwt-123");
+  });
+
+  it("shows the success state when verified without an auto-login token", async () => {
+    vi.stubGlobal("fetch", mockFetchOnce({ ok: true, data: { verified: true } }));
+    renderAt("/verify-email?token=good");
+    expect(await screen.findByText(/your email has been verified/i)).toBeInTheDocument();
+  });
+
+  it("shows the failure state when the token is rejected", async () => {
+    vi.stubGlobal("fetch", mockFetchOnce({ ok: false, error: "invalid_or_expired_token" }));
+    renderAt("/verify-email?token=bad");
+    expect(await screen.findByText(/invalid or has expired/i)).toBeInTheDocument();
+  });
+
+  it("resends a verification email from the failure state", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ json: () => Promise.resolve({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    renderAt("/verify-email");
+
+    await userEvent.type(screen.getByLabelText(/email address/i), "user@example.com");
+    await userEvent.click(screen.getByRole("button", { name: /resend verification email/i }));
+
+    expect(await screen.findByText(/verification email sent/i)).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/verify-email/resend", expect.objectContaining({ method: "POST" }));
+  });
+});
