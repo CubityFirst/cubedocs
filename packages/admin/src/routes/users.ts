@@ -3,9 +3,12 @@ import { zipSync, strToU8 } from "fflate";
 import { resolvePersonalPlan, type PersonalPlan } from "../../../auth/src/plan";
 import { ALL_BADGE_BITS } from "../../../auth/src/badges";
 import { writeAdminAudit } from "../audit";
+import { type KeysetCursor, encodeCursor, decodeCursor, keysetClause } from "../lib/cursor";
 import type { AppEnv, Env } from "../index";
 
 const usersRouter = new Hono<AppEnv>();
+
+const USER_PAGE_SIZE = 25;
 
 type ModerationAction = "disabled" | "suspended" | "re_enabled";
 
@@ -116,6 +119,28 @@ export function getCurrentStatus(moderation: number): CurrentStatus {
   if (moderation === -1) return "disabled";
   if (moderation > 0 && nowSeconds < moderation) return "suspended";
   return "active";
+}
+
+// Builds the optional account-status WHERE fragment for the user search.
+// `status` accepts exactly "active" | "disabled" | "suspended"; anything
+// else (absent, empty, unknown) yields an empty clause => no status filter
+// (all accounts). Pure so it can be unit-tested in isolation, mirroring
+// buildAuditListQuery. `binds` are positional, in SQL order, to be spliced
+// into the handler's bind list (after the email/id binds).
+export function buildUserStatusClause(
+  status: string | null,
+  nowSeconds: number,
+): { sql: string; binds: number[] } {
+  switch (status) {
+    case "active":
+      return { sql: "(u.moderation = 0 OR (u.moderation > 0 AND u.moderation <= ?))", binds: [nowSeconds] };
+    case "disabled":
+      return { sql: "u.moderation = -1", binds: [] };
+    case "suspended":
+      return { sql: "u.moderation > ?", binds: [nowSeconds] };
+    default:
+      return { sql: "", binds: [] };
+  }
 }
 
 function latestModerationFields(tableAlias = "u"): string {
@@ -295,6 +320,32 @@ async function loadUserDetails(env: Env, id: string): Promise<UserDetails | null
 // GET /api/users/search?q=
 usersRouter.get("/search", async (c) => {
   const q = c.req.query("q") ?? "";
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const statusClause = buildUserStatusClause(c.req.query("status") ?? null, nowSeconds);
+
+  const rawCursor = c.req.query("cursor");
+  let cursor: KeysetCursor | null = null;
+  if (rawCursor) {
+    cursor = decodeCursor(rawCursor);
+    if (!cursor) return c.json({ ok: false, error: "Invalid cursor" }, 400);
+  }
+  const keyset = keysetClause(cursor, "u.created_at", "u.id");
+
+  // The email/id search is always present; the optional status predicate and
+  // the keyset cursor are AND-ed onto it. Bind order follows clause order:
+  // the two search binds, then status binds, then the keyset binds.
+  const where = ["(u.email LIKE ? OR u.id = ?)"];
+  const binds: unknown[] = [`%${q}%`, q];
+  if (statusClause.sql) {
+    where.push(statusClause.sql);
+    binds.push(...statusClause.binds);
+  }
+  if (keyset.sql) {
+    where.push(keyset.sql);
+    binds.push(...keyset.binds);
+  }
+
+  // One extra row tells us whether an older page exists without a count.
   const rows = await c.env.AUTH_DB.prepare(
     `
       SELECT
@@ -306,13 +357,21 @@ usersRouter.get("/search", async (c) => {
         u.force_password_change,
         ${latestModerationFields("u")}
       FROM users u
-      WHERE u.email LIKE ? OR u.id = ?
-      LIMIT 25
+      WHERE ${where.join(" AND ")}
+      ORDER BY u.created_at DESC, u.id DESC
+      LIMIT ?
     `,
   )
-    .bind(`%${q}%`, q)
+    .bind(...binds, USER_PAGE_SIZE + 1)
     .all<UserRow>();
-  return c.json({ ok: true, data: rows.results });
+
+  const hasMore = rows.results.length > USER_PAGE_SIZE;
+  const users = hasMore ? rows.results.slice(0, USER_PAGE_SIZE) : rows.results;
+  const last = users[users.length - 1];
+  const nextCursor =
+    hasMore && last ? encodeCursor({ ts: last.created_at, id: last.id }) : null;
+
+  return c.json({ ok: true, data: { users, nextCursor } });
 });
 
 // PATCH /api/users/:id - { moderation: 0 | -1 | unix timestamp, reason?: string }
@@ -446,7 +505,7 @@ usersRouter.delete("/:id/avatar", async (c) => {
   return c.json({ ok: true });
 });
 
-// POST /api/users/:id/grant-ink — {
+// POST /api/users/:id/grant-ink - {
 //   reason?: string,
 //   expires_at?: number | null,
 //   cancel_existing_paid_sub?: boolean,
@@ -473,7 +532,7 @@ usersRouter.post("/:id/grant-ink", async (c) => {
   }
 
   // If admin asked to cancel the existing paid sub, look it up and call
-  // Stripe before writing the grant. Failing to cancel is non-fatal —
+  // Stripe before writing the grant. Failing to cancel is non-fatal -
   // log it and still apply the grant; admin can retry the cancel later.
   let cancelStripeWarning: string | null = null;
   if (cancelExisting) {
@@ -502,7 +561,7 @@ usersRouter.post("/:id/grant-ink", async (c) => {
     }
   }
 
-  // Verify the user exists before upserting — UPSERT into user_billing
+  // Verify the user exists before upserting - UPSERT into user_billing
   // would otherwise silently create a row for a non-existent id (well,
   // the FK would reject it, but a cleaner error is nicer).
   const userRow = await c.env.AUTH_DB.prepare("SELECT 1 FROM users WHERE id = ?")
@@ -531,11 +590,11 @@ usersRouter.post("/:id/grant-ink", async (c) => {
   return c.json({ ok: true, data: cancelStripeWarning ? { cancelStripeWarning } : undefined });
 });
 
-// POST /api/users/:id/gift-month — credits the user's Stripe customer
+// POST /api/users/:id/gift-month - credits the user's Stripe customer
 // balance with one month of their current sub price. Stripe applies the
 // credit to the next invoice automatically; sub status stays `active`,
 // user sees a "$X.00 credit applied" line on their invoice. Skip
-// granting Ink — they're already paying, this just gifts them a month
+// granting Ink - they're already paying, this just gifts them a month
 // off the bill.
 //
 // Doesn't work for cancel-at-period-end subs (no future invoice to
@@ -556,7 +615,7 @@ usersRouter.post("/:id/gift-month", async (c) => {
   }
 
   // Fetch the sub to get its current per-cycle price. Avoids hardcoding
-  // $5 — works correctly if Ink ever moves to a different price tier.
+  // $5 - works correctly if Ink ever moves to a different price tier.
   const subRes = await fetch(`https://api.stripe.com/v1/subscriptions/${row.stripe_subscription_id}`, {
     headers: { Authorization: `Bearer ${c.env.STRIPE_SECRET_KEY}` },
   });
@@ -605,7 +664,7 @@ usersRouter.post("/:id/gift-month", async (c) => {
   return c.json({ ok: true, data: { amount, currency } });
 });
 
-// POST /api/users/:id/cancel-subscription — { immediate?: boolean }
+// POST /api/users/:id/cancel-subscription - { immediate?: boolean }
 //
 // Cancels the user's Stripe subscription directly. By default schedules
 // cancel-at-period-end so they keep access through the end of the
@@ -613,7 +672,7 @@ usersRouter.post("/:id/gift-month", async (c) => {
 // TOS violations where you want access cut off right now. The webhook
 // (subscription.deleted for immediate, subscription.updated for
 // scheduled) fires asynchronously and updates the user row via the
-// existing handler — no direct DB write here.
+// existing handler - no direct DB write here.
 usersRouter.post("/:id/cancel-subscription", async (c) => {
   const session = c.get("session");
 
@@ -659,7 +718,7 @@ usersRouter.post("/:id/cancel-subscription", async (c) => {
   return c.json({ ok: true, data: { immediate } });
 });
 
-// DELETE /api/users/:id/grant-ink — clears the manual grant. Doesn't
+// DELETE /api/users/:id/grant-ink - clears the manual grant. Doesn't
 // touch Stripe-managed columns (so a paid sub stays intact).
 usersRouter.delete("/:id/grant-ink", async (c) => {
   const session = c.get("session");
@@ -673,7 +732,7 @@ usersRouter.delete("/:id/grant-ink", async (c) => {
   if (!userRow) return c.json({ ok: false, error: "User not found" }, 404);
 
   // We clear granted_plan_started_at too, so the next grant gets a
-  // fresh "supporter since" date — revoke is a hard reset of the
+  // fresh "supporter since" date - revoke is a hard reset of the
   // grant relationship, not just a pause.
   await c.env.AUTH_DB.prepare(
     `UPDATE user_billing

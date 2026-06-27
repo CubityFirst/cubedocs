@@ -2,9 +2,12 @@ import { Hono } from "hono";
 import { upsertFtsRow } from "../../../api/src/lib/fts";
 import { releaseCustomDomain, removeCustomDomain } from "../../../api/src/lib/customDomains";
 import { writeAdminAudit } from "../audit";
+import { type KeysetCursor, encodeCursor, decodeCursor, keysetClause } from "../lib/cursor";
 import type { AppEnv, Env } from "../index";
 
 const projectsRouter = new Hono<AppEnv>();
+
+const PROJECT_PAGE_SIZE = 25;
 
 // Reindex safety ceiling. Each doc costs ~1 R2 read + 1 D1 batch; a
 // Worker invocation has a bounded subrequest budget, so very large
@@ -27,17 +30,46 @@ projectsRouter.get("/", async (c) => {
     id: string; name: string; owner_id: string; features: number; created_at: string;
     custom_domain: string | null; custom_domain_status: string | null;
   };
-  const rows = q
-    ? await c.env.DB.prepare(
-        `SELECT ${cols} ${join} WHERE p.name LIKE ? ORDER BY p.created_at DESC LIMIT 100`,
-      ).bind(`%${q}%`).all<Row>()
-    : await c.env.DB.prepare(
-        `SELECT ${cols} ${join} ORDER BY p.created_at DESC LIMIT 100`,
-      ).all<Row>();
-  return c.json({ ok: true, data: rows.results });
+
+  const rawCursor = c.req.query("cursor");
+  let cursor: KeysetCursor | null = null;
+  if (rawCursor) {
+    cursor = decodeCursor(rawCursor);
+    if (!cursor) return c.json({ ok: false, error: "Invalid cursor" }, 400);
+  }
+  const keyset = keysetClause(cursor, "p.created_at", "p.id");
+
+  // Optional name search + keyset cursor, AND-ed together. Bind order follows
+  // clause order: the search bind (if any), then the keyset binds.
+  const where: string[] = [];
+  const binds: unknown[] = [];
+  if (q) {
+    where.push("p.name LIKE ?");
+    binds.push(`%${q}%`);
+  }
+  if (keyset.sql) {
+    where.push(keyset.sql);
+    binds.push(...keyset.binds);
+  }
+  const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+  // One extra row tells us whether an older page exists without a count.
+  const rows = await c.env.DB.prepare(
+    `SELECT ${cols} ${join} ${whereSql} ORDER BY p.created_at DESC, p.id DESC LIMIT ?`,
+  )
+    .bind(...binds, PROJECT_PAGE_SIZE + 1)
+    .all<Row>();
+
+  const hasMore = rows.results.length > PROJECT_PAGE_SIZE;
+  const projects = hasMore ? rows.results.slice(0, PROJECT_PAGE_SIZE) : rows.results;
+  const last = projects[projects.length - 1];
+  const nextCursor =
+    hasMore && last ? encodeCursor({ ts: last.created_at, id: last.id }) : null;
+
+  return c.json({ ok: true, data: { projects, nextCursor } });
 });
 
-// GET /api/projects/:id — full detail view backing the admin "Project details"
+// GET /api/projects/:id - full detail view backing the admin "Project details"
 // sheet: branding, ownership/org, granted feature flags + owner-enabled
 // toggles, member breakdown, and doc/file/folder content stats. Read-only and
 // not audited, mirroring GET /api/users/:id.
@@ -48,10 +80,10 @@ projectsRouter.get("/:id", async (c) => {
   return c.json({ ok: true, data: details });
 });
 
-// GET /api/projects/:id/logo?variant=square|wide — proxies a site logo out of
+// GET /api/projects/:id/logo?variant=square|wide - proxies a site logo out of
 // R2 for the admin sheet. Sits behind enforceAdmin (unlike the public avatar
 // route), so the frontend fetches it with the bearer token and renders it via
-// an object URL — an unpublished site's logo must not be world-readable by id.
+// an object URL - an unpublished site's logo must not be world-readable by id.
 // 404 when the site has no logo of that variant.
 projectsRouter.get("/:id/logo", async (c) => {
   const id = c.req.param("id");
@@ -66,7 +98,7 @@ projectsRouter.get("/:id/logo", async (c) => {
   });
 });
 
-// PATCH /api/projects/:id/features — { features: number }
+// PATCH /api/projects/:id/features - { features: number }
 projectsRouter.patch("/:id/features", async (c) => {
   const session = c.get("session");
   const id = c.req.param("id");
@@ -81,7 +113,7 @@ projectsRouter.patch("/:id/features", async (c) => {
   return c.json({ ok: true });
 });
 
-// POST /api/projects/:id/reindex — rebuild FTS index for all docs in a project
+// POST /api/projects/:id/reindex - rebuild FTS index for all docs in a project
 projectsRouter.post("/:id/reindex", async (c) => {
   const session = c.get("session");
   const projectId = c.req.param("id");
@@ -117,7 +149,7 @@ projectsRouter.post("/:id/reindex", async (c) => {
   return c.json({ ok: true, data: { indexed } });
 });
 
-// DELETE /api/projects/:id/domain — remove a site's custom domain mapping.
+// DELETE /api/projects/:id/domain - remove a site's custom domain mapping.
 //
 // Deregisters the Cloudflare custom hostname (best-effort) and drops the
 // project_custom_domains row, leaving the site itself intact. Mirrors the
@@ -344,7 +376,7 @@ async function loadProjectDetails(env: Env, id: string): Promise<ProjectDetails 
   });
 }
 
-// Pure assembly of the detail payload from already-fetched rows — split out of
+// Pure assembly of the detail payload from already-fetched rows - split out of
 // loadProjectDetails so it can be unit-tested without a live D1. Coalesces the
 // nullable COUNT/SUM aggregates (a project with zero docs/members/files yields
 // NULL sums) and derives the published flag + draft count.

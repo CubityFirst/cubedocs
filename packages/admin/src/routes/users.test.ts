@@ -3,6 +3,7 @@ import {
   getModerationAction,
   getCurrentStatus,
   buildBillingDetails,
+  buildUserStatusClause,
   type BillingRow,
 } from "./users";
 
@@ -46,6 +47,40 @@ describe("getCurrentStatus", () => {
   });
   it("is active for 0", () => {
     expect(getCurrentStatus(0)).toBe("active");
+  });
+});
+
+describe("buildUserStatusClause", () => {
+  const NOW = 1_700_000_000;
+
+  it("returns an empty clause for null status", () => {
+    expect(buildUserStatusClause(null, NOW)).toEqual({ sql: "", binds: [] });
+  });
+
+  it("returns an empty clause for an empty or unknown status", () => {
+    expect(buildUserStatusClause("", NOW)).toEqual({ sql: "", binds: [] });
+    expect(buildUserStatusClause("bogus", NOW)).toEqual({ sql: "", binds: [] });
+  });
+
+  it("builds the active predicate with the now bind", () => {
+    expect(buildUserStatusClause("active", NOW)).toEqual({
+      sql: "(u.moderation = 0 OR (u.moderation > 0 AND u.moderation <= ?))",
+      binds: [NOW],
+    });
+  });
+
+  it("builds the disabled predicate with no binds", () => {
+    expect(buildUserStatusClause("disabled", NOW)).toEqual({
+      sql: "u.moderation = -1",
+      binds: [],
+    });
+  });
+
+  it("builds the suspended predicate with the now bind", () => {
+    expect(buildUserStatusClause("suspended", NOW)).toEqual({
+      sql: "u.moderation > ?",
+      binds: [NOW],
+    });
   });
 });
 

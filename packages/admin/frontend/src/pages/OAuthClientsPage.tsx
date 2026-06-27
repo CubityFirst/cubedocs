@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { ClipboardCopy, Copy, KeyRound, Plus, Power, RotateCw, Trash2 } from "lucide-react";
+import { ClipboardCopy, Copy, Plus, Power, RotateCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -71,7 +71,7 @@ function buildAgentPrompt(opts: {
   secret?: string | null;
 }): string {
   const secretLine = opts.isPublic
-    ? "client_secret: (none — public client, PKCE only)"
+    ? "client_secret: (none - public client, PKCE only)"
     : opts.secret
       ? `client_secret: ${opts.secret}`
       : "client_secret: <rotate this client in the Annex admin to mint a fresh secret>";
@@ -82,11 +82,11 @@ function buildAgentPrompt(opts: {
   const rolesClaim = hasRoles ? `, roles (string array, e.g. ["admin"])` : "";
   const rolesRequirement = hasRoles
     ? `\n8. The id_token/userinfo include a "roles" array. Gate admin-only features
-   on roles.includes("admin") — do NOT hardcode a user id/email for admin.`
+   on roles.includes("admin") - do NOT hardcode a user id/email for admin.`
     : "";
 
   return `Add "Sign in with Annex" to this project. Annex is a standard OpenID Connect
-(OIDC) provider — use a well-maintained OIDC client library for this stack, not
+(OIDC) provider - use a well-maintained OIDC client library for this stack, not
 a hand-rolled flow.
 
 PROVIDER (everything else is discoverable):
@@ -95,16 +95,16 @@ PROVIDER (everything else is discoverable):
 - Flow:          Authorization Code + PKCE (S256). id_tokens are RS256; verify
                  offline via the provider's JWKS (in the discovery doc).
 - Scopes:        ${opts.scopes}
-- Claims you get: sub (stable unique user id — key your users on THIS, never on
+- Claims you get: sub (stable unique user id - key your users on THIS, never on
                   email), email, email_verified, name${rolesClaim}.
 
-CREDENTIALS (store the secret server-side only — never ship it to the browser):
+CREDENTIALS (store the secret server-side only - never ship it to the browser):
 - client_id:     ${opts.clientId}
 - ${secretLine}
 - redirect_uri:  ${primaryRedirect}${extraRedirects}
 
 REQUIREMENTS:
-1. Configure the OIDC client from the discovery URL — do NOT hardcode the
+1. Configure the OIDC client from the discovery URL - do NOT hardcode the
    endpoints (the authorization endpoint is on a different host than the issuer;
    discovery handles that for you).
 2. Authorization Code flow with PKCE (code_challenge_method=S256).
@@ -113,7 +113,7 @@ REQUIREMENTS:
 5. On callback: exchange the code at the token endpoint (send the PKCE
    code_verifier; include the client_secret only for a confidential/server-side
    client), then VERIFY the id_token: signature against JWKS, plus the iss, aud
-   (== client_id), exp, and nonce claims. Most OIDC libraries do this for you —
+   (== client_id), exp, and nonce claims. Most OIDC libraries do this for you -
    make sure it's enabled, not skipped.
 6. Establish your app's own session from the verified identity; key users on sub.
 7. The redirect_uri must match what's registered with Annex byte-for-byte
@@ -126,7 +126,7 @@ button, store the secret in the project's secret manager, and verify end-to-end:
 sign in and show me the verified claims you receive.`;
 }
 
-// Compact field with a copy button — used in the credentials dialog.
+// Compact field with a copy button - used in the credentials dialog.
 function CopyField({ label, value, mono = true }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="flex flex-col gap-1">
@@ -227,7 +227,7 @@ function RegisterForm({ onCreated }: { onCreated: (c: CreatedOAuthClient) => voi
               className="font-mono text-xs"
             />
             <p className="text-xs text-muted-foreground">
-              Matched exactly — include scheme, host, port, and path. https only (localhost allowed for dev).
+              Matched exactly - include scheme, host, port, and path. https only (localhost allowed for dev).
             </p>
           </div>
 
@@ -247,7 +247,7 @@ function RegisterForm({ onCreated }: { onCreated: (c: CreatedOAuthClient) => voi
             </div>
             <div className="flex items-center gap-2">
               <Checkbox id="scope-roles" checked={scopeRoles} onCheckedChange={(v) => setScopeRoles(v === true)} />
-              <Label htmlFor="scope-roles" className="font-normal">roles (admin gating — adds roles: ["admin"] for Annex admins)</Label>
+              <Label htmlFor="scope-roles" className="font-normal">roles (admin gating - adds roles: ["admin"] for Annex admins)</Label>
             </div>
           </div>
 
@@ -255,7 +255,7 @@ function RegisterForm({ onCreated }: { onCreated: (c: CreatedOAuthClient) => voi
             <Checkbox id="oauth-trusted" checked={trusted} onCheckedChange={(v) => setTrusted(v === true)} className="mt-0.5" />
             <div>
               <Label htmlFor="oauth-trusted" className="font-normal">Trusted (auto-approve)</Label>
-              <p className="text-xs text-muted-foreground">Skip the consent screen — use for first-party services you run.</p>
+              <p className="text-xs text-muted-foreground">Skip the consent screen - use for first-party services you run.</p>
             </div>
           </div>
 
@@ -360,12 +360,9 @@ export function OAuthClientsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="flex items-center gap-2 text-xl font-semibold">
-            <KeyRound className="h-5 w-5" />
-            Sign in with Annex
-          </h1>
+          <h1 className="text-xl font-semibold">Sign in with Annex</h1>
           <p className="text-sm text-muted-foreground">
             OIDC clients that can authenticate users against their Annex account.
           </p>
@@ -389,9 +386,9 @@ export function OAuthClientsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
-                  <TableHead>Client ID</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Redirect URIs</TableHead>
+                  <TableHead className="hidden lg:table-cell">Client ID</TableHead>
+                  <TableHead className="hidden sm:table-cell">Type</TableHead>
+                  <TableHead className="hidden md:table-cell">Redirect URIs</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -399,14 +396,29 @@ export function OAuthClientsPage() {
               <TableBody>
                 {clients.map((client) => (
                   <TableRow key={client.client_id} className={client.disabled ? "opacity-60" : ""}>
-                    <TableCell className="font-medium">
+                    <TableCell className="font-medium whitespace-normal">
                       {client.client_name}
-                      <div className="mt-1 flex gap-1">
+                      <div className="mt-1 flex flex-wrap gap-1">
                         {client.trusted && <Badge variant="secondary" className="text-[10px]">trusted</Badge>}
                         <Badge variant="outline" className="text-[10px]">{client.allowed_scopes}</Badge>
+                        <Badge variant={client.is_public ? "outline" : "secondary"} className="text-[10px] sm:hidden">
+                          {client.is_public ? "public" : "confidential"}
+                        </Badge>
+                      </div>
+                      <button
+                        className="mt-1 block font-mono text-[10px] font-normal text-muted-foreground hover:text-foreground lg:hidden"
+                        onClick={() => void copy(client.client_id, "Client ID")}
+                        title="Copy client ID"
+                      >
+                        {client.client_id}
+                      </button>
+                      <div className="mt-1 flex flex-col gap-0.5 md:hidden">
+                        {client.redirect_uris.map((u) => (
+                          <span key={u} className="truncate font-mono text-[10px] font-normal text-muted-foreground" title={u}>{u}</span>
+                        ))}
                       </div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="hidden lg:table-cell">
                       <button
                         className="font-mono text-xs text-muted-foreground hover:text-foreground"
                         onClick={() => void copy(client.client_id, "Client ID")}
@@ -415,12 +427,12 @@ export function OAuthClientsPage() {
                         {client.client_id}
                       </button>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="hidden sm:table-cell">
                       <Badge variant={client.is_public ? "outline" : "secondary"}>
                         {client.is_public ? "public" : "confidential"}
                       </Badge>
                     </TableCell>
-                    <TableCell className="max-w-[240px]">
+                    <TableCell className="hidden max-w-[240px] md:table-cell">
                       <div className="flex flex-col gap-0.5">
                         {client.redirect_uris.map((u) => (
                           <span key={u} className="truncate font-mono text-xs text-muted-foreground" title={u}>{u}</span>
@@ -489,7 +501,7 @@ export function OAuthClientsPage() {
           <DialogHeader>
             <DialogTitle>{credentials?.title}</DialogTitle>
             <DialogDescription>
-              Copy the secret now — it can't be shown again. Store it in the connected service's config.
+              Copy the secret now - it can't be shown again. Store it in the connected service's config.
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3">
@@ -497,7 +509,7 @@ export function OAuthClientsPage() {
             {credentials?.secret ? (
               <CopyField label="Client secret (shown once)" value={credentials.secret} />
             ) : (
-              <p className="text-xs text-muted-foreground">Public client — no secret (PKCE only).</p>
+              <p className="text-xs text-muted-foreground">Public client - no secret (PKCE only).</p>
             )}
             <CopyField label="Discovery URL (give this to the service)" value={DISCOVERY_URL} mono={false} />
           </div>

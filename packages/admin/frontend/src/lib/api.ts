@@ -183,14 +183,14 @@ async function authFetch(input: string, init: RequestInit = {}): Promise<Respons
   // failures: a 401 (token missing/expired/invalid) or a 403 whose code
   // says the *account* is gone or not an admin. A generic/unknown 403
   // (e.g. a future per-object "not allowed") must NOT log the operator
-  // out of the entire dashboard — the caller surfaces it instead.
+  // out of the entire dashboard - the caller surfaces it instead.
   if (token && (response.status === 401 || response.status === 403)) {
     let code: string | undefined;
     if (response.status === 403) {
       try {
         code = ((await response.clone().json()) as { error?: string }).error;
       } catch {
-        /* non-JSON 403 body — treat as a non-session failure */
+        /* non-JSON 403 body - treat as a non-session failure */
       }
     }
     const sessionFailure =
@@ -199,6 +199,16 @@ async function authFetch(input: string, init: RequestInit = {}): Promise<Respons
       code === "account_disabled" ||
       code === "account_suspended";
     if (sessionFailure) invalidateAdminSession();
+  }
+
+  // The admin worker rate-limits by IP and replies 429 { error: "rate_limited" }.
+  // Surface a readable message instead of the raw code: throwing here routes it
+  // through every caller's existing error path (a sonner toast.error), so no
+  // per-endpoint handling is needed.
+  if (response.status === 429) {
+    throw new Error(
+      "Too many requests — you've hit the admin rate limit. Wait a few seconds, then try again.",
+    );
   }
 
   return response;
@@ -212,9 +222,21 @@ async function readOk(res: Response, fallback: string): Promise<void> {
   if (!json.ok) throw new Error(json.error ?? fallback);
 }
 
-export async function searchUsers(q: string, signal?: AbortSignal): Promise<AdminUser[]> {
-  const res = await authFetch(`/api/users/search?q=${encodeURIComponent(q)}`, { signal });
-  const json = (await res.json()) as { ok: boolean; data?: AdminUser[]; error?: string };
+export interface UserSearchResult {
+  users: AdminUser[];
+  // Opaque cursor for the next (older) page, or null when none remain.
+  nextCursor: string | null;
+}
+
+export async function searchUsers(
+  params: { q: string; status?: string; cursor?: string },
+  signal?: AbortSignal,
+): Promise<UserSearchResult> {
+  const qs = new URLSearchParams({ q: params.q });
+  if (params.status) qs.set("status", params.status);
+  if (params.cursor) qs.set("cursor", params.cursor);
+  const res = await authFetch(`/api/users/search?${qs.toString()}`, { signal });
+  const json = (await res.json()) as { ok: boolean; data?: UserSearchResult; error?: string };
   if (!json.ok || !json.data) throw new Error(json.error ?? "Failed to search users");
   return json.data;
 }
@@ -249,9 +271,21 @@ export async function updateUserModeration(id: string, moderation: number, reaso
   await readOk(res, "Failed to update user");
 }
 
-export async function listProjects(q: string, signal?: AbortSignal): Promise<AdminProject[]> {
-  const res = await authFetch(`/api/projects?q=${encodeURIComponent(q)}`, { signal });
-  const json = (await res.json()) as { ok: boolean; data?: AdminProject[]; error?: string };
+export interface ProjectListResult {
+  projects: AdminProject[];
+  // Opaque cursor for the next (older) page, or null when none remain.
+  nextCursor: string | null;
+}
+
+export async function listProjects(
+  params: { q?: string; cursor?: string },
+  signal?: AbortSignal,
+): Promise<ProjectListResult> {
+  const qs = new URLSearchParams();
+  if (params.q) qs.set("q", params.q);
+  if (params.cursor) qs.set("cursor", params.cursor);
+  const res = await authFetch(`/api/projects?${qs.toString()}`, { signal });
+  const json = (await res.json()) as { ok: boolean; data?: ProjectListResult; error?: string };
   if (!json.ok || !json.data) throw new Error(json.error ?? "Failed to list projects");
   return json.data;
 }
@@ -294,7 +328,7 @@ export async function getProjectDetails(id: string): Promise<AdminProjectDetails
   } catch {
     // A non-JSON body means the request never reached the handler (SPA
     // fallback HTML) or the handler threw before responding (a plain-text
-    // 500) — surface the status rather than a cryptic JSON parse error.
+    // 500) - surface the status rather than a cryptic JSON parse error.
     throw new Error(`Failed to load project details (HTTP ${res.status})`);
   }
   if (!json.ok || !json.data) throw new Error(json.error ?? "Failed to load project details");
@@ -303,7 +337,7 @@ export async function getProjectDetails(id: string): Promise<AdminProjectDetails
 
 // Fetch a site logo (square|wide) for the admin sheet with the bearer token,
 // returned as a Blob the caller renders via an object URL. Returns null when
-// the site has no logo of that variant (404) or the request otherwise fails —
+// the site has no logo of that variant (404) or the request otherwise fails -
 // the UI falls back to a neutral tile, so a missing logo isn't an error.
 export async function fetchProjectLogo(id: string, variant: "square" | "wide"): Promise<Blob | null> {
   const res = await authFetch(`/api/projects/${id}/logo?variant=${variant}`);
@@ -311,15 +345,38 @@ export async function fetchProjectLogo(id: string, variant: "square" | "wide"): 
   return await res.blob();
 }
 
+export interface AuditFilter {
+  // Match any of these action types. Empty/omitted = all actions.
+  actions?: string[];
+  // User-scoped substring search (actor email/id + target id).
+  q?: string;
+}
+
 export async function listAuditLog(
   cursor?: string,
+  filter?: AuditFilter,
   signal?: AbortSignal,
 ): Promise<AuditPageResult> {
-  const qs = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
-  const res = await authFetch(`/api/audit${qs}`, { signal });
+  const params = new URLSearchParams();
+  if (cursor) params.set("cursor", cursor);
+  for (const a of filter?.actions ?? []) params.append("action", a);
+  if (filter?.q) params.set("q", filter.q);
+  const qs = params.toString();
+  const res = await authFetch(`/api/audit${qs ? `?${qs}` : ""}`, { signal });
   const json = (await res.json()) as { ok: boolean; data?: AuditPageResult; error?: string };
   if (!json.ok || !json.data) throw new Error(json.error ?? "Failed to load audit log");
   return json.data;
+}
+
+export async function listAuditActions(signal?: AbortSignal): Promise<string[]> {
+  const res = await authFetch("/api/audit/actions", { signal });
+  const json = (await res.json()) as {
+    ok: boolean;
+    data?: { actions: string[] };
+    error?: string;
+  };
+  if (!json.ok || !json.data) throw new Error(json.error ?? "Failed to load audit actions");
+  return json.data.actions;
 }
 
 export interface GrantInkResult {
@@ -416,7 +473,7 @@ export async function exchangeAdminHandoff(code: string, callbackUrl: string): P
 }
 
 // ---------------------------------------------------------------------------
-// "Sign in with Annex" — OIDC client management
+// "Sign in with Annex" - OIDC client management
 // ---------------------------------------------------------------------------
 
 export interface OAuthClient {

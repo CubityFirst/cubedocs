@@ -32,6 +32,13 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
 import {
   Sheet,
@@ -45,6 +52,14 @@ import {
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 import {
   type AdminUser,
   type AdminUserDetails,
@@ -275,7 +290,7 @@ function InkBillingCard({ userId, userName, details, onChanged }: InkBillingCard
     try {
       const result = await giftFreeMonth(userId);
       const amountStr = (result.amount / 100).toFixed(2);
-      toast.success(`Credited ${userName} ${result.currency.toUpperCase()} ${amountStr} — applied to their next invoice`);
+      toast.success(`Credited ${userName} ${result.currency.toUpperCase()} ${amountStr} - applied to their next invoice`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to gift free month");
     } finally {
@@ -318,7 +333,7 @@ function InkBillingCard({ userId, userName, details, onChanged }: InkBillingCard
           <DetailField label="Current Plan" value={planBadge()} />
           <DetailField
             label="Source"
-            value={billing.via === "granted" ? "Manual grant" : billing.via === "paid" ? "Stripe subscription" : "—"}
+            value={billing.via === "granted" ? "Manual grant" : billing.via === "paid" ? "Stripe subscription" : "-"}
           />
           {billing.status && <DetailField label="Status" value={billing.status} />}
           {billing.started_at && (
@@ -348,12 +363,12 @@ function InkBillingCard({ userId, userName, details, onChanged }: InkBillingCard
           <div className="rounded-md border bg-amber-50/50 dark:bg-amber-950/20 p-3">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Active grant</p>
             <p className="mt-1 text-sm">
-              {billing.granted.reason ?? "—"}
+              {billing.granted.reason ?? "-"}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
               {billing.granted.expires_at
                 ? `Expires ${formatPlanTimestamp(billing.granted.expires_at)}`
-                : "No expiry — granted forever"}
+                : "No expiry - granted forever"}
             </p>
           </div>
         )}
@@ -1035,9 +1050,19 @@ function UserRow({ user, onUpdated }: UserRowProps) {
             ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
             : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
         </TableCell>
-        <TableCell className="font-mono text-xs">{user.email}</TableCell>
-        <TableCell>{user.name}</TableCell>
-        <TableCell className="text-muted-foreground text-xs">
+        <TableCell className="font-mono text-xs whitespace-normal break-all">
+          {user.email}
+          {user.name && (
+            <span className="mt-0.5 block font-sans text-[11px] text-muted-foreground sm:hidden">
+              {user.name}
+            </span>
+          )}
+          <span className="mt-0.5 block font-sans text-[11px] text-muted-foreground md:hidden">
+            {new Date(user.created_at).toLocaleDateString()}
+          </span>
+        </TableCell>
+        <TableCell className="hidden sm:table-cell">{user.name}</TableCell>
+        <TableCell className="hidden text-muted-foreground text-xs md:table-cell">
           {new Date(user.created_at).toLocaleDateString()}
         </TableCell>
         <TableCell>
@@ -1312,17 +1337,34 @@ function UserRow({ user, onUpdated }: UserRowProps) {
   );
 }
 
+// Radix Select disallows an empty-string item value, so the default
+// "no filter" option uses an "all" sentinel that maps to no status param.
+type StatusFilter = "all" | "active" | "disabled" | "suspended";
+
 export function UsersPage() {
   const [query, setQuery] = useState("");
+  const [status, setStatus] = useState<StatusFilter>("all");
+  // `committedQuery`/`committedStatus` are the query+status that were actually
+  // searched (on submit / status change). Pagination pages over THESE, never
+  // whatever is half-typed in the input box.
+  const [committedQuery, setCommittedQuery] = useState("");
+  const [committedStatus, setCommittedStatus] = useState<StatusFilter>("all");
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+  // `cursors` holds the cursor used to fetch each page beyond the first;
+  // page number = cursors.length + 1. Older = push nextCursor, Newer = pop.
+  const [cursors, setCursors] = useState<string[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  async function handleSearch(e: React.FormEvent) {
-    e.preventDefault();
+  const pageNumber = cursors.length + 1;
+  const canNewer = pageNumber > 1 && !loading;
+  const canOlder = !!nextCursor && !loading;
+
+  async function runSearch(opts: { q: string; status: StatusFilter; cursor?: string }) {
     // Cancel any in-flight search so a slower earlier response can't
     // overwrite the newest one (last-submitted wins, not last-resolved).
     abortRef.current?.abort();
@@ -1331,15 +1373,61 @@ export function UsersPage() {
     setLoading(true);
     setSearched(true);
     try {
-      const results = await searchUsers(query, controller.signal);
+      const results = await searchUsers(
+        {
+          q: opts.q,
+          status: opts.status === "all" ? undefined : opts.status,
+          cursor: opts.cursor,
+        },
+        controller.signal,
+      );
       if (controller.signal.aborted) return;
-      setUsers(results);
+      setUsers(results.users);
+      setNextCursor(results.nextCursor);
     } catch (err) {
       if (controller.signal.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
       toast.error(err instanceof Error ? err.message : "Failed to search users");
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
+  }
+
+  function handleSearch(e: React.FormEvent) {
+    e.preventDefault();
+    // New search: commit the current input + status and reset to page 1 so a
+    // stale cursor can't carry onto a different result set.
+    setCommittedQuery(query);
+    setCommittedStatus(status);
+    setCursors([]);
+    void runSearch({ q: query, status });
+  }
+
+  function handleStatusChange(next: StatusFilter) {
+    setStatus(next);
+    // Changing the status filter re-searches the current query from page 1.
+    setCommittedQuery(query);
+    setCommittedStatus(next);
+    setCursors([]);
+    // Re-run with the freshly chosen status (state update is async, so pass
+    // the value through rather than reading the not-yet-committed `status`).
+    void runSearch({ q: query, status: next });
+  }
+
+  function goNewer() {
+    // Block while a page is in flight: otherwise a second click reads a
+    // stale `nextCursor` from this render and can push a duplicate cursor.
+    if (loading || pageNumber <= 1) return;
+    const nextStack = cursors.slice(0, -1);
+    setCursors(nextStack);
+    const cursor = nextStack.length > 0 ? nextStack[nextStack.length - 1] : undefined;
+    // Page over the committed query+status, only the cursor changes.
+    void runSearch({ q: committedQuery, status: committedStatus, cursor });
+  }
+
+  function goOlder() {
+    if (loading || !nextCursor) return;
+    setCursors(c => [...c, nextCursor]);
+    void runSearch({ q: committedQuery, status: committedStatus, cursor: nextCursor });
   }
 
   function handleUpdated(id: string, updates: Partial<AdminUser>) {
@@ -1358,8 +1446,8 @@ export function UsersPage() {
           <CardTitle>Search</CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSearch} className="flex gap-2">
-            <div className="relative max-w-sm w-full">
+          <form onSubmit={handleSearch} className="flex flex-col gap-2 sm:flex-row">
+            <div className="relative w-full sm:max-w-sm">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Email or user ID..."
@@ -1377,6 +1465,17 @@ export function UsersPage() {
                 </button>
               )}
             </div>
+            <Select value={status} onValueChange={v => handleStatusChange(v as StatusFilter)}>
+              <SelectTrigger className="w-full sm:w-44">
+                <SelectValue placeholder="All statuses" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All statuses</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="disabled">Disabled</SelectItem>
+                <SelectItem value="suspended">Suspended</SelectItem>
+              </SelectContent>
+            </Select>
             <Button type="submit" disabled={loading}>
               Search
             </Button>
@@ -1405,8 +1504,8 @@ export function UsersPage() {
                   <TableRow>
                     <TableHead className="w-8" />
                     <TableHead>Email</TableHead>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Created</TableHead>
+                    <TableHead className="hidden sm:table-cell">Name</TableHead>
+                    <TableHead className="hidden md:table-cell">Created</TableHead>
                     <TableHead>Status</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1416,6 +1515,40 @@ export function UsersPage() {
                   ))}
                 </TableBody>
               </Table>
+            )}
+
+            {(pageNumber > 1 || !!nextCursor) && (
+              <Pagination className="mt-5">
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious
+                      href="#"
+                      aria-disabled={!canNewer}
+                      className={!canNewer ? "pointer-events-none opacity-50" : undefined}
+                      onClick={e => {
+                        e.preventDefault();
+                        goNewer();
+                      }}
+                    />
+                  </PaginationItem>
+                  <PaginationItem>
+                    <PaginationLink href="#" isActive onClick={e => e.preventDefault()}>
+                      {pageNumber}
+                    </PaginationLink>
+                  </PaginationItem>
+                  <PaginationItem>
+                    <PaginationNext
+                      href="#"
+                      aria-disabled={!canOlder}
+                      className={!canOlder ? "pointer-events-none opacity-50" : undefined}
+                      onClick={e => {
+                        e.preventDefault();
+                        goOlder();
+                      }}
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
             )}
           </CardContent>
         </Card>

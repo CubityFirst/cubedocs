@@ -3,8 +3,48 @@ import { Dialog as DialogPrimitive } from "radix-ui";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-function Sheet({ ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
-  return <DialogPrimitive.Root {...props} />;
+/**
+ * Makes a controlled sheet dismissable with the browser / phone Back button.
+ *
+ * When the sheet opens we push a throwaway history entry; a Back navigation
+ * pops it, which we treat as a request to close (so Back closes the sheet
+ * instead of leaving the page). When the sheet closes by any other means
+ * (X button, Escape, overlay tap) we pop our own entry back off, so we never
+ * leave a dead entry that would swallow the user's next Back press.
+ *
+ * We merge the existing `history.state` into the pushed entry so react-router's
+ * own bookkeeping survives the round-trip. No-op for uncontrolled sheets
+ * (those without an `open` prop) and during SSR.
+ */
+function useBackButtonClose(open: boolean | undefined, onClose: () => void) {
+  const onCloseRef = React.useRef(onClose);
+  onCloseRef.current = onClose;
+
+  React.useEffect(() => {
+    if (!open || typeof window === "undefined") return;
+
+    // Did *we* push an entry that still needs cleaning up on close?
+    let pushed = true;
+    window.history.pushState({ ...window.history.state, __sheet: true }, "");
+
+    const onPop = () => {
+      // The browser already popped our entry; just run the close.
+      pushed = false;
+      onCloseRef.current();
+    };
+    window.addEventListener("popstate", onPop);
+
+    return () => {
+      window.removeEventListener("popstate", onPop);
+      // Closed by something other than Back — remove our sentinel entry.
+      if (pushed) window.history.back();
+    };
+  }, [open]);
+}
+
+function Sheet({ open, onOpenChange, ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
+  useBackButtonClose(open, () => onOpenChange?.(false));
+  return <DialogPrimitive.Root open={open} onOpenChange={onOpenChange} {...props} />;
 }
 
 function SheetTrigger({ ...props }: React.ComponentProps<typeof DialogPrimitive.Trigger>) {

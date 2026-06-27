@@ -10,6 +10,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -106,7 +114,7 @@ function FeatureState({ on, label }: { on: boolean; label: string }) {
 }
 
 // Site logo for the admin sheet. The endpoint is auth-gated, so we can't point
-// an <img src> at it directly — fetch the bytes with the bearer token and
+// an <img src> at it directly - fetch the bytes with the bearer token and
 // render an object URL, revoking it on unmount/change. Falls back to a neutral
 // initial tile when the site has no logo of that variant.
 function ProjectLogo({
@@ -235,7 +243,7 @@ function ProjectDetailsPanel({ details }: { details: AdminProjectDetails }) {
             />
             <DetailField
               label="Owner ID"
-              value={<span className="font-mono text-xs">{profile.owner?.id ?? "—"}</span>}
+              value={<span className="font-mono text-xs">{profile.owner?.id ?? "-"}</span>}
             />
             <DetailField
               label="Organization"
@@ -535,9 +543,17 @@ function ProjectRow({ project, onSaved, onDeleted, onDomainRemoved }: ProjectRow
             ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
             : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
         </TableCell>
-        <TableCell className="font-medium">{project.name}</TableCell>
-        <TableCell className="font-mono text-xs text-muted-foreground">{project.id}</TableCell>
-        <TableCell className="text-xs text-muted-foreground">
+        <TableCell className="font-medium whitespace-normal">
+          {project.name}
+          <span className="mt-0.5 block font-mono text-[11px] font-normal text-muted-foreground sm:hidden">
+            {project.id}
+          </span>
+          <span className="mt-0.5 block text-[11px] font-normal text-muted-foreground md:hidden">
+            {new Date(project.created_at).toLocaleDateString()}
+          </span>
+        </TableCell>
+        <TableCell className="hidden font-mono text-xs text-muted-foreground sm:table-cell">{project.id}</TableCell>
+        <TableCell className="hidden text-xs text-muted-foreground md:table-cell">
           {new Date(project.created_at).toLocaleDateString()}
         </TableCell>
       </TableRow>
@@ -695,40 +711,67 @@ function ProjectRow({ project, onSaved, onDeleted, onDomainRemoved }: ProjectRow
 }
 
 export function ProjectsPage() {
+  // `query` is the live text box; `committedQuery` is the query actually being
+  // paged over (set on submit). Paging keeps committedQuery and only moves the
+  // cursor; changing the committed query resets to page 1.
   const [query, setQuery] = useState("");
+  const [committedQuery, setCommittedQuery] = useState("");
+  // `cursors` holds the cursor used to fetch each page beyond the first;
+  // page number = cursors.length + 1. Newer = pop, Older = push nextCursor.
+  const [cursors, setCursors] = useState<string[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [projects, setProjects] = useState<AdminProject[]>([]);
   const [loading, setLoading] = useState(true);
   const abortRef = useRef<AbortController | null>(null);
 
-  useEffect(() => {
-    load("");
-    return () => abortRef.current?.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const currentCursor = cursors.length > 0 ? cursors[cursors.length - 1] : undefined;
+  const pageNumber = cursors.length + 1;
 
-  async function load(q: string) {
-    // Cancel any in-flight search so a slow earlier response can't
-    // clobber a newer one (or set state after unmount).
+  // Single fetch effect: re-runs for the committed query and the current page's
+  // cursor. Aborts any in-flight request so a slow earlier response can't
+  // clobber a newer one (last-write-wins).
+  useEffect(() => {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
     setLoading(true);
-    try {
-      const results = await listProjects(q, controller.signal);
-      if (controller.signal.aborted) return;
-      setProjects(results);
-    } catch (e) {
-      if (controller.signal.aborted || (e instanceof DOMException && e.name === "AbortError")) return;
-      toast.error(e instanceof Error ? e.message : "Failed to load projects");
-    } finally {
-      if (!controller.signal.aborted) setLoading(false);
-    }
-  }
+    listProjects({ q: committedQuery || undefined, cursor: currentCursor }, controller.signal)
+      .then(res => {
+        if (controller.signal.aborted) return;
+        setProjects(res.projects);
+        setNextCursor(res.nextCursor);
+      })
+      .catch(e => {
+        if (controller.signal.aborted || (e instanceof DOMException && e.name === "AbortError")) return;
+        toast.error(e instanceof Error ? e.message : "Failed to load projects");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [committedQuery, currentCursor]);
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
-    load(query);
+    const next = query.trim();
+    // Reset to page 1 so a stale cursor never lands on a different result set.
+    setCursors([]);
+    setCommittedQuery(next);
   }
+
+  function goNewer() {
+    // Block while a page is in flight: a second click would otherwise read a
+    // stale `nextCursor` from this render and push a duplicate cursor.
+    if (loading || pageNumber <= 1) return;
+    setCursors(c => c.slice(0, -1));
+  }
+  function goOlder() {
+    if (loading || !nextCursor) return;
+    setCursors(c => [...c, nextCursor]);
+  }
+
+  const canNewer = pageNumber > 1 && !loading;
+  const canOlder = !!nextCursor && !loading;
 
   function handleSaved(id: string, features: number) {
     setProjects(prev => prev.map(p => (p.id === id ? { ...p, features } : p)));
@@ -798,8 +841,8 @@ export function ProjectsPage() {
                 <TableRow>
                   <TableHead className="w-8" />
                   <TableHead>Name</TableHead>
-                  <TableHead>ID</TableHead>
-                  <TableHead>Created</TableHead>
+                  <TableHead className="hidden sm:table-cell">ID</TableHead>
+                  <TableHead className="hidden md:table-cell">Created</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -808,6 +851,40 @@ export function ProjectsPage() {
                 ))}
               </TableBody>
             </Table>
+          )}
+
+          {(pageNumber > 1 || !!nextCursor) && (
+            <Pagination className="mt-5">
+              <PaginationContent>
+                <PaginationItem>
+                  <PaginationPrevious
+                    href="#"
+                    aria-disabled={!canNewer}
+                    className={!canNewer ? "pointer-events-none opacity-50" : undefined}
+                    onClick={e => {
+                      e.preventDefault();
+                      goNewer();
+                    }}
+                  />
+                </PaginationItem>
+                <PaginationItem>
+                  <PaginationLink href="#" isActive onClick={e => e.preventDefault()}>
+                    {pageNumber}
+                  </PaginationLink>
+                </PaginationItem>
+                <PaginationItem>
+                  <PaginationNext
+                    href="#"
+                    aria-disabled={!canOlder}
+                    className={!canOlder ? "pointer-events-none opacity-50" : undefined}
+                    onClick={e => {
+                      e.preventDefault();
+                      goOlder();
+                    }}
+                  />
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
           )}
         </CardContent>
       </Card>

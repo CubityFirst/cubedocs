@@ -1,41 +1,11 @@
 import { Hono } from "hono";
 import type { AppEnv } from "../index";
+import { type KeysetCursor, encodeCursor, decodeCursor, keysetClause } from "../lib/cursor";
 
 const PAGE_SIZE = 25;
 
-export interface AuditCursor {
-  // admin_audit_log.created_at of the last row on the page just shown.
-  ts: string;
-  // admin_audit_log.id of that same row (tiebreak within one second).
-  id: string;
-}
-
-// Opaque base64url cursor. It only encodes a (created_at, id) position;
-// tampering just changes where an already-authorized admin pages from.
-export function encodeCursor(cursor: AuditCursor): string {
-  return btoa(JSON.stringify(cursor))
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-}
-
-export function decodeCursor(raw: string): AuditCursor | null {
-  try {
-    const json = atob(raw.replace(/-/g, "+").replace(/_/g, "/"));
-    const obj: unknown = JSON.parse(json);
-    if (
-      obj &&
-      typeof obj === "object" &&
-      typeof (obj as AuditCursor).ts === "string" &&
-      typeof (obj as AuditCursor).id === "string"
-    ) {
-      return { ts: (obj as AuditCursor).ts, id: (obj as AuditCursor).id };
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
+// Re-exported so existing importers (and the test) keep their import path.
+export { encodeCursor, decodeCursor };
 
 interface AuditRow {
   id: string;
@@ -48,6 +18,50 @@ interface AuditRow {
   created_at: string;
 }
 
+const AUDIT_COLS =
+  "id, actor_user_id, actor_email, action, target_type, target_id, detail, created_at";
+
+export interface AuditFilters {
+  // Match any of these action types (OR within the set). Empty = all actions.
+  actions: string[];
+  // Free-text user scope: substring-matched against the acting admin
+  // (actor_email / actor_user_id) and the target id. null = everyone.
+  q: string | null;
+}
+
+// Builds the keyset list query. The cursor, action set, and user-scope
+// search each contribute an AND-ed WHERE clause; the ORDER BY is fixed so
+// the created_at index keeps driving paging. `binds` are positional, in
+// SQL order, and do NOT include the trailing LIMIT bind (caller appends it).
+export function buildAuditListQuery(
+  cursor: KeysetCursor | null,
+  filters: AuditFilters,
+): { sql: string; binds: unknown[] } {
+  const where: string[] = [];
+  const binds: unknown[] = [];
+  const keyset = keysetClause(cursor, "created_at", "id");
+  if (keyset.sql) {
+    where.push(keyset.sql);
+    binds.push(...keyset.binds);
+  }
+  if (filters.actions.length > 0) {
+    const placeholders = filters.actions.map(() => "?").join(", ");
+    where.push(`action IN (${placeholders})`);
+    binds.push(...filters.actions);
+  }
+  if (filters.q) {
+    where.push("(actor_email LIKE ? OR actor_user_id LIKE ? OR target_id LIKE ?)");
+    const like = `%${filters.q}%`;
+    binds.push(like, like, like);
+  }
+  const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  const sql = `SELECT ${AUDIT_COLS} FROM admin_audit_log
+     ${whereSql}
+     ORDER BY created_at DESC, id DESC
+     LIMIT ?`;
+  return { sql, binds };
+}
+
 const auditRouter = new Hono<AppEnv>();
 
 // GET /api/audit?cursor=<opaque>
@@ -55,30 +69,30 @@ const auditRouter = new Hono<AppEnv>();
 // Newest-first, keyset-paginated by (created_at DESC, id DESC). Returns
 // up to PAGE_SIZE rows plus a `nextCursor` (null when there are no older
 // rows). Keyset rather than OFFSET so paging deep into history stays
-// O(page) instead of O(offset) — the table only grows.
+// O(page) instead of O(offset) - the table only grows.
 auditRouter.get("/", async (c) => {
   const rawCursor = c.req.query("cursor");
-  let cursor: AuditCursor | null = null;
+  let cursor: KeysetCursor | null = null;
   if (rawCursor) {
     cursor = decodeCursor(rawCursor);
     if (!cursor) return c.json({ ok: false, error: "Invalid cursor" }, 400);
   }
 
-  const cols =
-    "id, actor_user_id, actor_email, action, target_type, target_id, detail, created_at";
+  // Optional filters; both compose with the keyset cursor as AND-ed WHERE
+  // clauses, leaving the ORDER BY (and thus the created_at index) intact.
+  // `action` is repeatable (action=a&action=b -> match any); `q` is a
+  // user-scoped substring search. Parsed off the raw URL so repeated
+  // params are handled regardless of Hono's query helper.
+  const params = new URL(c.req.url).searchParams;
+  const actions = params
+    .getAll("action")
+    .map((a) => a.trim())
+    .filter(Boolean);
+  const q = params.get("q")?.trim() || null;
+
   // One extra row tells us whether an older page exists without a count.
-  const stmt = cursor
-    ? c.env.AUTH_DB.prepare(
-        `SELECT ${cols} FROM admin_audit_log
-         WHERE created_at < ? OR (created_at = ? AND id < ?)
-         ORDER BY created_at DESC, id DESC
-         LIMIT ?`,
-      ).bind(cursor.ts, cursor.ts, cursor.id, PAGE_SIZE + 1)
-    : c.env.AUTH_DB.prepare(
-        `SELECT ${cols} FROM admin_audit_log
-         ORDER BY created_at DESC, id DESC
-         LIMIT ?`,
-      ).bind(PAGE_SIZE + 1);
+  const { sql, binds } = buildAuditListQuery(cursor, { actions, q });
+  const stmt = c.env.AUTH_DB.prepare(sql).bind(...binds, PAGE_SIZE + 1);
 
   const rows = (await stmt.all<AuditRow>()).results;
   const hasMore = rows.length > PAGE_SIZE;
@@ -88,6 +102,20 @@ auditRouter.get("/", async (c) => {
     hasMore && last ? encodeCursor({ ts: last.created_at, id: last.id }) : null;
 
   return c.json({ ok: true, data: { entries, nextCursor } });
+});
+
+// GET /api/audit/actions
+//
+// Distinct action values present in the log, sorted, for populating the
+// filter dropdown. Cheap (small, slow-growing table) and re-derived on
+// each load so newly introduced action types appear without code changes.
+auditRouter.get("/actions", async (c) => {
+  const rows = (
+    await c.env.AUTH_DB.prepare(
+      `SELECT DISTINCT action FROM admin_audit_log ORDER BY action ASC`,
+    ).all<{ action: string }>()
+  ).results;
+  return c.json({ ok: true, data: { actions: rows.map((r) => r.action) } });
 });
 
 export { auditRouter };
