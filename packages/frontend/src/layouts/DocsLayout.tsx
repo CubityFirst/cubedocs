@@ -622,18 +622,6 @@ export function DocsLayout() {
         </div>
       )}
       <div className="flex min-h-0 flex-1">
-      {/* Mobile menu opener - only visible when the sidebar is closed; sits above
-          the aside (z-20) and backdrop (z-10) so it hides behind the open sidebar. */}
-      {!sidebarOpen && (
-        <button
-          type="button"
-          onClick={() => setSidebarOpen(true)}
-          aria-label="Open menu"
-          className="md:hidden fixed top-2 left-2 z-30 flex h-11 w-11 items-center justify-center rounded-md border border-border bg-background/90 text-foreground shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/60"
-        >
-          <Menu className="h-5 w-5" />
-        </button>
-      )}
       {/* Backdrop - mobile only: closes sidebar when tapping the content area */}
       {sidebarOpen && (
         <div
@@ -854,9 +842,25 @@ export function DocsLayout() {
 
       {/* Main content - full-width and static; the sidebar overlays it on mobile */}
       <main className="flex flex-1 flex-col overflow-hidden min-w-0">
-        {/* Breadcrumb bar - always at the top */}
-        {breadcrumbs.length > 0 && (
-          <div className="shrink-0 flex h-14 items-center gap-1 overflow-x-auto whitespace-nowrap pl-14 pr-4 sm:px-6 border-b border-border bg-background text-sm [-ms-overflow-style:none] [scrollbar-width:none]">
+        {/* Top bar: holds the mobile menu opener and the breadcrumbs. Rendered on
+            mobile whenever the sidebar is closed (so the opener sits in the bar
+            instead of floating over content); on desktop only when there are
+            crumbs. The opener itself is md:hidden. */}
+        {(breadcrumbs.length > 0 || !sidebarOpen) && (
+          <div className={cn(
+            "shrink-0 flex h-14 items-center gap-1 overflow-x-auto whitespace-nowrap px-2 sm:px-6 border-b border-border bg-background text-sm [-ms-overflow-style:none] [scrollbar-width:none]",
+            breadcrumbs.length === 0 && "md:hidden",
+          )}>
+            {!sidebarOpen && (
+              <button
+                type="button"
+                onClick={() => setSidebarOpen(true)}
+                aria-label="Open navigation menu"
+                className="md:hidden shrink-0 mr-1 flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              >
+                <Menu className="h-5 w-5" />
+              </button>
+            )}
             {breadcrumbs.map((crumb, i) => {
               const isLast = i === breadcrumbs.length - 1;
               return (
