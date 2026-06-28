@@ -54,7 +54,7 @@ function formatDate(iso: string): string {
 
 export function FilePage() {
   const { projectId, fileId } = useParams<{ projectId: string; fileId: string }>();
-  const { setBreadcrumbs, projectName, myRole, theme, customColor } = useOutletContext<DocsLayoutContext>();
+  const { setBreadcrumbs, projectName, myRole, theme, customColor, headerActionSlot } = useOutletContext<DocsLayoutContext>();
   const location = useLocation();
   const navigate = useNavigate();
   const [file, setFile] = useState<FileRecord | null>(null);
@@ -170,6 +170,9 @@ export function FilePage() {
             readOnly={!canEdit}
             name={file.name}
             theme={exTheme}
+            // Render Save in the top bar (title bar) rather than floating over
+            // the canvas, where it overlapped Excalidraw's bottom-right "?".
+            saveSlot={headerActionSlot}
           />
         </Suspense>
       </div>

@@ -201,6 +201,15 @@
   margin-top: 0 !important;
   margin-bottom: 0 !important;
 }
+/* Embedded Excalidraw drawing (```excalidraw <fileId>): a bounded, bordered
+   figure. Excalidraw needs an explicit height to lay out; the canvas fills it. */
+.cm-wysiwyg .cm-content .cm-excalidraw-embed {
+  height: 480px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  position: relative;
+}
 /* Reading mode: wrap long code lines instead of overflowing horizontally.
    Shiki's <pre> is a grandchild of CodeBlock's wrapper, so CodeBlock's
    `[&>pre]:overflow-x-auto` never matches it - without this rule, a single

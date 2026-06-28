@@ -239,6 +239,8 @@ export function SiteSettingsPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [copiedDeleteName, setCopiedDeleteName] = useState(false);
 
   const [leaveOpen, setLeaveOpen] = useState(false);
   const [leaving, setLeaving] = useState(false);
@@ -2434,7 +2436,7 @@ export function SiteSettingsPage() {
                   Deleting this site will permanently remove all of its documents and members. This action cannot be undone.
                 </p>
 
-                <AlertDialog open={deleteOpen} onOpenChange={open => { setDeleteOpen(open); if (!open) setDeleteError(null); }}>
+                <AlertDialog open={deleteOpen} onOpenChange={open => { setDeleteOpen(open); if (!open) { setDeleteError(null); setDeleteConfirm(""); setCopiedDeleteName(false); } }}>
                   <AlertDialogTrigger asChild>
                     <Button variant="destructive" className="self-start">Delete site</Button>
                   </AlertDialogTrigger>
@@ -2445,6 +2447,34 @@ export function SiteSettingsPage() {
                         This will permanently delete the site and all of its documents. This action cannot be undone.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
+                    <div className="space-y-2">
+                      <Label htmlFor="delete-confirm-name">
+                        To confirm, type the site name{" "}
+                        <code className="rounded bg-muted px-1 py-0.5 font-mono text-sm">{project.name}</code>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="ml-1 size-6 align-middle"
+                          aria-label="Copy site name"
+                          onClick={() => {
+                            navigator.clipboard.writeText(project.name).then(() => {
+                              setCopiedDeleteName(true);
+                              setTimeout(() => setCopiedDeleteName(false), 2000);
+                            }).catch(() => {});
+                          }}
+                        >
+                          {copiedDeleteName ? <Check className="size-3" /> : <Copy className="size-3" />}
+                        </Button>
+                      </Label>
+                      <Input
+                        id="delete-confirm-name"
+                        value={deleteConfirm}
+                        onChange={e => setDeleteConfirm(e.target.value)}
+                        autoComplete="off"
+                        placeholder={project.name}
+                      />
+                    </div>
                     {deleteError && (
                       <Alert variant="destructive">
                         <AlertDescription>{deleteError}</AlertDescription>
@@ -2454,7 +2484,7 @@ export function SiteSettingsPage() {
                       <AlertDialogCancel>Cancel</AlertDialogCancel>
                       <AlertDialogAction
                         className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                        disabled={deleting}
+                        disabled={deleting || deleteConfirm !== project.name}
                         onClick={handleDelete}
                       >
                         {deleting ? "Deleting…" : "Yes, delete"}

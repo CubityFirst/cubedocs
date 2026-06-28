@@ -140,6 +140,11 @@ export interface DocsLayoutContext {
   folders: { id: string; name: string; parent_id: string | null }[];
   addDoc: (doc: { id: string; title: string; display_title?: string | null; folder_id?: string | null; tags?: string | null }) => void;
   setBreadcrumbs: Dispatch<SetStateAction<BreadcrumbItem[]>>;
+  // Right-aligned slot in the top bar (next to the breadcrumbs). A page can
+  // portal a page-level action into it (e.g. a drawing's Save button) so the
+  // action lives in the title bar instead of overlaying page content. Null
+  // until the bar (and thus the slot node) has mounted.
+  headerActionSlot: HTMLElement | null;
   openCreateSite: () => void;
   openCreateOrg: () => void;
 }
@@ -261,6 +266,9 @@ export function DocsLayout() {
   const [docs, setDocs] = useState<Doc[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([]);
+  // DOM node of the top-bar action slot, exposed via context so a page can
+  // portal an action (e.g. drawing Save) into the title bar.
+  const [headerActionEl, setHeaderActionEl] = useState<HTMLDivElement | null>(null);
 
   // site creation
   const [creating, setCreating] = useState(false);
@@ -616,6 +624,7 @@ export function DocsLayout() {
     folders,
     addDoc,
     setBreadcrumbs,
+    headerActionSlot: headerActionEl,
     openCreateSite: () => setCreating(true),
     openCreateOrg: () => setCreatingOrg(true),
   };
@@ -917,6 +926,9 @@ export function DocsLayout() {
                 })}
               </ol>
             </nav>
+            {/* Right-aligned action slot. sticky+bg keeps it pinned to the right
+                edge (and masking) while long breadcrumbs scroll underneath. */}
+            <div ref={setHeaderActionEl} className="ml-auto shrink-0 sticky right-0 flex items-center gap-2 bg-background pl-2" />
           </div>
         )}
         <div className="flex-1 overflow-y-auto overscroll-contain min-h-0">

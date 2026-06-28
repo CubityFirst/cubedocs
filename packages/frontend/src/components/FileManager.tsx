@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import type { DocsLayoutContext } from "@/layouts/DocsLayout";
-import { Folder, FileText, House, Plus, FolderPlus, Search, X, Download, Upload, Trash2, Pencil, Link, Sparkles, PenTool, MoreVertical, FolderInput } from "lucide-react";
+import { Folder, FileText, House, Plus, FolderPlus, Search, X, Download, Upload, Trash2, Pencil, Link, Sparkles, PenTool, MoreVertical, FolderInput, Code } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,6 +20,9 @@ import { emptyExcalidrawScene, EXCALIDRAW_MIME, EXCALIDRAW_EXT } from "@/lib/exc
 import { UserProfileCard } from "@/components/UserProfileCard";
 import { UserAvatar } from "@/components/UserAvatar";
 import { FileTypeIcon } from "@/components/FileTypeIcon";
+import { Spinner } from "@/components/ui/spinner";
+import { Attachment, AttachmentMedia, AttachmentContent, AttachmentTitle, AttachmentDescription, AttachmentActions, AttachmentAction, AttachmentGroup } from "@/components/ui/attachment";
+import { fileKind } from "@/lib/fileKind";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
@@ -30,6 +33,15 @@ interface FolderItem {
   project_id: string;
   parent_id: string | null;
   created_at: string;
+}
+
+// An in-flight (or just-failed) file upload, rendered as an Attachment card.
+interface UploadEntry {
+  id: number;
+  name: string;
+  size: number;
+  mime: string;
+  status: "uploading" | "error";
 }
 
 type Role = "viewer" | "editor" | "admin" | "owner";
@@ -210,7 +222,11 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
 
   // external file drop state
   const [externalDragOver, setExternalDragOver] = useState(false);
-  const [uploadingCount, setUploadingCount] = useState(0);
+  // In-flight uploads, one entry per file, surfaced as Attachment cards. A
+  // successful upload removes its entry; a failed one flips to "error" so the
+  // user can see it failed and dismiss it.
+  const [uploads, setUploads] = useState<UploadEntry[]>([]);
+  const uploadIdRef = useRef(0);
 
   // Hidden <input> backing the explicit toolbar Upload button (touch devices
   // can't drag-and-drop). Reuses the same uploadFileAndCreateDoc pipeline.
@@ -593,7 +609,9 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
   }
 
   const uploadFileAndCreateDoc = useCallback(async (file: File) => {
-    setUploadingCount(c => c + 1);
+    const id = ++uploadIdRef.current;
+    setUploads(prev => [...prev, { id, name: file.name, size: file.size, mime: file.type, status: "uploading" }]);
+    let ok = false;
     try {
       // .md / .txt files → import content as a new document. Everything else
       // (including dropped .excalidraw drawings) falls through to a file upload.
@@ -608,27 +626,36 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
         if (docResult.ok && docResult.data) {
           onDocCreated(docResult.data);
           setDocs(prev => [...prev, docResult.data!].sort((a, b) => a.title.localeCompare(b.title)));
+          ok = true;
         }
-        return;
+      } else {
+        // Everything else → upload as a native file entry. Imported/dropped
+        // .excalidraw files arrive with an empty or application/json MIME, so
+        // re-type them to the vendor MIME - otherwise the API wouldn't treat them
+        // as mutable drawings and saving edits would 400 (isMutableFile).
+        const upload = file.name.toLowerCase().endsWith(EXCALIDRAW_EXT)
+          ? new File([file], file.name, { type: EXCALIDRAW_MIME })
+          : file;
+        const form = new FormData();
+        form.append("file", upload);
+        form.append("projectId", projectId);
+        if (currentFolderId) form.append("folderId", currentFolderId);
+        const uploadResult = await apiFetchJson<FileItem>("/api/files", { method: "POST", body: form });
+        if (uploadResult.ok && uploadResult.data) {
+          setFiles(prev => [...prev, uploadResult.data!].sort((a, b) => a.name.localeCompare(b.name)));
+          ok = true;
+        }
       }
-
-      // Everything else → upload as a native file entry. Imported/dropped
-      // .excalidraw files arrive with an empty or application/json MIME, so
-      // re-type them to the vendor MIME - otherwise the API wouldn't treat them
-      // as mutable drawings and saving edits would 400 (isMutableFile).
-      const upload = file.name.toLowerCase().endsWith(EXCALIDRAW_EXT)
-        ? new File([file], file.name, { type: EXCALIDRAW_MIME })
-        : file;
-      const form = new FormData();
-      form.append("file", upload);
-      form.append("projectId", projectId);
-      if (currentFolderId) form.append("folderId", currentFolderId);
-      const uploadResult = await apiFetchJson<FileItem>("/api/files", { method: "POST", body: form });
-      if (uploadResult.ok && uploadResult.data) {
-        setFiles(prev => [...prev, uploadResult.data!].sort((a, b) => a.name.localeCompare(b.name)));
-      }
+    } catch {
+      ok = false;
     } finally {
-      setUploadingCount(c => c - 1);
+      // On success drop the card; on failure flip it to "error" so it lingers
+      // (with a dismiss action) instead of vanishing silently.
+      setUploads(prev =>
+        ok
+          ? prev.filter(u => u.id !== id)
+          : prev.map(u => (u.id === id ? { ...u, status: "error" } : u)),
+      );
     }
   }, [projectId, currentFolderId, onDocCreated]);
 
@@ -1043,6 +1070,12 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                     <Link />
                     Copy link
                   </ContextMenuItem>
+                  {fileKind(file.mime_type, file.name) === "drawing" && (
+                    <ContextMenuItem onClick={() => { navigator.clipboard.writeText("```excalidraw\n" + file.id + "\n```"); toast({ title: "Embed copied" }); }}>
+                      <Code />
+                      Copy embed
+                    </ContextMenuItem>
+                  )}
                   <ContextMenuItem onClick={() => downloadFile(file)}>
                     <Download />
                     Download
@@ -1210,6 +1243,12 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
                   <Link />
                   Copy link
                 </DropdownMenuItem>
+                {fileKind(file.mime_type, file.name) === "drawing" && (
+                  <DropdownMenuItem onClick={() => { navigator.clipboard.writeText("```excalidraw\n" + file.id + "\n```"); toast({ title: "Embed copied" }); }}>
+                    <Code />
+                    Copy embed
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem onClick={() => downloadFile(file)}>
                   <Download />
                   Download
@@ -1250,12 +1289,49 @@ export function FileManager({ projectId, projectName, folderId, myRole, aiEnable
       onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setExternalDragOver(false); }}
       onDrop={handleExternalDrop}
     >
-      {(externalDragOver || uploadingCount > 0) && (
+      {externalDragOver && (
         <div className="pointer-events-none absolute inset-3 z-20 flex flex-col items-center justify-center gap-2 rounded-lg bg-background/80 backdrop-blur-sm ring-2 ring-inset ring-primary/40">
           <Upload className="h-8 w-8 text-primary/60" aria-hidden="true" />
-          <p role="status" aria-live="polite" className="text-sm font-medium text-muted-foreground">
-            {uploadingCount > 0 ? `Uploading ${uploadingCount} ${uploadingCount === 1 ? "file" : "files"}…` : "Drop to upload"}
-          </p>
+          <p className="text-sm font-medium text-muted-foreground">Drop to upload</p>
+        </div>
+      )}
+
+      {/* In-flight / failed uploads, one Attachment card each, stacked in the
+          corner so they don't block the listing behind them. */}
+      {uploads.length > 0 && (
+        <div
+          role="status"
+          aria-live="polite"
+          aria-label="File uploads"
+          className="pointer-events-auto absolute bottom-4 right-4 z-30 w-72 max-w-[calc(100%-2rem)]"
+        >
+          <AttachmentGroup className="flex-col">
+            {uploads.map(u => (
+              <Attachment key={u.id} size="sm" status={u.status} className="w-full bg-background shadow-md">
+                <AttachmentMedia>
+                  {u.status === "uploading"
+                    ? <Spinner className="size-4" />
+                    : <FileTypeIcon mimeType={u.mime} name={u.name} className="size-4" />}
+                </AttachmentMedia>
+                <AttachmentContent>
+                  <AttachmentTitle>{u.name}</AttachmentTitle>
+                  <AttachmentDescription className={u.status === "error" ? "text-destructive" : undefined}>
+                    {u.status === "uploading" ? `Uploading… · ${formatBytes(u.size)}` : "Upload failed"}
+                  </AttachmentDescription>
+                </AttachmentContent>
+                {u.status === "error" && (
+                  <AttachmentActions>
+                    <AttachmentAction
+                      aria-label={`Dismiss ${u.name}`}
+                      onClick={() => setUploads(prev => prev.filter(x => x.id !== u.id))}
+                    >
+                      <X />
+                    </AttachmentAction>
+                  </AttachmentActions>
+                )}
+              </Attachment>
+            ))}
+          </AttachmentGroup>
         </div>
       )}
 

@@ -2,6 +2,7 @@ import { Decoration } from "@codemirror/view";
 import { cursorTouches, type Visitor } from "../types";
 import { CodeFenceWidget } from "../../widgets/CodeFenceWidget";
 import { MermaidWidget } from "../../widgets/MermaidWidget";
+import { ExcalidrawEmbedWidget } from "../../widgets/ExcalidrawEmbedWidget";
 import { JuxtaposeWidget } from "../../widgets/JuxtaposeWidget";
 import { parseJuxtapose } from "@/lib/juxtapose";
 
@@ -53,6 +54,22 @@ export const visitCodeFence: Visitor = ({ node, state, sel, reveal, decos }) => 
       decos.push(
         Decoration.replace({
           widget: new JuxtaposeWidget(cfg, !reveal),
+          block: true,
+        }).range(startLine.from, endLine.to),
+      );
+      return;
+    }
+  }
+
+  // An `excalidraw` fence whose body is a drawing file id embeds that drawing as
+  // a live read-only canvas. An empty/blank body falls through to normal
+  // code-fence rendering so a half-typed block still reads as code.
+  if (lang === "excalidraw") {
+    const fileId = code.trim();
+    if (fileId) {
+      decos.push(
+        Decoration.replace({
+          widget: new ExcalidrawEmbedWidget(fileId),
           block: true,
         }).range(startLine.from, endLine.to),
       );

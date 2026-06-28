@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import "@excalidraw/excalidraw/index.css";
 import { Excalidraw, serializeAsJSON } from "@excalidraw/excalidraw";
 import { Check } from "lucide-react";
@@ -41,6 +42,16 @@ interface Props {
   theme: "light" | "dark";
   /** Called after a successful save (e.g. so the page can refresh metadata). */
   onSaved?: () => void;
+  /**
+   * Where to render the Save button (editable only). Controls placement:
+   *   • undefined → floating button overlaid on the canvas (default; public
+   *     site, embeds, demo).
+   *   • HTMLElement → portal the button into that node (e.g. the page's top bar,
+   *     so it can't overlap Excalidraw's own bottom-right "?" help control).
+   *   • null → external-slot mode but the slot isn't mounted yet; render no
+   *     button (avoids a one-frame flash of the floating button).
+   */
+  saveSlot?: HTMLElement | null;
 }
 
 function serialize(api: ExcalidrawApi): string {
@@ -52,7 +63,7 @@ function serialize(api: ExcalidrawApi): string {
   );
 }
 
-export default function ExcalidrawCanvas({ contentUrl, fetcher, readOnly, name, theme, onSaved }: Props) {
+export default function ExcalidrawCanvas({ contentUrl, fetcher, readOnly, name, theme, onSaved, saveSlot }: Props) {
   const { toast } = useToast();
   const apiRef = useRef<ExcalidrawApi | null>(null);
   const [scene, setScene] = useState<Scene | null>(null);
@@ -192,6 +203,24 @@ export default function ExcalidrawCanvas({ contentUrl, fetcher, readOnly, name, 
 
   const saveLabel = saving ? "Saving…" : dirty ? "Save" : justSaved ? "Saved" : "Save";
 
+  // When a slot is provided we portal the button there (e.g. the page top bar);
+  // otherwise it floats over the canvas. The floating placement keeps clear of
+  // Excalidraw's own controls but can still sit under the bottom-right help "?".
+  const inHeader = saveSlot !== undefined;
+  const saveButton = (
+    <Button
+      size="sm"
+      onClick={() => void handleSave()}
+      disabled={saving || !dirty}
+      className={inHeader
+        ? "h-8 gap-1.5"
+        : "absolute right-3 top-3 z-20 h-10 gap-1.5 px-4 shadow-md sm:right-4 sm:top-auto sm:bottom-4 sm:h-9 sm:px-3"}
+    >
+      {saving ? <Spinner className="h-3.5 w-3.5 text-current" /> : (!dirty && justSaved) ? <Check className="h-3.5 w-3.5" /> : null}
+      {saveLabel}
+    </Button>
+  );
+
   return (
     <div className="relative h-full w-full">
       <Excalidraw
@@ -202,17 +231,9 @@ export default function ExcalidrawCanvas({ contentUrl, fetcher, readOnly, name, 
         name={name}
         onChange={handleChange}
       />
-      {!readOnly && (
-        <Button
-          size="sm"
-          onClick={() => void handleSave()}
-          disabled={saving || !dirty}
-          className="absolute right-3 top-3 z-20 h-10 gap-1.5 px-4 shadow-md sm:right-4 sm:top-auto sm:bottom-4 sm:h-9 sm:px-3"
-        >
-          {saving ? <Spinner className="h-3.5 w-3.5 text-current" /> : (!dirty && justSaved) ? <Check className="h-3.5 w-3.5" /> : null}
-          {saveLabel}
-        </Button>
-      )}
+      {!readOnly && (inHeader
+        ? (saveSlot ? createPortal(saveButton, saveSlot) : null)
+        : saveButton)}
     </div>
   );
 }
