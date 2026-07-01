@@ -630,7 +630,7 @@ export function DocsLayout() {
   };
 
   return (
-    <div className="relative flex h-screen flex-col overflow-hidden bg-background text-foreground">
+    <div className="relative flex h-dvh flex-col overflow-hidden bg-background text-foreground">
       {isDemoMode() && (
         <div className="z-30 flex shrink-0 flex-wrap items-center justify-center gap-x-4 gap-y-1 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-center text-xs font-medium text-amber-600 dark:text-amber-400 sm:text-sm">
           <span>This is a demo environment, any changes you make here are local, and will not be saved.</span>
